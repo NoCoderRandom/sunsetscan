@@ -42,7 +42,7 @@ class Settings:
         upnp_discovery_timeout: Timeout for SSDP UPnP discovery (seconds)
     """
     tool_name: str = "NetWatch"
-    version: str = "1.2.0"
+    version: str = "1.3.0"
     banner_timeout: int = 3
     cache_ttl_hours: int = 24       # legacy — used by eol/cache.py
     cve_cache_ttl_days: int = 7     # CVE data refreshed weekly

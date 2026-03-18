@@ -43,3 +43,9 @@ desktop.ini
 *.tmp
 .claude
 .claude/
+
+# Personal planning and development files — never commit
+SESSION_NOTES.txt
+NetWatch_Improvement_Master_Document.html
+NetWatch_Improvement_Master_Document.docx
+DOCUMENTATION.md

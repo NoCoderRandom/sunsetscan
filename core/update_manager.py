@@ -25,8 +25,8 @@ from typing import Optional
 
 logger = logging.getLogger(__name__)
 
-_REPO_URL = "https://github.com/your-org/netwatch"  # placeholder — user updates this
-_RELEASES_API = "https://api.github.com/repos/your-org/netwatch/releases/latest"
+_REPO_URL = "https://github.com/NoCoderRandom/netwatch"
+_RELEASES_API = "https://api.github.com/repos/NoCoderRandom/netwatch/releases/latest"
 _PROJECT_ROOT = Path(__file__).parent.parent
 _CACHE_DIR = _PROJECT_ROOT / "data" / "cache"
 _META_FILE = _CACHE_DIR / "cache_meta.json"
@@ -192,37 +192,40 @@ class UpdateManager:
                 print(f"    CVE cache update failed: {e}")
 
     def _update_wappalyzer_cache(self, quiet: bool = False) -> None:
-        """Download latest Wappalyzer technology fingerprints."""
+        """Download latest Wappalyzer technology fingerprints (all letter files merged)."""
         if not quiet:
             print("  Updating Wappalyzer fingerprints...")
         target = _CACHE_DIR / "wappalyzer_tech.json"
-        url = (
-            "https://raw.githubusercontent.com/wappalyzer/wappalyzer/"
-            "master/src/technologies/a.json"
-        )
-        # We fetch the combined technologies file from the community fork
-        combined_url = (
+        base_url = (
             "https://raw.githubusercontent.com/enthec/webappanalyzer/"
-            "main/src/technologies/_.json"
+            "main/src/technologies/"
         )
         try:
             import requests
-            for fetch_url in (combined_url, url):
+            session = requests.Session()
+            session.headers.update({"User-Agent": "NetWatch/1.2.0"})
+            merged: dict = {}
+            files = [f"{c}.json" for c in "_abcdefghijklmnopqrstuvwxyz"]
+            for fname in files:
                 try:
-                    r = requests.get(fetch_url, timeout=30)
+                    r = session.get(base_url + fname, timeout=15)
                     if r.status_code == 200:
-                        # Validate it's JSON
                         data = r.json()
-                        with open(target, "w", encoding="utf-8") as f:
-                            json.dump(data, f)
-                        self._meta["wappalyzer_last_updated"] = datetime.now(timezone.utc).isoformat()
-                        if not quiet:
-                            print(f"    Wappalyzer fingerprints updated ({len(data)} entries).")
-                        return
+                        # Some files wrap in {"technologies": {...}}
+                        if "technologies" in data:
+                            data = data["technologies"]
+                        merged.update(data)
                 except Exception:
                     continue
-            if not quiet:
-                print("    Could not fetch Wappalyzer data (skipped).")
+            if merged:
+                with open(target, "w", encoding="utf-8") as f:
+                    json.dump(merged, f)
+                self._meta["wappalyzer_last_updated"] = datetime.now(timezone.utc).isoformat()
+                if not quiet:
+                    print(f"    Wappalyzer fingerprints updated ({len(merged)} technologies).")
+            else:
+                if not quiet:
+                    print("    Could not fetch Wappalyzer data (skipped).")
         except Exception as e:
             if not quiet:
                 print(f"    Wappalyzer update failed: {e}")

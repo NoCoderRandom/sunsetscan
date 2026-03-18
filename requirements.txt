@@ -25,3 +25,9 @@ cryptography>=41.0.0
 
 # DNS queries with custom resolver (DNS hijack detection)
 dnspython>=2.4.0
+
+# SSH deep analysis — algorithm enumeration, host key inspection
+paramiko>=3.0.0
+
+# SNMP community string testing and sysDescr firmware extraction
+pysnmp>=6.0.0

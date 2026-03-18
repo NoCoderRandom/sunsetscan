@@ -50,6 +50,9 @@ from core.ssl_checker import run_ssl_checks
 from core.web_checker import run_web_checks
 from core.dns_checker import run_dns_checks
 from core.upnp_checker import run_upnp_checks
+from core.ftp_checker import run_ftp_checks
+from core.ssh_checker import run_ssh_checks
+from core.snmp_checker import run_snmp_checks
 from core.baseline import BaselineManager
 from core.risk_scorer import RiskScorer
 from core.scan_history import ScanHistory
@@ -484,7 +487,11 @@ class NetWatch:
                             port.version or ""
                         )
 
-                    self.last_eol_data[ip][port_num] = eol_status
+                    # Only store the result if we actually identified a product.
+                    # product="unknown" means the banner/service gave no useful info —
+                    # these are N/A, not meaningful UNKNOWN EOL results.
+                    if eol_status.product and eol_status.product != "unknown":
+                        self.last_eol_data[ip][port_num] = eol_status
                     progress.update(eol_task, advance=1)
     
     def run_nse_scans(self, scan_result: ScanResult) -> None:
@@ -657,6 +664,32 @@ class NetWatch:
                     self.finding_registry.add_all(web_findings)
                 except Exception as e:
                     logger.debug(f"Web check error for {ip}: {e}")
+
+                # ---- FTP checks ----
+                progress.update(task, description=f"[cyan]FTP checks: {ip}")
+                try:
+                    ftp_findings = run_ftp_checks(
+                        ip, open_ports, timeout=self.settings.banner_timeout
+                    )
+                    self.finding_registry.add_all(ftp_findings)
+                except Exception as e:
+                    logger.debug(f"FTP check error for {ip}: {e}")
+
+                # ---- SSH deep analysis ----
+                progress.update(task, description=f"[cyan]SSH analysis: {ip}")
+                try:
+                    ssh_findings = run_ssh_checks(ip, open_ports)
+                    self.finding_registry.add_all(ssh_findings)
+                except Exception as e:
+                    logger.debug(f"SSH check error for {ip}: {e}")
+
+                # ---- SNMP checks ----
+                progress.update(task, description=f"[cyan]SNMP checks: {ip}")
+                try:
+                    snmp_findings = run_snmp_checks(ip, open_ports)
+                    self.finding_registry.add_all(snmp_findings)
+                except Exception as e:
+                    logger.debug(f"SNMP check error for {ip}: {e}")
 
                 # ---- CVE lookup for each detected service version ----
                 progress.update(task, description=f"[cyan]CVE lookup: {ip}")

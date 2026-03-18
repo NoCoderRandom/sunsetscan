@@ -22,20 +22,207 @@ Findings produced:
     INFO    - Web server banner, page title
 """
 
+import json
 import logging
 import re
+from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 from urllib.parse import urljoin
 
 import requests
 import urllib3
 
-from core.findings import Finding, Severity
+from core.findings import Finding, Severity, Confidence
 
 # Suppress SSL warnings for self-signed certs on local devices
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 logger = logging.getLogger(__name__)
+
+_WAPPALYZER_PATH = Path(__file__).parent.parent / "data" / "cache" / "wappalyzer_tech.json"
+_wappalyzer_data: Optional[Dict] = None  # lazy-loaded once
+
+
+def _load_wappalyzer() -> Dict:
+    """Load Wappalyzer fingerprint data from cache, once per process."""
+    global _wappalyzer_data
+    if _wappalyzer_data is not None:
+        return _wappalyzer_data
+    if not _WAPPALYZER_PATH.exists():
+        _wappalyzer_data = {}
+        return _wappalyzer_data
+    try:
+        with open(_WAPPALYZER_PATH, "r", encoding="utf-8") as f:
+            raw = json.load(f)
+        # enthec/webappanalyzer format: top-level keys are tech names
+        # Some builds wrap in {"technologies": {...}}
+        if "technologies" in raw:
+            _wappalyzer_data = raw["technologies"]
+        else:
+            _wappalyzer_data = raw
+        logger.debug(f"Wappalyzer: loaded {len(_wappalyzer_data)} technology signatures")
+    except Exception as e:
+        logger.debug(f"Wappalyzer load failed: {e}")
+        _wappalyzer_data = {}
+    return _wappalyzer_data
+
+
+def _safe_regex_search(pattern: str, text: str) -> Optional[re.Match]:
+    """Run re.search with FutureWarning suppression for Wappalyzer patterns."""
+    import warnings
+    try:
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", FutureWarning)
+            return re.search(pattern, text, re.IGNORECASE)
+    except re.error:
+        return None
+
+
+def _coerce_pattern(raw) -> str:
+    """Coerce a Wappalyzer pattern to a plain string.
+    Some fields are lists — take first element. Handles str, list, int, None.
+    """
+    if isinstance(raw, list):
+        return str(raw[0]) if raw else ""
+    if raw is None:
+        return ""
+    return str(raw)
+
+
+def _wappalyzer_version(pattern: str, text: str) -> Optional[str]:
+    """Extract version from a Wappalyzer pattern string.
+
+    Wappalyzer uses two notations:
+      Apache\\;version:$1   (dollar-sign, original format)
+      nginx\\;version:\\1   (backslash, enthec fork format)
+    Both are handled.
+    """
+    parts = pattern.split("\\;")
+    regex = parts[0]
+    version_tpl = None
+    for part in parts[1:]:
+        if part.startswith("version:"):
+            version_tpl = part[len("version:"):]
+    if not regex or not version_tpl:
+        return None
+    try:
+        m = _safe_regex_search(regex, text)
+        if not m:
+            return None
+        version = version_tpl
+        for i, grp in enumerate(m.groups(), 1):
+            g = grp or ""
+            version = version.replace(f"${i}", g)   # $1 style
+            version = version.replace(f"\\{i}", g)  # \1 style
+        version = version.strip(" .")
+        return version if version and not re.match(r'^[\\$]\d+$', version) else None
+    except re.error:
+        return None
+
+
+def _run_wappalyzer_checks(
+    host: str,
+    port: int,
+    protocol: str,
+    resp: requests.Response,
+) -> List[Finding]:
+    """Match HTTP response against Wappalyzer signatures.
+
+    Matching rules to avoid false positives:
+      - Header matches: require non-trivial pattern (len > 3) AND header must be present
+      - HTML matches: require body >= 512 chars AND pattern length > 8 chars
+      - Cap at 5 findings per port to suppress noise
+    """
+    findings: List[Finding] = []
+    tech_db = _load_wappalyzer()
+    if not tech_db:
+        return findings
+
+    body = resp.text or ""
+    headers = {k.lower(): v for k, v in resp.headers.items()}
+    detected = []  # list of (tech_name, version_or_None, confidence)
+
+    # Only match HTML patterns if there is substantial content
+    _BODY_MIN_LEN = 512
+
+    for tech_name, tech in tech_db.items():
+        if not isinstance(tech, dict):
+            continue
+        version = None
+        matched = False
+        conf = Confidence.SUSPECTED
+
+        # ---- Match against response headers (high confidence) ----
+        tech_headers = tech.get("headers", {})
+        if isinstance(tech_headers, dict):
+            for h_name, h_pattern in tech_headers.items():
+                h_val = headers.get(h_name.lower(), "")
+                if not h_val:
+                    continue
+                raw_pat = _coerce_pattern(h_pattern)
+                pattern_str = raw_pat.split("\\;")[0]
+                # Empty pattern = presence-only check (just having the header is enough)
+                if pattern_str == "" or _safe_regex_search(pattern_str, h_val):
+                    matched = True
+                    conf = Confidence.LIKELY
+                    v = _wappalyzer_version(raw_pat, h_val)
+                    if v:
+                        version = v
+                    break
+
+        # ---- Match against HTML body (lower confidence, needs substance) ----
+        if not matched and len(body) >= _BODY_MIN_LEN:
+            html_raw = tech.get("html", "")
+            if html_raw:
+                raw_pat = _coerce_pattern(html_raw)
+                pattern_str = raw_pat.split("\\;")[0]
+                # Skip very short patterns — they produce too many false positives
+                if len(pattern_str) >= 12:
+                    m = _safe_regex_search(pattern_str, body)
+                    if m:
+                        matched = True
+                        conf = Confidence.SUSPECTED
+                        v = _wappalyzer_version(raw_pat, body)
+                        if v:
+                            version = v
+
+        if matched:
+            detected.append((tech_name, version, conf))
+
+    # Prefer LIKELY (header) matches over SUSPECTED (html) matches
+    # Cap at 5 per port — if >10 html-only matches something is wrong with data
+    header_matches = [(n, v, c) for n, v, c in detected if c == Confidence.LIKELY]
+    html_matches = [(n, v, c) for n, v, c in detected if c == Confidence.SUSPECTED]
+
+    # If no header matches and too many HTML matches, likely noisy — suppress
+    if not header_matches and len(html_matches) > 5:
+        html_matches = []
+
+    final = (header_matches + html_matches)[:5]
+
+    for tech_name, version, conf in final:
+        ver_str = f" {version}" if version else ""
+        findings.append(Finding(
+            severity=Severity.INFO,
+            title=f"Web technology detected: {tech_name}{ver_str}",
+            host=host, port=port, protocol=protocol,
+            category="Web Technology",
+            description=(
+                f"Wappalyzer signature matched: {tech_name}{ver_str} detected on port {port}."
+            ),
+            explanation=(
+                f"The web interface on port {port} appears to be running {tech_name}{ver_str}. "
+                "Knowing the exact technology stack helps identify applicable CVEs and EOL dates."
+            ),
+            recommendation=(
+                f"Verify {tech_name} is up to date and check its End-of-Life status."
+            ),
+            evidence=f"Wappalyzer signature match ({conf.name}): {tech_name}",
+            confidence=conf,
+            tags=["web", "technology", "wappalyzer", tech_name.lower().replace(" ", "-")],
+        ))
+
+    return findings
 
 # Paths to probe for exposed admin panels (HEAD requests only)
 ADMIN_PATHS = [
@@ -185,6 +372,10 @@ def check_web_interface(
             evidence=f"GET {base_url}/ → {resp.status_code} | Server: {server}",
             tags=["web", "info"],
         ))
+
+    # ---- Wappalyzer technology fingerprinting ----
+    wapp_findings = _run_wappalyzer_checks(host, port, protocol, resp)
+    findings.extend(wapp_findings)
 
     # ---- Probe admin paths ----
     if check_admin_paths:
