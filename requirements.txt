@@ -1,0 +1,27 @@
+# NetWatch Dependencies
+#
+# Install with: pip install -r requirements.txt
+# First-time setup: python netwatch.py --setup
+#
+# Python version required: >= 3.9
+
+# Network scanning — Python wrapper for nmap
+python-nmap==0.7.1
+
+# HTTP client for EOL/CVE API queries and web interface checks
+requests==2.31.0
+
+# Terminal formatting and UI components
+rich==13.7.0
+
+# Semantic version parsing for EOL comparisons
+packaging==24.0
+
+# HTML report templating (Jinja2)
+jinja2>=3.1.0
+
+# SSL certificate inspection (cipher suites, SANs, key sizes)
+cryptography>=41.0.0
+
+# DNS queries with custom resolver (DNS hijack detection)
+dnspython>=2.4.0

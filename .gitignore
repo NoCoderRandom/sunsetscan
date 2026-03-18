@@ -1,0 +1,45 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+.pytest_cache/
+venv/
+.venv/
+env/
+
+# NetWatch personal data — never commit
+data/cache/
+data/history/
+data/logs/
+data/baseline.json
+reports/
+
+# NetWatch backups
+netwatch_backup_*/
+
+# Scan output files
+*.html
+!NetWatch_Improvement_Master_Document.html
+
+# Logs and environment
+*.log
+.env
+.env.*
+
+# OS files
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# IDE
+.idea/
+*.swp
+*~
+
+# Temp files
+*.bak
+*.tmp
+.claude
+.claude/

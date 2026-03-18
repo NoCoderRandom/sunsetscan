@@ -1,0 +1,39 @@
+{
+  "_comment": "Risk scoring weights for NetWatch device risk calculator. Edit to tune scores.",
+  "_version": "1.0",
+  "_last_updated": "2026-03-17",
+
+  "severity_weights": {
+    "CRITICAL": 25,
+    "HIGH": 15,
+    "MEDIUM": 7,
+    "LOW": 2,
+    "INFO": 0
+  },
+
+  "category_multipliers": {
+    "Authentication": 1.5,
+    "CVE": 1.4,
+    "End-of-Life Software": 1.2,
+    "SSL/TLS": 1.1,
+    "Insecure Protocols": 1.2,
+    "Web Security": 1.0,
+    "DNS Security": 1.0,
+    "UPnP": 0.8,
+    "Baseline": 1.3
+  },
+
+  "caps": {
+    "max_per_finding": 30,
+    "max_total": 100,
+    "min_total": 0
+  },
+
+  "risk_bands": {
+    "CRITICAL": {"min": 75, "label": "Critical Risk",  "color": "#dc2626"},
+    "HIGH":     {"min": 50, "label": "High Risk",      "color": "#ea580c"},
+    "MEDIUM":   {"min": 25, "label": "Medium Risk",    "color": "#d97706"},
+    "LOW":      {"min": 10, "label": "Low Risk",       "color": "#2563eb"},
+    "MINIMAL":  {"min": 0,  "label": "Minimal Risk",   "color": "#16a34a"}
+  }
+}
