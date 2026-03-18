@@ -33,34 +33,31 @@ import requests
 import urllib3
 
 from core.findings import Finding, Severity, Confidence
+from core.module_manager import ModuleManager
 
 # Suppress SSL warnings for self-signed certs on local devices
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 logger = logging.getLogger(__name__)
 
-_WAPPALYZER_PATH = Path(__file__).parent.parent / "data" / "cache" / "wappalyzer_tech.json"
 _wappalyzer_data: Optional[Dict] = None  # lazy-loaded once
 
 
 def _load_wappalyzer() -> Dict:
-    """Load Wappalyzer fingerprint data from cache, once per process."""
+    """Load Wappalyzer fingerprint data via ModuleManager, once per process.
+
+    Priority: wappalyzer-full > wappalyzer-mini > empty dict.
+    """
     global _wappalyzer_data
     if _wappalyzer_data is not None:
         return _wappalyzer_data
-    if not _WAPPALYZER_PATH.exists():
-        _wappalyzer_data = {}
-        return _wappalyzer_data
     try:
-        with open(_WAPPALYZER_PATH, "r", encoding="utf-8") as f:
-            raw = json.load(f)
-        # enthec/webappanalyzer format: top-level keys are tech names
-        # Some builds wrap in {"technologies": {...}}
-        if "technologies" in raw:
-            _wappalyzer_data = raw["technologies"]
+        mm = ModuleManager()
+        _wappalyzer_data = mm.get_wappalyzer_data()
+        if _wappalyzer_data:
+            logger.debug(f"Wappalyzer: loaded {len(_wappalyzer_data)} technology signatures")
         else:
-            _wappalyzer_data = raw
-        logger.debug(f"Wappalyzer: loaded {len(_wappalyzer_data)} technology signatures")
+            _wappalyzer_data = {}
     except Exception as e:
         logger.debug(f"Wappalyzer load failed: {e}")
         _wappalyzer_data = {}

@@ -21,6 +21,7 @@ import re
 from typing import Dict, List, Optional, Tuple
 
 from core.findings import Finding, Severity, Confidence
+from core.module_manager import ModuleManager
 
 logger = logging.getLogger(__name__)
 
@@ -82,24 +83,19 @@ SNMP_PORT = 161
 SNMP_TIMEOUT = 3  # seconds per request
 SNMP_RETRIES = 1
 
-# Community strings to test — ordered by likelihood on home/office networks
-_COMMUNITY_STRINGS = [
-    "public",
-    "private",
-    "community",
-    "admin",
-    "default",
-    "guest",
-    "snmp",
-    "monitor",
-    "manager",
-    "SNMP_trap",
-    "router",
-    "switch",
-    "cisco",
-    "read",
-    "write",
-]
+# Community strings loaded from ModuleManager (extended list if snmp-community installed)
+# Falls back to built-in defaults if module not available.
+def _get_community_strings() -> List[str]:
+    """Load SNMP community strings from ModuleManager."""
+    try:
+        mm = ModuleManager()
+        return mm.get_snmp_communities()
+    except Exception:
+        return [
+            "public", "private", "community", "admin", "default",
+            "guest", "snmp", "monitor", "manager", "SNMP_trap",
+            "router", "switch", "cisco", "read", "write",
+        ]
 
 # Standard OIDs
 _OID_SYSDESCR   = "1.3.6.1.2.1.1.1.0"
@@ -183,7 +179,8 @@ def check_snmp(host: str, port: int = SNMP_PORT, timeout: float = 5.0) -> List[F
     accessible_communities: List[Tuple[str, str]] = []  # (community, sysdescr)
 
     # ---- Test community strings ----
-    for community in _COMMUNITY_STRINGS:
+    community_strings = _get_community_strings()
+    for community in community_strings:
         sysdescr = _test_community(host, community)
         if sysdescr:
             accessible_communities.append((community, sysdescr))

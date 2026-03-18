@@ -36,6 +36,7 @@ from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
 from core.findings import Finding, Severity, Confidence
+from core.module_manager import ModuleManager
 
 logger = logging.getLogger(__name__)
 
@@ -389,32 +390,44 @@ def _compute_ja3s(version: int, cipher: int, extensions: List[int]) -> str:
 
 
 def _load_ja3_signatures() -> Dict[str, Dict]:
-    """Load JA3/JA3S signatures from cache.
+    """Load JA3/JA3S signatures via ModuleManager, falling back to direct file.
 
     Returns:
         dict mapping md5_hash -> {"App": name, "Desc": description}
         Empty dict if file not found or malformed.
     """
-    if not _JA3_DB_PATH.exists():
-        return {}
+    raw = None
     try:
-        with open(_JA3_DB_PATH, encoding="utf-8") as f:
-            raw = json.load(f)
-        # Handle list format: [{"md5": "...", "App": "...", "Desc": "..."}, ...]
-        if isinstance(raw, list):
-            return {
-                entry["md5"]: {"App": entry.get("App", ""), "Desc": entry.get("Desc", "")}
-                for entry in raw
-                if isinstance(entry, dict) and "md5" in entry
-            }
-        # Handle dict format: {"hash": {"App": "...", "Desc": "..."}, ...}
-        if isinstance(raw, dict):
-            return {
-                k: v if isinstance(v, dict) else {"App": str(v), "Desc": ""}
-                for k, v in raw.items()
-            }
-    except Exception as e:
-        logger.debug(f"Failed to load JA3 signatures: {e}")
+        mm = ModuleManager()
+        raw = mm.get_ja3_signatures()
+    except Exception:
+        pass
+
+    # Fallback to direct file read
+    if raw is None and _JA3_DB_PATH.exists():
+        try:
+            with open(_JA3_DB_PATH, encoding="utf-8") as f:
+                raw = json.load(f)
+        except Exception as e:
+            logger.debug(f"Failed to load JA3 signatures: {e}")
+            return {}
+
+    if raw is None:
+        return {}
+
+    # Handle list format: [{"md5": "...", "App": "...", "Desc": "..."}, ...]
+    if isinstance(raw, list):
+        return {
+            entry["md5"]: {"App": entry.get("App", ""), "Desc": entry.get("Desc", "")}
+            for entry in raw
+            if isinstance(entry, dict) and "md5" in entry
+        }
+    # Handle dict format: {"hash": {"App": "...", "Desc": "..."}, ...}
+    if isinstance(raw, dict):
+        return {
+            k: v if isinstance(v, dict) else {"App": str(v), "Desc": ""}
+            for k, v in raw.items()
+        }
     return {}
 
 

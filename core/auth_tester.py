@@ -30,6 +30,7 @@ import requests
 from requests.auth import HTTPBasicAuth, HTTPDigestAuth
 
 from config.settings import Settings
+from core.module_manager import ModuleManager
 
 logger = logging.getLogger(__name__)
 
@@ -195,6 +196,7 @@ class AuthTester:
         """
         self.settings = settings or Settings()
         self.enabled = enabled
+        self.module_manager = ModuleManager()
         self.credentials_db = self._load_credentials_db()
 
         if enabled:
@@ -227,24 +229,51 @@ class AuthTester:
     ) -> List[Tuple[str, str]]:
         """Get default credentials for a device type.
 
+        Uses ModuleManager for vendor-aware credential selection:
+        1. If vendor is known, get vendor-specific credentials first
+        2. Then add generic/universal defaults
+        3. Falls back to built-in credentials_db if no modules installed
+
         Args:
-            device_type: Device manufacturer/type (e.g., "TP-Link", "ASUS")
+            device_type: Device manufacturer/type (e.g., "TP-Link", "ASUS", "Hikvision")
 
         Returns:
             List of (username, password) tuples
         """
         credentials = []
+        seen = set()
 
+        # Try ModuleManager first (external data sources)
+        module_creds = self.module_manager.get_credentials(vendor=device_type)
+        if module_creds:
+            for entry in module_creds:
+                pair = (entry.get("username", ""), entry.get("password", ""))
+                if pair not in seen and (pair[0] or pair[1]):
+                    seen.add(pair)
+                    credentials.append(pair)
+            logger.debug(
+                f"ModuleManager returned {len(credentials)} credentials "
+                f"for vendor={device_type!r}"
+            )
+            return credentials
+
+        # Fallback to built-in credentials_db (data/default_credentials.json)
         if device_type in self.credentials_db.get("credentials", {}):
             creds = self.credentials_db["credentials"][device_type]
             username = creds.get("username", "admin")
             for password in creds.get("passwords", []):
-                credentials.append((username, password))
+                pair = (username, password)
+                if pair not in seen:
+                    seen.add(pair)
+                    credentials.append(pair)
 
         generic = self.credentials_db.get("generic", {})
         for username in generic.get("common_usernames", ["admin"]):
             for password in generic.get("common_passwords", ["admin"]):
-                credentials.append((username, password))
+                pair = (username, password)
+                if pair not in seen:
+                    seen.add(pair)
+                    credentials.append(pair)
 
         return credentials
 

@@ -61,6 +61,7 @@ from core.baseline import BaselineManager
 from core.risk_scorer import RiskScorer
 from core.scan_history import ScanHistory
 from core.update_manager import UpdateManager
+from core.module_manager import ModuleManager, MODULE_REGISTRY
 from eol.checker import EOLChecker, EOLStatus, EOLStatusLevel
 from eol.cache import CacheManager
 from ui.menu import Menu
@@ -1398,6 +1399,19 @@ Examples:
         help='EOL database size for --setup: mini (~25 products), normal (~55), large (~90). Default: normal'
     )
 
+    parser.add_argument(
+        '--modules',
+        action='store_true',
+        help='Show status of all downloadable data modules and exit'
+    )
+
+    parser.add_argument(
+        '--download',
+        metavar='MODULE',
+        default=None,
+        help='Download a data module (e.g. credentials-full, snmp-community, or "all")'
+    )
+
     return parser
 
 
@@ -1504,7 +1518,7 @@ def run_setup_wizard(db_size: str = "normal") -> int:
     console.print("This will prepare NetWatch for first use.\n")
 
     # ---- Step 1: Check system dependencies ----
-    console.print("[bold]Step 1/4: Checking system dependencies[/bold]")
+    console.print("[bold]Step 1/6: Checking system dependencies[/bold]")
     all_ok = True
 
     py_version = sys.version_info
@@ -1543,7 +1557,7 @@ def run_setup_wizard(db_size: str = "normal") -> int:
         return 1
 
     # ---- Step 2: Install Python packages ----
-    console.print("\n[bold]Step 2/4: Installing Python packages[/bold]")
+    console.print("\n[bold]Step 2/6: Installing Python packages[/bold]")
     req_path = Path(__file__).parent / "requirements.txt"
     try:
         result = subprocess.run(
@@ -1571,7 +1585,7 @@ def run_setup_wizard(db_size: str = "normal") -> int:
         return 0
 
     # ---- Step 3: Download EOL cache ----
-    console.print(f"\n[bold]Step 3/4: Downloading EOL data[/bold] [dim](db={db_size})[/dim]")
+    console.print(f"\n[bold]Step 3/6: Downloading EOL data[/bold] [dim](db={db_size})[/dim]")
     try:
         import requests as req_lib
         from eol.product_map import NOT_TRACKED_PRODUCTS
@@ -1620,7 +1634,7 @@ def run_setup_wizard(db_size: str = "normal") -> int:
         console.print(f"  [yellow]![/yellow] EOL download error: {e}")
 
     # ---- Step 4: Download CVE cache (common product defaults) ----
-    console.print("\n[bold]Step 4/4: Downloading CVE data[/bold]")
+    console.print("\n[bold]Step 4/6: Downloading CVE data[/bold]")
     console.print("  [dim]Note: GitHub Advisory Database clone is skipped (too large).[/dim]")
     console.print("  [dim]Using OSV.dev API (no key required, no rate limits).[/dim]")
     try:
@@ -1671,13 +1685,49 @@ def run_setup_wizard(db_size: str = "normal") -> int:
     except Exception as e:
         console.print(f"  [yellow]![/yellow] CVE download error: {e}")
 
+    # ---- Step 5: Download default modules (credentials-mini, wappalyzer-mini) ----
+    console.print("\n[bold]Step 5/6: Downloading default data modules[/bold]")
+    try:
+        mm = ModuleManager()
+        for mod_name in ("credentials-mini", "wappalyzer-mini"):
+            ok = mm.download(mod_name, quiet=False)
+            if ok:
+                console.print(f"  [green]✓[/green] {mod_name}")
+            else:
+                console.print(f"  [yellow]![/yellow] {mod_name}: download failed (will use built-in fallback)")
+    except Exception as e:
+        console.print(f"  [yellow]![/yellow] Module download error: {e}")
+
+    # ---- Step 6: Show optional modules ----
+    console.print("\n[bold]Step 6/6: Optional modules available[/bold]")
+    optional_modules = [
+        (name, info) for name, info in MODULE_REGISTRY.items()
+        if not info["default"]
+    ]
+    for name, info in optional_modules:
+        console.print(f"  [dim]  {name:<24} {info['size_estimate']:>6}  {info['description']}[/dim]")
+    console.print("  Run: [bold]python3 netwatch.py --modules[/bold] to see all options")
+    console.print("  Run: [bold]python3 netwatch.py --download all[/bold] for full coverage")
+
     # ---- Done ----
     console.print("\n" + "=" * 60)
     console.print("[bold green]Setup complete.[/bold green]")
     status = cache.get_cache_status()
-    console.print(f"  EOL data:  {status['eol_cache_entries']} products cached")
-    console.print(f"  CVE data:  {status['cve_cache_entries']} product:version pairs cached")
-    console.print(f"  Cache dir: {status['cache_dir']}")
+    console.print(f"  EOL data:       {status['eol_cache_entries']} products cached")
+    console.print(f"  CVE data:       {status['cve_cache_entries']} product:version pairs cached")
+
+    # Show module summary
+    mm = ModuleManager()
+    cred_status = "installed" if mm.is_installed("credentials-mini") else "not installed"
+    wapp_status = "installed" if mm.is_installed("wappalyzer-mini") else "not installed"
+    console.print(f"  Credentials:    {cred_status}")
+    console.print(f"  Wappalyzer:     {wapp_status}")
+    console.print(f"  Cache dir:      {status['cache_dir']}")
+
+    console.print("\n  Optional modules available:")
+    console.print("  Run: [bold]python3 netwatch.py --modules[/bold] to see all options")
+    console.print("  Run: [bold]python3 netwatch.py --download all[/bold] for full coverage")
+
     console.print("\nNetWatch is ready. Run:")
     console.print("  [bold]python netwatch.py -i[/bold]           (interactive mode)")
     console.print("  [bold]python netwatch.py --target 192.168.1.0/24[/bold]  (direct scan)")
@@ -1767,7 +1817,17 @@ def run_update_cache() -> int:
         except Exception as e:
             console.print(f"  [yellow]![/yellow] CVE update failed: {e}")
 
-    console.print("\n[green]Cache update complete.[/green]")
+    # ---- Refresh expired modules ----
+    console.print("\n[cyan]Checking installed modules...[/cyan]")
+    try:
+        mm = ModuleManager()
+        results = mm.refresh_expired(quiet=False)
+        if not results:
+            console.print("  [dim]No modules installed yet. Run --download <module> to install.[/dim]")
+    except Exception as e:
+        console.print(f"  [yellow]![/yellow] Module refresh error: {e}")
+
+    console.print("\n[green]All modules up to date.[/green]")
     status = cache.get_cache_status()
     console.print(f"  EOL:  {status['eol_cache_entries']} products | age: {status['eol_cache_age_days']} days")
     console.print(f"  CVE:  {status['cve_cache_entries']} pairs    | age: {status['cve_cache_age_days']} days")
@@ -1834,8 +1894,22 @@ def main() -> int:
         return mgr.update_tool()
 
     if args.update_cache:
-        mgr = UpdateManager()
-        mgr.update_cache(quiet=getattr(args, 'quiet', False))
+        return run_update_cache()
+
+    if args.modules:
+        mm = ModuleManager()
+        mm.show_modules()
+        return 0
+
+    if args.download:
+        mm = ModuleManager()
+        if args.download.lower() == "all":
+            count = mm.download_all()
+            print(f"\n{count} modules downloaded.")
+        else:
+            success = mm.download(args.download)
+            if not success:
+                return 1
         return 0
 
     if args.cache_status:
