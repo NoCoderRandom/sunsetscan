@@ -327,60 +327,33 @@ PRODUCT_MAP = {
     "aspnet": "aspnet-core",
     "powershell": "powershell",
 
-    # Security Tools
-    "suricata": "suricata",
-    "snort": "snort",
+    # Security Tools - additional
     "wazuh": "wazuh",
     "clamav": "clamav",
     "fail2ban": "fail2ban",
 
-    # VoIP
-    "asterisk": "asterisk",
-    "freepbx": "freepbx",
-
-    # Smart Home / IoT
-    "home assistant": "home-assistant",
-    "homeassistant": "home-assistant",
-    "node-red": "node-red",
-    "nodered": "node-red",
+    # Smart Home / IoT - additional
     "esphome": "esphome",
 
-    # NAS / Storage
-    "synology": "synology-dsm",
-    "synology dsm": "synology-dsm",
-    "dsm": "synology-dsm",
-    "qnap": "qnap-qts",
-    "qts": "qnap-qts",
+    # NAS / Storage - additional
     "freenas": "freenas",
     "truenas": "freenas",
     "openmediavault": "openmediavault",
 
-    # Virtualization
-    "esxi": "vmware-esxi",
-    "vmware esxi": "vmware-esxi",
-    "vsphere": "vmware-vsphere",
-    "proxmox": "proxmox-ve",
-    "proxmox ve": "proxmox-ve",
+    # Virtualization - additional
     "xen": "xen",
     "xenserver": "xenserver",
 
-    # Network OS / Firewall
-    "pfsense": "pfsense",
+    # Network OS / Firewall - additional
     "opnsense": "opnsense",
-    "openwrt": "openwrt",
-    "routeros": "mikrotik",
-    "cisco ios xe": "cisco-ios-xe",
     "cisco nx-os": "cisco-nx-os",
     "cisco ios xr": "cisco-ios-xr",
-    "junos": "junos",
     "juniper": "junos",
     "fortios": "fortios",
     "fortigate": "fortios",
     "sonicwall": "sonicwall-sma",
 
-    # Java Application Servers
-    "tomcat": "tomcat",
-    "apache tomcat": "tomcat",
+    # Java Application Servers - additional
     "wildfly": "wildfly",
     "jboss": "wildfly",
 
@@ -393,12 +366,9 @@ PRODUCT_MAP = {
     "ruby on rails": "rails",
     "laravel": "laravel",
 
-    # Observability
-    "grafana": "grafana",
-    "prometheus": "prometheus",
+    # Observability - additional
     "influxdb": "influxdb",
     "loki": "loki",
-    "elasticsearch": "elasticsearch",
     "kibana": "kibana",
     "logstash": "logstash",
 

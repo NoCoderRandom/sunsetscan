@@ -52,7 +52,7 @@ from core.dns_checker import run_dns_checks
 from core.upnp_checker import run_upnp_checks
 from core.ftp_checker import run_ftp_checks
 from core.ssh_checker import run_ssh_checks
-from core.snmp_checker import run_snmp_checks, get_last_sysdescr, parse_sysdescr
+from core.snmp_checker import run_snmp_checks, get_last_sysdescr, parse_sysdescr, SNMP_PORT
 from core.smb_checker import run_smb_checks
 from core.mdns_checker import run_mdns_discovery
 from core.arp_checker import run_arp_checks
@@ -714,8 +714,7 @@ class NetWatch:
                             eol_status = self.eol_checker.check_version(product_slug, version)
                             if ip not in self.last_eol_data:
                                 self.last_eol_data[ip] = {}
-                            # Use port 161 (SNMP) as the key for this EOL entry
-                            self.last_eol_data[ip][161] = eol_status
+                            self.last_eol_data[ip][SNMP_PORT] = eol_status
                             logger.info(
                                 f"SNMP sysDescr EOL: {ip} {product_slug} {version} → {eol_status.level.value}"
                             )

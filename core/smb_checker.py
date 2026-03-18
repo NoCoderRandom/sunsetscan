@@ -31,6 +31,9 @@ logger = logging.getLogger(__name__)
 SMB_PORT = 445
 SMB_TIMEOUT = 5  # seconds
 
+# Default shares that are expected — only flag non-default ones as guest-accessible
+_DEFAULT_SHARE_NAMES = {'IPC$', 'ADMIN$', 'C$', 'D$', 'E$', 'PRINT$'}
+
 
 def _check_smb_connection(host: str, port: int = SMB_PORT, timeout: float = SMB_TIMEOUT):
     """Test if SMB port is reachable. Returns True/False."""
@@ -71,7 +74,7 @@ def _get_smb_info(host: str, timeout: float = SMB_TIMEOUT) -> Optional[dict]:
             info['signing'] = conn.isSigningRequired()
             # Determine SMB version from dialect
             dialect = info['dialect']
-            if dialect == 0x0300 or dialect == 0x0302 or dialect == 0x0311:
+            if dialect in (0x0300, 0x0302, 0x0311):
                 info['smb_version'] = 3
             elif dialect in (0x0200, 0x0202, 0x0210):
                 info['smb_version'] = 2
@@ -209,23 +212,6 @@ def _check_ms17_010(host: str, timeout: float = SMB_TIMEOUT) -> bool:
         uid = resp2[32:34]
 
         # Step 3: Tree Connect to IPC$
-        server_ip_enc = host.encode() + b'\x00'
-        ipc = b'\\\\' + server_ip_enc[:-1] + b'\\IPC$\x00'
-        tree_len = 15 + len(ipc)
-        tree_connect = (
-            b'\x00\x00' + tree_len.to_bytes(2, 'big') +
-            b'\xffSMB\x75'
-            b'\x00\x00\x00\x00\x18\x07\xc0'
-            b'\x00\x00\x00\x00\x00\x00\x00\x00'
-            b'\x00\x00\x00\x00' + uid +
-            b'\x00\x00'
-            b'\x04\xff\x00\x00\x00\x00\x01\x00'
-            b'\x1a\x00\x5c\x5c' +
-            host.encode() +
-            b'\x5c\x49\x50\x43\x24\x00\x3f\x3f'
-            b'\x3f\x3f\x3f\x00'
-        )
-        # Simpler tree connect packet
         tree_pkt = (
             b'\x00\x00\x00\x47\xffSMB\x75'
             b'\x00\x00\x00\x00\x18\x07\xc0'
@@ -429,8 +415,7 @@ def check_smb(host: str, port: int = SMB_PORT, timeout: float = SMB_TIMEOUT) -> 
     # ---- Anonymous share enumeration ----
     anon_shares = _enum_shares_anonymous(host, timeout)
     # Filter out normal default shares (IPC$, ADMIN$, C$ are expected)
-    default_shares = {'IPC$', 'ADMIN$', 'C$', 'D$', 'E$', 'PRINT$', 'print$'}
-    guest_shares = [s for s in anon_shares if s.upper() not in {d.upper() for d in default_shares}]
+    guest_shares = [s for s in anon_shares if s.upper() not in _DEFAULT_SHARE_NAMES]
     if guest_shares:
         findings.append(Finding(
             severity=Severity.HIGH,

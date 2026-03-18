@@ -21,8 +21,10 @@ Exports:
     run_mdns_discovery(timeout): Returns List[Finding]
 """
 
+import ipaddress
 import logging
 import socket
+import struct
 import threading
 import time
 from dataclasses import dataclass, field
@@ -63,6 +65,9 @@ _MDNS_SERVICE_TYPES = [
     ("_plex._tcp.local.", "Media Server", "Plex Media Server"),
     ("_jellyfin._tcp.local.", "Media Server", "Jellyfin"),
 ]
+
+# Pre-computed lookup: service_type (without trailing dot) -> category
+_MDNS_SERVICE_TYPE_MAP = {st.rstrip('.'): cat for st, cat, _ in _MDNS_SERVICE_TYPES}
 
 _MDNS_MULTICAST_ADDR = "224.0.0.251"
 _MDNS_PORT = 5353
@@ -220,7 +225,6 @@ def discover_mdns_devices(timeout: float = _DEFAULT_DISCOVERY_TIMEOUT) -> List[D
             sock.bind(('', _MDNS_PORT))
 
             # Join mDNS multicast group
-            import struct
             mreq = struct.pack('4sL', socket.inet_aton(_MDNS_MULTICAST_ADDR), socket.INADDR_ANY)
             try:
                 sock.setsockopt(socket.IPPROTO_IP, socket.IP_ADD_MEMBERSHIP, mreq)
@@ -315,15 +319,10 @@ def _discover_via_zeroconf(timeout: float = 6.0) -> List[DiscoveredDevice]:
                 try:
                     info = zc.get_service_info(type_, name, timeout=2000)
                     if info and info.addresses:
-                        import ipaddress
                         for addr_bytes in info.addresses:
                             try:
                                 ip = str(ipaddress.ip_address(addr_bytes))
-                                category = "Unknown"
-                                for st, cat, _ in _MDNS_SERVICE_TYPES:
-                                    if st.rstrip('.') == type_.rstrip('.'):
-                                        category = cat
-                                        break
+                                category = _MDNS_SERVICE_TYPE_MAP.get(type_.rstrip('.'), "Unknown")
                                 dev = DiscoveredDevice(
                                     ip=ip,
                                     hostname=info.server or name,

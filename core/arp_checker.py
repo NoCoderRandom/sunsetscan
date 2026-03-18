@@ -21,7 +21,6 @@ Findings produced:
 
 import json
 import logging
-import os
 from pathlib import Path
 from typing import Dict, List, Optional, Set, Tuple
 
@@ -39,9 +38,10 @@ _ARP_TIMEOUT = 2
 def _load_arp_baseline() -> Dict[str, str]:
     """Load saved ARP baseline {ip: mac} from disk. Returns {} if not found."""
     try:
-        if _BASELINE_FILE.exists():
-            with open(_BASELINE_FILE, "r", encoding="utf-8") as f:
-                return json.load(f)
+        with open(_BASELINE_FILE, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except FileNotFoundError:
+        pass
     except Exception as e:
         logger.debug(f"ARP baseline load failed: {e}")
     return {}
