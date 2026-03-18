@@ -17,11 +17,66 @@ Findings produced:
 """
 
 import logging
+import re
 from typing import Dict, List, Optional, Tuple
 
 from core.findings import Finding, Severity, Confidence
 
 logger = logging.getLogger(__name__)
+
+# Module-level cache: {host_ip: sysdescr_string} populated during check_snmp()
+_sysdescr_cache: Dict[str, str] = {}
+
+# Ordered list of (compiled_regex, product_slug) for sysDescr parsing.
+# Each pattern tries to extract a version number from the match group 1.
+_SYSDESCR_PATTERNS: List[Tuple] = [
+    (re.compile(r'Synology\s+DiskStation\s+Manager\s+(\d+\.\d+(?:\.\d+)?)', re.I), 'synology-dsm'),
+    (re.compile(r'\bDSM\s+(\d+\.\d+(?:\.\d+)?)', re.I), 'synology-dsm'),
+    (re.compile(r'RouterOS\s+(\d+\.\d+(?:\.\d+)?)', re.I), 'mikrotik'),
+    (re.compile(r'pfSense\s+(\d+\.\d+(?:\.\d+)?)', re.I), 'pfsense'),
+    (re.compile(r'Cisco\s+IOS(?:\s+Software)?.*?Version\s+(\d+\.\d+)', re.I), 'cisco-ios-xe'),
+    (re.compile(r'VMware\s+ESXi\s+(\d+\.\d+(?:\.\d+)?)', re.I), 'vmware-esxi'),
+    (re.compile(r'QTS\s+(\d+\.\d+(?:\.\d+)?)', re.I), 'qnap-qts'),
+    (re.compile(r'OpenWrt\s+(\d+\.\d+(?:\.\d+)?)', re.I), 'openwrt'),
+    (re.compile(r'Proxmox\s+VE\s+(\d+\.\d+(?:\.\d+)?)', re.I), 'proxmox-ve'),
+    (re.compile(r'Juniper\s+Networks.*?JUNOS\s+(\d+\.\d+)', re.I), 'junos'),
+    (re.compile(r'Ubuntu\s+(\d+\.\d+)', re.I), 'ubuntu'),
+    (re.compile(r'Debian\s+GNU/Linux\s+(\d+)', re.I), 'debian'),
+    (re.compile(r'FreeBSD\s+(\d+\.\d+)', re.I), 'freebsd'),
+    (re.compile(r'CentOS\s+(?:Linux\s+)?(\d+)', re.I), 'centos'),
+    (re.compile(r'Red\s+Hat\s+Enterprise\s+Linux\s+(?:Server\s+)?(\d+)', re.I), 'rhel'),
+]
+
+
+def parse_sysdescr(sysdescr: str) -> Optional[Tuple[str, str]]:
+    """Parse a sysDescr string and return (product_slug, version) or None.
+
+    Tries each pattern in _SYSDESCR_PATTERNS in order.  Returns the first
+    match found, or None if no known firmware/OS pattern is recognised.
+
+    Args:
+        sysdescr: Raw SNMP sysDescr value.
+
+    Returns:
+        (product_slug, version) tuple, or None.
+    """
+    if not sysdescr:
+        return None
+    for pattern, product_slug in _SYSDESCR_PATTERNS:
+        m = pattern.search(sysdescr)
+        if m:
+            version = m.group(1).strip()
+            logger.debug(f"sysDescr parsed: slug={product_slug!r} version={version!r} from {sysdescr[:80]!r}")
+            return product_slug, version
+    return None
+
+
+def get_last_sysdescr(host: str) -> Optional[str]:
+    """Return the most-recently-seen sysDescr for a host (or None).
+
+    Populated automatically by check_snmp() when SNMP access succeeds.
+    """
+    return _sysdescr_cache.get(host)
 
 SNMP_PORT = 161
 SNMP_TIMEOUT = 3  # seconds per request
@@ -139,6 +194,8 @@ def check_snmp(host: str, port: int = SNMP_PORT, timeout: float = 5.0) -> List[F
 
     # ---- Use first accessible community to gather more info ----
     first_community, first_sysdescr = accessible_communities[0]
+    # Cache the sysDescr so callers can retrieve it for EOL parsing
+    _sysdescr_cache[host] = first_sysdescr
     sysname = _snmp_get(host, first_community, _OID_SYSNAME) or ""
     syslocation = _snmp_get(host, first_community, _OID_SYSLOCATION) or ""
 

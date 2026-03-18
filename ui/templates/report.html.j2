@@ -247,6 +247,34 @@
   .diff-removed { color: #dc2626; }
   .diff-changed { color: #d97706; }
 
+  /* ===== FIXED ISSUES (GREEN) ===== */
+  .fixed-section {
+    background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 8px;
+    padding: 16px 20px; margin-top: 16px;
+  }
+  .fixed-title { color: #166534; font-weight: 700; font-size: 0.85rem; margin-bottom: 8px; }
+  .fixed-item { color: #15803d; font-size: 0.82rem; padding: 2px 0; }
+
+  /* ===== NETWORK TOPOLOGY ===== */
+  .topology-grid { display: flex; flex-wrap: wrap; gap: 16px; margin-top: 12px; }
+  .topo-device {
+    background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 10px;
+    padding: 14px 18px; min-width: 180px; max-width: 240px;
+    display: flex; flex-direction: column; gap: 4px;
+  }
+  .topo-device.gateway { border-color: #3b82f6; background: #eff6ff; }
+  .topo-device-ip { font-family: monospace; font-weight: 700; font-size: 0.9rem; color: #0f172a; }
+  .topo-device-name { font-size: 0.78rem; color: #6b7280; }
+  .topo-device-ports { font-size: 0.72rem; color: #9ca3af; margin-top: 4px; }
+  .topo-device-badge { font-size: 0.68rem; font-weight: 700; padding: 1px 6px; border-radius: 4px; width: fit-content; }
+
+  /* ===== POSTURE COLORS ===== */
+  .posture-critical { color: #dc2626; }
+  .posture-high     { color: #ea580c; }
+  .posture-medium   { color: #d97706; }
+  .posture-low      { color: #2563eb; }
+  .posture-clean    { color: #059669; }
+
   /* ===== PRINT ===== */
   @media print {
     body { background: #fff; }
@@ -328,7 +356,9 @@
   <div class="exec-summary">
     <div class="exec-summary-title">&#128196; Executive Summary</div>
     {% if executive_summary %}
-    <div class="exec-summary-headline">{{ executive_summary.headline }}</div>
+    <div class="exec-summary-headline {% if executive_summary.posture %}posture-{{ executive_summary.posture }}{% endif %}">
+      {{ executive_summary.headline }}
+    </div>
     <div class="exec-summary-body">
       <p>{{ executive_summary.overview }}</p>
       {% if executive_summary.top_issues %}
@@ -342,6 +372,21 @@
       <p style="margin-top:8px;"><strong>Recommended next step:</strong> {{ executive_summary.recommendation }}</p>
       {% endif %}
     </div>
+
+    {% if executive_summary.fixed_count and executive_summary.fixed_count > 0 %}
+    <div class="fixed-section">
+      <div class="fixed-title">&#10003; {{ executive_summary.fixed_count }} issue(s) resolved since last scan</div>
+      {% if scan_diff and scan_diff.resolved_findings %}
+        {% for finding in scan_diff.resolved_findings[:5] %}
+        <div class="fixed-item">&#10003; {{ finding }}</div>
+        {% endfor %}
+        {% if scan_diff.resolved_findings|length > 5 %}
+        <div class="fixed-item" style="color:#6b7280;">...and {{ scan_diff.resolved_findings|length - 5 }} more</div>
+        {% endif %}
+      {% endif %}
+    </div>
+    {% endif %}
+
     {% else %}
     <div class="exec-summary-body">
       <p>Scan complete. {{ metadata.hosts_up }} device(s) found online across {{ metadata.total_hosts }} scanned.
@@ -360,13 +405,18 @@
     <div style="margin-top:16px;">
       <div class="exec-summary-title" style="margin-bottom:8px;">&#127919; Device Risk Scores</div>
       <div class="risk-row">
-        {% for ip, risk in risk_scores.items() %}
+        {% for ip, risk in risk_scores.items() | sort(attribute='1.score', reverse=True) %}
         <div class="risk-card">
           <div class="risk-score-circle" style="background:{{ risk.color }};">{{ risk.score }}</div>
           <div>
             <div class="risk-ip">{{ ip }}</div>
             <div class="risk-label">{{ risk.label }}</div>
             <div class="risk-label">{{ risk.finding_count }} finding(s)</div>
+            {% if risk.top_findings %}
+            <div class="risk-label" style="margin-top:2px;">
+              Top: {% for f in risk.top_findings[:2] %}{{ f.title[:40] }}{% if not loop.last %}, {% endif %}{% endfor %}
+            </div>
+            {% endif %}
           </div>
         </div>
         {% endfor %}
@@ -382,11 +432,48 @@
         <div>{{ line }}</div>
         {% endfor %}
         <div style="font-size:0.75rem;color:#9ca3af;margin-top:6px;">
-          Compared: {{ scan_diff.older_ts[:19] }} → {{ scan_diff.newer_ts[:19] }}
+          Compared: {{ scan_diff.older_ts[:19] }} &#8594; {{ scan_diff.newer_ts[:19] }}
         </div>
       </div>
     </div>
     {% endif %}
+  </div>
+
+  <!-- ====== NETWORK TOPOLOGY ====== -->
+  <div class="section">
+    <div class="section-title">&#127760; Network Topology</div>
+    <div class="topology-grid">
+      {% for host_ip, host in hosts.items() %}
+      {% if host.state == 'up' %}
+      {% set is_gw = host_ip.endswith('.1') or host_ip.endswith('.254') %}
+      <div class="topo-device {% if is_gw %}gateway{% endif %}">
+        <div class="topo-device-ip">{{ host_ip }}</div>
+        {% if host.hostname %}<div class="topo-device-name">{{ host.hostname }}</div>{% endif %}
+        {% if host.vendor %}<div class="topo-device-name">{{ host.vendor }}</div>{% endif %}
+        {% if host.os_guess %}<div class="topo-device-name" style="font-style:italic;">{{ host.os_guess[:40] }}</div>{% endif %}
+        {% if host.mac %}<div class="topo-device-name" style="font-family:monospace;">{{ host.mac }}</div>{% endif %}
+        {% if is_gw %}
+        <div class="topo-device-badge sev-info">Gateway</div>
+        {% endif %}
+        {% set hcounts = host_finding_counts.get(host_ip, {}) %}
+        {% if hcounts.get('CRITICAL', 0) > 0 %}
+          <div class="topo-device-badge sev-critical">{{ hcounts.CRITICAL }} Critical</div>
+        {% elif hcounts.get('HIGH', 0) > 0 %}
+          <div class="topo-device-badge sev-high">{{ hcounts.HIGH }} High</div>
+        {% elif hcounts.get('MEDIUM', 0) > 0 %}
+          <div class="topo-device-badge sev-medium">{{ hcounts.MEDIUM }} Medium</div>
+        {% else %}
+          <div class="topo-device-badge sev-info">No issues</div>
+        {% endif %}
+        {% if risk_scores and host_ip in risk_scores %}
+        {% set risk = risk_scores[host_ip] %}
+        <div class="topo-device-ports">Risk: {{ risk.score }}/100 — {{ risk.label }}</div>
+        {% endif %}
+        <div class="topo-device-ports">{{ host.ports | length }} open port(s): {% for pn in host.ports.keys() | sort | list %}{{ pn }}{% if not loop.last %}, {% endif %}{% endfor %}</div>
+      </div>
+      {% endif %}
+      {% endfor %}
+    </div>
   </div>
 
   <!-- ====== FINDINGS SUMMARY TABLE ====== -->
@@ -536,6 +623,8 @@
                       <span class="eol-warning">Warning: {{ eol.days_remaining }}d remaining</span>
                     {% elif eol.level.value == 'OK' %}
                       <span class="eol-ok">Supported</span>
+                    {% elif eol.level.value == 'N/A' %}
+                      <span class="eol-unknown" title="{{ eol.message }}">N/A</span>
                     {% else %}
                       <span class="eol-unknown">Unknown</span>
                     {% endif %}

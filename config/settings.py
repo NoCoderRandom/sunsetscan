@@ -42,7 +42,7 @@ class Settings:
         upnp_discovery_timeout: Timeout for SSDP UPnP discovery (seconds)
     """
     tool_name: str = "NetWatch"
-    version: str = "1.3.0"
+    version: str = "1.4.0"
     banner_timeout: int = 3
     cache_ttl_hours: int = 24       # legacy — used by eol/cache.py
     cve_cache_ttl_days: int = 7     # CVE data refreshed weekly
@@ -158,6 +158,11 @@ EOL_STATUS = {
         "label": "UNKNOWN",
         "color": "dim",
         "description": "EOL status cannot be determined",
+    },
+    "N/A": {
+        "label": "N/A",
+        "color": "dim",
+        "description": "Product not tracked by endoflife.date",
     },
 }
 

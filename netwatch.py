@@ -52,7 +52,10 @@ from core.dns_checker import run_dns_checks
 from core.upnp_checker import run_upnp_checks
 from core.ftp_checker import run_ftp_checks
 from core.ssh_checker import run_ssh_checks
-from core.snmp_checker import run_snmp_checks
+from core.snmp_checker import run_snmp_checks, get_last_sysdescr, parse_sysdescr
+from core.smb_checker import run_smb_checks
+from core.mdns_checker import run_mdns_discovery
+from core.arp_checker import run_arp_checks
 from core.baseline import BaselineManager
 from core.risk_scorer import RiskScorer
 from core.scan_history import ScanHistory
@@ -683,6 +686,14 @@ class NetWatch:
                 except Exception as e:
                     logger.debug(f"SSH check error for {ip}: {e}")
 
+                # ---- SMB deep analysis ----
+                progress.update(task, description=f"[cyan]SMB analysis: {ip}")
+                try:
+                    smb_findings = run_smb_checks(ip, open_ports)
+                    self.finding_registry.add_all(smb_findings)
+                except Exception as e:
+                    logger.debug(f"SMB check error for {ip}: {e}")
+
                 # ---- SNMP checks ----
                 progress.update(task, description=f"[cyan]SNMP checks: {ip}")
                 try:
@@ -690,6 +701,26 @@ class NetWatch:
                     self.finding_registry.add_all(snmp_findings)
                 except Exception as e:
                     logger.debug(f"SNMP check error for {ip}: {e}")
+
+                # ---- SNMP sysDescr → EOL pipeline ----
+                # If SNMP returned a sysDescr, parse it for firmware version
+                # and feed directly into EOL checker (bypasses nmap version detection).
+                try:
+                    sysdescr = get_last_sysdescr(ip)
+                    if sysdescr:
+                        parsed = parse_sysdescr(sysdescr)
+                        if parsed:
+                            product_slug, version = parsed
+                            eol_status = self.eol_checker.check_version(product_slug, version)
+                            if ip not in self.last_eol_data:
+                                self.last_eol_data[ip] = {}
+                            # Use port 161 (SNMP) as the key for this EOL entry
+                            self.last_eol_data[ip][161] = eol_status
+                            logger.info(
+                                f"SNMP sysDescr EOL: {ip} {product_slug} {version} → {eol_status.level.value}"
+                            )
+                except Exception as e:
+                    logger.debug(f"SNMP sysDescr EOL pipeline error for {ip}: {e}")
 
                 # ---- CVE lookup for each detected service version ----
                 progress.update(task, description=f"[cyan]CVE lookup: {ip}")
@@ -736,6 +767,31 @@ class NetWatch:
                 self.finding_registry.add_all(upnp_findings)
             except Exception as e:
                 logger.debug(f"UPnP check error: {e}")
+
+            # ---- mDNS/Zeroconf discovery ----
+            progress.update(task, description="[cyan]mDNS discovery...")
+            try:
+                known_ips = set(scan_result.hosts.keys())
+                mdns_findings = run_mdns_discovery(
+                    timeout=self.settings.upnp_discovery_timeout * 2,
+                    known_hosts=known_ips,
+                )
+                self.finding_registry.add_all(mdns_findings)
+            except Exception as e:
+                logger.debug(f"mDNS discovery error: {e}")
+
+            # ---- ARP spoofing detection ----
+            if self.last_target:
+                progress.update(task, description="[cyan]ARP spoofing detection...")
+                try:
+                    arp_findings = run_arp_checks(
+                        network=self.last_target,
+                        save_baseline=True,
+                        timeout=2.0,
+                    )
+                    self.finding_registry.add_all(arp_findings)
+                except Exception as e:
+                    logger.debug(f"ARP check error: {e}")
 
             # ---- Baseline comparison (rogue devices) ----
             if self.baseline_manager.exists():
@@ -984,6 +1040,8 @@ class NetWatch:
                     stats['warning'] += 1
                 elif eol_status.level.value == 'OK':
                     stats['ok'] += 1
+                elif eol_status.level.value == 'N/A':
+                    pass  # Not tracked — excluded from UNKNOWN count
                 else:
                     stats['unknown'] += 1
         

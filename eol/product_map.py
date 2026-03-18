@@ -56,6 +56,22 @@ NOT_TRACKED_PRODUCTS = {
     "mikrotik",
     "tplink",
     "asus",
+    # Network devices / cameras not tracked by endoflife.date
+    "dd-wrt",
+    "asuswrt-merlin",
+    "hikvision",
+    "dahua",
+    "axis",
+    "foscam",
+    "amcrest",
+    # Smart home not tracked
+    "esphome",
+    "openmediavault",
+    # Enterprise platforms not individually tracked
+    "sonicwall-sma",
+    "fortios",
+    "xen",
+    "xenserver",
     # Generic nmap service names — these are protocol/port identifiers,
     # not product names with EOL dates. Return N/A instead of UNKNOWN.
     "http",
@@ -235,6 +251,47 @@ PRODUCT_MAP = {
     # MikroTik
     "mikrotik": "mikrotik",
     "routeros": "mikrotik",
+
+    # Synology DSM
+    "synology": "synology-dsm",
+    "synology dsm": "synology-dsm",
+    "synology diskstation": "synology-dsm",
+    "dsm": "synology-dsm",
+
+    # QNAP
+    "qnap": "qnap-qts",
+    "qts": "qnap-qts",
+
+    # Virtualization
+    "esxi": "vmware-esxi",
+    "vmware esxi": "vmware-esxi",
+    "vsphere": "vmware-vsphere",
+    "proxmox": "proxmox-ve",
+    "proxmox ve": "proxmox-ve",
+
+    # Network OS
+    "openwrt": "openwrt",
+    "ddwrt": "dd-wrt",
+    "dd-wrt": "dd-wrt",
+    "asuswrt-merlin": "asuswrt-merlin",
+
+    # Security Tools
+    "snort": "snort",
+    "suricata": "suricata",
+
+    # VoIP
+    "asterisk": "asterisk",
+    "freepbx": "freepbx",
+
+    # Smart Home
+    "home assistant": "home-assistant",
+    "homeassistant": "home-assistant",
+    "node-red": "node-red",
+    "nodered": "node-red",
+
+    # IP cameras
+    "hikvision": "hikvision",
+    "dahua": "dahua",
     
     # Message Queue
     "rabbitmq": "rabbitmq",
@@ -255,6 +312,123 @@ PRODUCT_MAP = {
     "consul": "consul",
     "vault": "vault",
     "jenkins": "jenkins",
+
+    # Microsoft Products
+    "exchange": "exchange-server",
+    "exchange server": "exchange-server",
+    "sharepoint": "sharepoint",
+    "sql server": "sql-server",
+    "mssql": "sql-server",
+    "iis": "iis",
+    "microsoft iis": "iis",
+    "dotnet": "dotnet",
+    ".net": "dotnet",
+    "asp.net": "aspnet-core",
+    "aspnet": "aspnet-core",
+    "powershell": "powershell",
+
+    # Security Tools
+    "suricata": "suricata",
+    "snort": "snort",
+    "wazuh": "wazuh",
+    "clamav": "clamav",
+    "fail2ban": "fail2ban",
+
+    # VoIP
+    "asterisk": "asterisk",
+    "freepbx": "freepbx",
+
+    # Smart Home / IoT
+    "home assistant": "home-assistant",
+    "homeassistant": "home-assistant",
+    "node-red": "node-red",
+    "nodered": "node-red",
+    "esphome": "esphome",
+
+    # NAS / Storage
+    "synology": "synology-dsm",
+    "synology dsm": "synology-dsm",
+    "dsm": "synology-dsm",
+    "qnap": "qnap-qts",
+    "qts": "qnap-qts",
+    "freenas": "freenas",
+    "truenas": "freenas",
+    "openmediavault": "openmediavault",
+
+    # Virtualization
+    "esxi": "vmware-esxi",
+    "vmware esxi": "vmware-esxi",
+    "vsphere": "vmware-vsphere",
+    "proxmox": "proxmox-ve",
+    "proxmox ve": "proxmox-ve",
+    "xen": "xen",
+    "xenserver": "xenserver",
+
+    # Network OS / Firewall
+    "pfsense": "pfsense",
+    "opnsense": "opnsense",
+    "openwrt": "openwrt",
+    "routeros": "mikrotik",
+    "cisco ios xe": "cisco-ios-xe",
+    "cisco nx-os": "cisco-nx-os",
+    "cisco ios xr": "cisco-ios-xr",
+    "junos": "junos",
+    "juniper": "junos",
+    "fortios": "fortios",
+    "fortigate": "fortios",
+    "sonicwall": "sonicwall-sma",
+
+    # Java Application Servers
+    "tomcat": "tomcat",
+    "apache tomcat": "tomcat",
+    "wildfly": "wildfly",
+    "jboss": "wildfly",
+
+    # Web Frameworks
+    "django": "django",
+    "flask": "flask",
+    "spring": "spring-framework",
+    "spring boot": "spring-boot",
+    "rails": "rails",
+    "ruby on rails": "rails",
+    "laravel": "laravel",
+
+    # Observability
+    "grafana": "grafana",
+    "prometheus": "prometheus",
+    "influxdb": "influxdb",
+    "loki": "loki",
+    "elasticsearch": "elasticsearch",
+    "kibana": "kibana",
+    "logstash": "logstash",
+
+    # IaC / DevOps
+    "ansible": "ansible",
+    "terraform": "terraform",
+
+    # Collaboration / CMS
+    "confluence": "confluence",
+    "jira": "jira",
+    "nextcloud": "nextcloud",
+    "owncloud": "owncloud",
+    "moodle": "moodle",
+    "mediawiki": "mediawiki",
+    "discourse": "discourse",
+    "mattermost": "mattermost",
+
+    # Mobile / OS
+    "android": "android",
+    "ios": "ios",
+
+    # Crypto / TLS
+    "openssl": "openssl",
+
+    # IP Cameras (not on endoflife.date — mapped but in NOT_TRACKED)
+    "hikvision": "hikvision",
+    "dahua": "dahua",
+    "axis": "axis",
+    "foscam": "foscam",
+    "amcrest": "amcrest",
 }
 
 

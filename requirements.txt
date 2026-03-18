@@ -31,3 +31,12 @@ paramiko>=3.0.0
 
 # SNMP community string testing and sysDescr firmware extraction
 pysnmp>=6.0.0
+
+# SMB deep analysis — SMBv1 detection, EternalBlue check, share enumeration
+impacket>=0.11.0
+
+# mDNS/Zeroconf device discovery — finds Apple, IoT, Chromecast devices
+zeroconf>=0.47.0
+
+# ARP spoofing detection — raw packet sending for ARP table mapping
+scapy>=2.5.0

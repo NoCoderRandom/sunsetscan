@@ -56,7 +56,7 @@ python netwatch.py --target 192.168.1.0/24 --profile PING
 ```
 192.168.1.0/24          # CIDR notation (256 addresses)
 192.168.1.*             # Wildcard (same as /24)
-10.0.0.*            # Any third octet
+192.168.1.*            # Any third octet
 192.168.1.1-100         # Range in last octet
 192.168.1.1,5,10        # Specific IPs
 192.168.1.1-50,100-150  # Multiple ranges

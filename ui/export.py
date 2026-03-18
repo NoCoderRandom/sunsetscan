@@ -296,7 +296,8 @@ class ReportExporter:
 
         # Build executive summary in plain English
         executive_summary = self._build_executive_summary(
-            counts, scan_result, risk_scores
+            counts, scan_result, risk_scores,
+            findings=findings, scan_diff=scan_diff,
         )
 
         return template.render(
@@ -313,57 +314,121 @@ class ReportExporter:
             executive_summary=executive_summary,
         )
 
-    def _build_executive_summary(self, counts: dict, scan_result, risk_scores) -> dict:
+    def _build_executive_summary(self, counts: dict, scan_result, risk_scores,
+                                   findings=None, scan_diff=None) -> dict:
         """Generate plain-English executive summary from scan data."""
         hosts_up = sum(1 for h in scan_result.hosts.values() if h.state == "up")
         total = sum(counts.values())
         c = counts.get("CRITICAL", 0)
         h = counts.get("HIGH", 0)
         m = counts.get("MEDIUM", 0)
+        lo = counts.get("LOW", 0)
 
+        # Determine network posture
         if c > 0:
-            headline = f"Immediate action required — {c} critical issue(s) found"
+            headline = f"Immediate action required — {c} critical issue(s) detected"
+            posture = "critical"
         elif h > 0:
-            headline = f"High-risk issues found — {h} item(s) need attention"
+            headline = f"High-risk issues found — {h} item(s) require prompt attention"
+            posture = "high"
         elif m > 0:
-            headline = f"Medium-risk issues found — network is partially secured"
+            headline = f"Moderate security posture — {m} medium-risk issue(s) identified"
+            posture = "medium"
         elif total > 0:
-            headline = "Minor issues found — network is mostly healthy"
+            headline = "Good security posture — only minor issues found"
+            posture = "low"
         else:
             headline = "Network appears secure — no significant issues found"
+            posture = "clean"
+
+        # Device breakdown
+        device_list = []
+        for ip, host in scan_result.hosts.items():
+            if host.state == "up":
+                label = host.vendor or host.os_guess or ip
+                device_list.append(f"{ip} ({label})" if label != ip else ip)
 
         overview = (
-            f"NetWatch scanned {hosts_up} device(s) and found {total} security finding(s) "
-            f"across the {scan_result.target} network."
+            f"NetWatch scanned {hosts_up} active device(s) on {scan_result.target} "
+            f"using the {scan_result.profile} profile and found {total} security finding(s). "
         )
+        if device_list:
+            overview += f"Devices online: {', '.join(device_list[:5])}"
+            if len(device_list) > 5:
+                overview += f" and {len(device_list) - 5} more"
+            overview += "."
 
         top_issues = []
         if c > 0:
-            top_issues.append(f"{c} critical finding(s) — fix these immediately")
+            top_issues.append(f"{c} critical finding(s) — requires immediate remediation")
         if h > 0:
-            top_issues.append(f"{h} high-severity finding(s) — fix within 7 days")
+            top_issues.append(f"{h} high-severity finding(s) — remediate within 7 days")
         if m > 0:
             top_issues.append(f"{m} medium-severity finding(s) — schedule for next maintenance window")
+        if lo > 0:
+            top_issues.append(f"{lo} low-severity finding(s) — address when convenient")
+
+        # Highlight specific critical/high finding types
+        if findings is not None:
+            from core.findings import Severity
+            crit_cats = {}
+            for f in findings.get_all():
+                if f.severity in (Severity.CRITICAL, Severity.HIGH):
+                    crit_cats[f.category] = crit_cats.get(f.category, 0) + 1
+            for cat, cnt in sorted(crit_cats.items(), key=lambda x: -x[1])[:3]:
+                top_issues.append(f"Category with most issues: {cat} ({cnt} finding(s))")
 
         if risk_scores:
             worst_device = max(risk_scores.values(), key=lambda r: r.score)
-            if worst_device.score >= 50:
+            if worst_device.score >= 25:
                 top_issues.append(
-                    f"Highest-risk device: {worst_device.host} ({worst_device.score}/100 — {worst_device.label})"
+                    f"Highest-risk device: {worst_device.host} — Risk score {worst_device.score}/100 ({worst_device.label})"
                 )
 
+        # Changes since last scan
+        fixed_count = 0
+        new_count = 0
+        if scan_diff:
+            try:
+                new_count = len(getattr(scan_diff, 'new_findings', []))
+                fixed_count = len(getattr(scan_diff, 'resolved_findings', []))
+            except Exception:
+                pass
+        if fixed_count > 0:
+            top_issues.append(f"{fixed_count} finding(s) resolved since last scan")
+        if new_count > 0:
+            top_issues.append(f"{new_count} new finding(s) since last scan")
+
         if c > 0:
-            recommendation = "Log in to the affected devices and change default credentials or apply patches today."
+            recommendation = (
+                "Immediately address critical findings: change default credentials, "
+                "disable SMBv1, and apply available security patches. "
+                "Isolate any device with a CRITICAL finding until remediated."
+            )
         elif h > 0:
-            recommendation = "Review high-severity findings and apply firmware updates or configuration changes within a week."
+            recommendation = (
+                "Review high-severity findings and apply firmware updates or configuration "
+                "changes within the week. Focus on SMB signing, EOL software, and open admin interfaces."
+            )
+        elif m > 0:
+            recommendation = (
+                "Schedule medium-severity remediations for the next maintenance window. "
+                "Review SSL/TLS configurations, disable unused services, and update firmware."
+            )
         else:
-            recommendation = "Continue monitoring and apply any available firmware updates on a regular schedule."
+            recommendation = (
+                "Network security posture is good. Continue monitoring for new devices, "
+                "apply firmware updates regularly, and re-scan monthly or after network changes."
+            )
 
         return {
             "headline": headline,
+            "posture": posture,
             "overview": overview,
             "top_issues": top_issues,
             "recommendation": recommendation,
+            "fixed_count": fixed_count,
+            "new_count": new_count,
         }
 
     def _legacy_html(self, scan_result: ScanResult, eol_data) -> str:

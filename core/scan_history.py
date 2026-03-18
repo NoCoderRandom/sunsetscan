@@ -145,7 +145,7 @@ class ScanHistory:
 
     Usage:
         history = ScanHistory()
-        history.save(scan_result, finding_registry, target="10.0.0.0/24")
+        history.save(scan_result, finding_registry, target="192.168.1.0/24")
 
         # List saved scans
         snaps = history.list_snapshots()

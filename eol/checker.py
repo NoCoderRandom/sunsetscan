@@ -42,6 +42,7 @@ class EOLStatusLevel(Enum):
     WARNING = "WARNING"
     OK = "OK"
     UNKNOWN = "UNKNOWN"
+    NOT_APPLICABLE = "N/A"
 
 
 @dataclass
@@ -274,12 +275,12 @@ class EOLChecker:
             EOLStatus with detailed information
         """
         # Validate inputs
-        if not product or not version:
+        if not product or not version or version == "unknown":
             return EOLStatus(
                 product=product or "unknown",
                 version=version or "unknown",
-                level=EOLStatusLevel.UNKNOWN,
-                message="Product or version not specified"
+                level=EOLStatusLevel.NOT_APPLICABLE,
+                message="Version not available for EOL check"
             )
 
         # Skip products we know are not tracked by endoflife.date
@@ -287,7 +288,7 @@ class EOLChecker:
             return EOLStatus(
                 product=product,
                 version=version,
-                level=EOLStatusLevel.UNKNOWN,
+                level=EOLStatusLevel.NOT_APPLICABLE,
                 message=f"N/A — {product} not tracked by endoflife.date"
             )
 
@@ -425,8 +426,8 @@ class EOLChecker:
             return EOLStatus(
                 product=product_slug,
                 version="unknown",
-                level=EOLStatusLevel.UNKNOWN,
-                message=f"Could not extract version from: {banner[:50]}..."
+                level=EOLStatusLevel.NOT_APPLICABLE,
+                message=f"Version not detectable from banner: {banner[:50]}..."
             )
         
         return self.check_version(product_slug, version)
