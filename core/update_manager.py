@@ -116,12 +116,13 @@ class UpdateManager:
     # ------------------------------------------------------------------
 
     def update_cache(self, quiet: bool = False) -> None:
-        """Refresh EOL and CVE intelligence caches."""
+        """Refresh EOL, CVE, Wappalyzer, and JA3 intelligence caches."""
         if not quiet:
             print("Refreshing intelligence caches...")
         self._update_eol_cache(quiet=quiet)
         self._update_cve_cache(quiet=quiet)
         self._update_wappalyzer_cache(quiet=quiet)
+        self._update_ja3_cache(quiet=quiet)
         self._save_meta()
         if not quiet:
             print("Cache refresh complete.")
@@ -229,6 +230,55 @@ class UpdateManager:
         except Exception as e:
             if not quiet:
                 print(f"    Wappalyzer update failed: {e}")
+
+    def _update_ja3_cache(self, quiet: bool = False) -> None:
+        """Download JA3 TLS fingerprint signatures from salesforce/ja3 GitHub.
+
+        The source file is a CSV: md5hash,"AppName"[,description]
+        We convert it to JSON list: [{"md5": "...", "App": "...", "Desc": "..."}, ...]
+        """
+        if not quiet:
+            print("  Updating JA3 signatures...")
+        target = _CACHE_DIR / "ja3_signatures.json"
+        # CSV file from salesforce/ja3 (the only available format in that repo)
+        url = (
+            "https://raw.githubusercontent.com/salesforce/ja3/master/lists/osx-nix-ja3.csv"
+        )
+        try:
+            import csv
+            import io
+            import requests
+            session = requests.Session()
+            session.headers.update({"User-Agent": "NetWatch/1.5.0"})
+            r = session.get(url, timeout=30)
+            if r.status_code != 200:
+                if not quiet:
+                    print(f"    JA3 signatures: HTTP {r.status_code} (skipped).")
+                return
+            # Parse CSV — skip copyright header lines until we hit a valid hash line
+            reader = csv.reader(io.StringIO(r.text))
+            entries = []
+            for row in reader:
+                if not row:
+                    continue
+                # Valid hash lines: first field is 32-char hex string
+                md5 = row[0].strip().strip('"')
+                if len(md5) == 32 and all(c in "0123456789abcdefABCDEF" for c in md5):
+                    app = row[1].strip().strip('"') if len(row) > 1 else ""
+                    desc = row[2].strip().strip('"') if len(row) > 2 else ""
+                    entries.append({"md5": md5.lower(), "App": app, "Desc": desc})
+            if entries:
+                with open(target, "w", encoding="utf-8") as f:
+                    json.dump(entries, f)
+                self._meta["ja3_last_updated"] = datetime.now(timezone.utc).isoformat()
+                if not quiet:
+                    print(f"    JA3 signatures updated ({len(entries)} entries).")
+            else:
+                if not quiet:
+                    print("    JA3 signatures: no valid entries found (skipped).")
+        except Exception as e:
+            if not quiet:
+                print(f"    JA3 signatures update failed: {e}")
 
     # ------------------------------------------------------------------
     # Cache status display

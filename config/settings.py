@@ -42,7 +42,7 @@ class Settings:
         upnp_discovery_timeout: Timeout for SSDP UPnP discovery (seconds)
     """
     tool_name: str = "NetWatch"
-    version: str = "1.4.0"
+    version: str = "1.5.0"
     banner_timeout: int = 3
     cache_ttl_hours: int = 24       # legacy — used by eol/cache.py
     cve_cache_ttl_days: int = 7     # CVE data refreshed weekly
@@ -67,6 +67,18 @@ class Settings:
             [21, 22, 23, 25, 53, 80, 110, 143, 443, 445, 993, 995, 3306, 3389, 5432, 8080, 8443]
         )
 
+
+# Masscan rate limits (packets per second) per scan profile.
+# masscan is optional — used only when installed (sudo apt install masscan).
+# Rates are conservative to avoid overwhelming home routers.
+# Hard cap of 5000 pps is enforced in core/port_scanner.py regardless of this value.
+MASSCAN_RATES: Dict[str, int] = {
+    "QUICK":   1000,   # Fast but safe for home networks
+    "FULL":    1000,   # Full scan — same rate as QUICK
+    "STEALTH":  100,   # Quiet scan — reduced noise footprint
+    "IOT":     1000,
+    "SMB":     1000,
+}
 
 # Scan profiles for nmap
 # Keys are profile names, values are nmap argument strings

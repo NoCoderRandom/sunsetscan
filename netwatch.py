@@ -38,6 +38,7 @@ from rich.progress import Progress
 
 from config.settings import Settings, SCAN_DESCRIPTIONS
 from core.scanner import NetworkScanner, ScanResult
+from core.port_scanner import PortScanOrchestrator
 from core.banner_grabber import BannerGrabber
 from core.http_fingerprinter import HttpFingerprinter
 from core.nse_scanner import NSEScanner
@@ -46,7 +47,7 @@ from core.network_utils import get_local_subnet, validate_cidr
 from core.findings import FindingRegistry, Finding, Severity
 from core.cache_manager import UnifiedCacheManager
 from core.cve_checker import CVEChecker, CVECacheBuilder
-from core.ssl_checker import run_ssl_checks
+from core.ssl_checker import run_ssl_checks, get_last_ja3s_match
 from core.web_checker import run_web_checks
 from core.dns_checker import run_dns_checks
 from core.upnp_checker import run_upnp_checks
@@ -134,7 +135,7 @@ class NetWatch:
         self.menu = Menu(settings=self.settings, console=self.console)
         
         # Initialize components
-        self.scanner = NetworkScanner(settings=self.settings)
+        self.scanner = PortScanOrchestrator(settings=self.settings)
         self.banner_grabber = BannerGrabber(settings=self.settings)
         self.nse_scanner = NSEScanner(settings=self.settings) if args.nse else None
         self.auth_tester = AuthTester(settings=self.settings, enabled=args.check_defaults)
@@ -646,7 +647,7 @@ class NetWatch:
                     _check_insecure_protocols(ip, open_ports)
                 )
 
-                # ---- SSL/TLS checks ----
+                # ---- SSL/TLS checks (includes JA3S fingerprinting) ----
                 progress.update(task, description=f"[cyan]SSL/TLS checks: {ip}")
                 try:
                     ssl_findings = run_ssl_checks(
@@ -656,6 +657,31 @@ class NetWatch:
                     self.finding_registry.add_all(ssl_findings)
                 except Exception as e:
                     logger.debug(f"SSL check error for {ip}: {e}")
+
+                # ---- JA3S match → EOL pipeline ----
+                # If a JA3S signature matched a known software (e.g. "nginx 1.18.0"),
+                # feed the product name and version into the EOL checker.
+                try:
+                    for port in open_ports:
+                        ja3s_match = get_last_ja3s_match(ip, port)
+                        if ja3s_match:
+                            app_name, app_desc = ja3s_match
+                            # Try to extract product slug and version from App string
+                            # App strings can look like "nginx/1.18.0" or "Apache httpd 2.4.41"
+                            parts = app_name.replace("/", " ").split()
+                            if len(parts) >= 2:
+                                product_slug = parts[0].lower()
+                                version = parts[1]
+                                eol_status = self.eol_checker.check_version(product_slug, version)
+                                if ip not in self.last_eol_data:
+                                    self.last_eol_data[ip] = {}
+                                self.last_eol_data[ip][port] = eol_status
+                                logger.info(
+                                    f"JA3S→EOL: {ip}:{port} {product_slug} {version} "
+                                    f"→ {eol_status.level.value}"
+                                )
+                except Exception as e:
+                    logger.debug(f"JA3S EOL pipeline error for {ip}: {e}")
 
                 # ---- Web interface checks ----
                 progress.update(task, description=f"[cyan]Web checks: {ip}")
@@ -1474,6 +1500,17 @@ def run_setup_wizard(db_size: str = "normal") -> int:
             console.print(f"  [red]✗[/red] {tool}: not found — install {tool} and re-run setup")
             if tool == "nmap":
                 all_ok = False  # nmap is required; git is only for optional GHSA
+
+    # Check optional masscan (faster port discovery)
+    try:
+        result = subprocess.run(["masscan", "--version"], capture_output=True, timeout=5)
+        version_line = result.stdout.decode("utf-8", errors="ignore").splitlines()[0][:60]
+        console.print(f"  [green]✓[/green] masscan: {version_line} (faster port discovery enabled)")
+    except (FileNotFoundError, subprocess.TimeoutExpired):
+        console.print(
+            "  [dim]  masscan: not installed (optional) — "
+            "install for faster scanning: sudo apt install masscan[/dim]"
+        )
 
     if not all_ok:
         console.print("\n[red]Critical dependencies missing. Fix the above and re-run --setup.[/red]")
