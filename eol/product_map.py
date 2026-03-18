@@ -99,6 +99,18 @@ NOT_TRACKED_PRODUCTS = {
     "ssl",
     "ssl/http",
     "ssl/https",
+    # DNS / network infrastructure not tracked
+    "dnsmasq",
+    "dlnadoc",
+    "openwrt",
+    # Protocol identifiers from nmap
+    "ajp13",
+    "printer",
+    "ppp",
+    "glrpc",
+    "winshadow",
+    "echo",
+    "cisco-linksys",
 }
 
 # Mapping of detected software names/banners to endoflife.date slugs
@@ -305,6 +317,8 @@ PRODUCT_MAP = {
     
     # Other Common Services
     "samba": "samba",
+    "samba smbd": "samba",
+    "smbd": "samba",
     "squid": "squid",
     "haproxy": "haproxy",
     "varnish": "varnish",
@@ -461,7 +475,12 @@ def get_product_slug(software_name: str) -> Optional[str]:
     """
     if not software_name:
         return None
-    
+
+    # Skip raw HTML/XML content that sometimes appears in banners
+    stripped = software_name.strip()
+    if stripped.startswith('<') or stripped.startswith('HTTP/'):
+        return None
+
     # Normalize the input name
     normalized = normalize_software_name(software_name)
     
@@ -479,8 +498,11 @@ def get_product_slug(software_name: str) -> Optional[str]:
             logger.debug(f"Found base mapping: '{software_name}' -> '{base}' -> '{PRODUCT_MAP[base]}'")
             return PRODUCT_MAP[base]
     
-    # Try partial matching for compound names
+    # Try partial matching for compound names (skip short keys to avoid
+    # false positives like "go" matching inside "mongo")
     for key, slug in PRODUCT_MAP.items():
+        if len(key) < 4:
+            continue
         if key in normalized or normalized in key:
             logger.debug(f"Found partial match: '{software_name}' -> '{key}' -> '{slug}'")
             return slug

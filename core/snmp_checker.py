@@ -119,11 +119,60 @@ def _snmp_get(host: str, community: str, oid: str, version: int = 1) -> Optional
         String value or None on failure/timeout.
     """
     try:
-        from pysnmp.hlapi import (
-            getCmd, SnmpEngine, CommunityData, UdpTransportTarget,
-            ContextData, ObjectType, ObjectIdentity
-        )
+        return _snmp_get_v7(host, community, oid, version)
+    except ImportError:
+        pass
 
+    try:
+        return _snmp_get_v4(host, community, oid, version)
+    except ImportError:
+        pass
+
+    logger.debug("No compatible pysnmp API found (need pysnmp v4+ or v7+)")
+    return None
+
+
+def _snmp_get_v7(host: str, community: str, oid: str, version: int = 1) -> Optional[str]:
+    """SNMP GET using pysnmp v7+ async Slim API."""
+    import asyncio
+    from pysnmp.hlapi.v1arch import Slim, ObjectIdentity, ObjectType
+
+    async def _do_get():
+        mp_model = version  # 0=v1, 1=v2c
+        with Slim(mp_model) as slim:
+            error_indication, error_status, error_index, var_binds = await slim.get(
+                community,
+                host,
+                SNMP_PORT,
+                ObjectType(ObjectIdentity(oid)),
+            )
+            if error_indication or error_status:
+                return None
+            for var_bind in var_binds:
+                return str(var_bind[1])
+        return None
+
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        loop = None
+
+    if loop and loop.is_running():
+        import concurrent.futures
+        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
+            return pool.submit(asyncio.run, _do_get()).result(timeout=SNMP_TIMEOUT + 2)
+    else:
+        return asyncio.run(_do_get())
+
+
+def _snmp_get_v4(host: str, community: str, oid: str, version: int = 1) -> Optional[str]:
+    """SNMP GET using pysnmp v4/v5 synchronous API."""
+    from pysnmp.hlapi import (
+        getCmd, SnmpEngine, CommunityData, UdpTransportTarget,
+        ContextData, ObjectType, ObjectIdentity
+    )
+
+    try:
         error_indication, error_status, error_index, var_binds = next(
             getCmd(
                 SnmpEngine(),
@@ -143,7 +192,6 @@ def _snmp_get(host: str, community: str, oid: str, version: int = 1) -> Optional
 
         for var_bind in var_binds:
             return str(var_bind[1])
-
     except Exception as e:
         logger.debug(f"SNMP GET failed {host} community={community!r} oid={oid}: {e}")
         return None

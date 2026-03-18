@@ -398,7 +398,13 @@ class NetWatch:
                 saved = self.baseline_manager.save_baseline_from_scan(
                     scan_result, network=self.last_target
                 )
-                self.display.show_success(f"Baseline saved: {saved} devices recorded")
+                if saved > 0:
+                    self.display.show_success(f"Baseline saved: {saved} devices recorded")
+                else:
+                    self.display.show_warning(
+                        "Baseline saved but 0 devices recorded (no MAC addresses). "
+                        "Run with root/sudo for MAC address detection: sudo python3 netwatch.py --save-baseline --target ..."
+                    )
 
             return 0
             

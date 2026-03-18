@@ -197,6 +197,22 @@ class NetworkScanner:
             logger.info(f"Scan completed: {len(result.hosts)} hosts found")
             
         except nmap.PortScannerError as e:
+            err_msg = str(e)
+            # If a profile requires root (OS scan, SYN scan) and we don't
+            # have it, retry with a downgraded argument string.
+            if "root privileges" in err_msg or "requires root" in err_msg:
+                logger.warning(f"Profile {profile} requires root — retrying without OS/SYN flags")
+                fallback_args = self._strip_root_flags(scan_args)
+                if fallback_args != scan_args:
+                    try:
+                        self.nm.scan(hosts=target, arguments=fallback_args)
+                        self._parse_results(result)
+                        result.summary = self.nm.get_nmap_last_output()[:500]
+                        logger.info(f"Fallback scan completed: {len(result.hosts)} hosts found")
+                        return result
+                    except Exception as e2:
+                        logger.error(f"Fallback scan also failed: {e2}")
+                        raise e2
             logger.error(f"Nmap scan failed: {e}")
             raise
         except Exception as e:
@@ -208,6 +224,38 @@ class NetworkScanner:
         
         return result
     
+    @staticmethod
+    def _strip_root_flags(args: str) -> str:
+        """Remove nmap flags that require root privileges.
+
+        -A implies -O -sV -sC --traceroute — all of which need root for -O.
+        Replace -A with just -sV -sC (version + default scripts).
+        Replace -sS (SYN scan) with -sT (connect scan).
+        Remove -O and --osscan-guess entirely.
+        """
+        parts = args.split()
+        out = []
+        for p in parts:
+            if p == '-A':
+                out.extend(['-sV', '-sC'])
+            elif p == '-O':
+                continue
+            elif p == '--osscan-guess':
+                continue
+            elif p == '-sS':
+                out.append('-sT')
+            else:
+                out.append(p)
+        # Deduplicate -sV if it was already present alongside -A
+        seen = set()
+        deduped = []
+        for p in out:
+            if p in seen and p in ('-sV', '-sC'):
+                continue
+            seen.add(p)
+            deduped.append(p)
+        return ' '.join(deduped)
+
     def _parse_results(self, result: ScanResult) -> None:
         """Parse nmap results into structured format.
         

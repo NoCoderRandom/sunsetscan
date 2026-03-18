@@ -1005,12 +1005,14 @@ class AuthTester:
         """
         report = {
             "services_tested": len(results),
-            "vulnerable_services": [],    # CONFIRMED or LIKELY
-            "suspected_services": [],     # SUSPECTED — report as LOW
+            "vulnerable_services": [],    # CONFIRMED or LIKELY (deduplicated ports)
+            "suspected_services": [],     # SUSPECTED — report as LOW (deduplicated ports)
             "total_attempts": 0,
             "successful_logins": [],
             "recommendations": [],
         }
+        _vuln_ports_seen: set = set()
+        _suspected_ports_seen: set = set()
 
         for port, port_results in results.items():
             report["total_attempts"] += len(port_results)
@@ -1030,10 +1032,14 @@ class AuthTester:
                 }
 
                 if result.confidence in (AuthConfidence.CONFIRMED, AuthConfidence.LIKELY):
-                    report["vulnerable_services"].append(port)
+                    if port not in _vuln_ports_seen:
+                        report["vulnerable_services"].append(port)
+                        _vuln_ports_seen.add(port)
                     report["successful_logins"].append(entry)
                 elif result.confidence == AuthConfidence.SUSPECTED:
-                    report["suspected_services"].append(port)
+                    if port not in _suspected_ports_seen:
+                        report["suspected_services"].append(port)
+                        _suspected_ports_seen.add(port)
                     report["successful_logins"].append(entry)
 
         if report["vulnerable_services"]:
