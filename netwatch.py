@@ -1082,7 +1082,8 @@ class NetWatch:
         4. NSE enhanced detection
         5. Default credential testing
         6. EOL status checking
-        7. Auto-export to HTML with timestamp
+        7. Security analysis (SSL/TLS, SSH, DNS, UPnP, CVE, JA3S)
+        8. Auto-export to HTML with timestamp
         
         Args:
             target: Target network range (e.g., "192.168.*.*")
@@ -1183,15 +1184,40 @@ class NetWatch:
                 self.console.print("[dim]Phase 5/6: Default Credential Testing (skipped - enable with --check-defaults)[/dim]\n")
             
             # Phase 6: EOL Check
-            self.console.print("[bold blue]Phase 6/6: EOL Status Check[/bold blue]")
+            self.console.print("[bold blue]Phase 6/7: EOL Status Check[/bold blue]")
             self.check_eol_status(scan_result)
             self.console.print("[green]EOL checking complete[/green]\n")
-            
+
+            # Phase 7: Security Checks (SSL/TLS, SSH, DNS, UPnP, CVE, JA3S)
+            self.console.print("[bold blue]Phase 7/7: Security Analysis[/bold blue]")
+            self.run_security_checks(scan_result)
+            self.console.print("[green]Security analysis complete[/green]\n")
+
             # Show results
             self.display.show_scan_info(scan_result)
             self.display.show_results_table(scan_result, self.last_eol_data)
             stats = self.calculate_stats(scan_result, self.last_eol_data)
             self.display.show_summary(stats)
+
+            # Print security finding counts
+            counts = self.finding_registry.counts()
+            self.console.print(
+                f"\n[bold]Security findings:[/bold] "
+                f"[red]{counts['CRITICAL']} Critical[/red]  "
+                f"[yellow]{counts['HIGH']} High[/yellow]  "
+                f"[cyan]{counts['MEDIUM']} Medium[/cyan]  "
+                f"[blue]{counts['LOW']} Low[/blue]  "
+                f"[dim]{counts['INFO']} Info[/dim]"
+            )
+
+            # Compute and display risk scores
+            self.last_risk_scores = self.risk_scorer.score_all(self.finding_registry)
+            if self.last_risk_scores:
+                self.console.print("\n[bold]Device risk scores:[/bold]")
+                for ip, risk in self.last_risk_scores.items():
+                    self.console.print(
+                        f"  {ip:<18} {risk.score:>3}/100  {risk.label}"
+                    )
             
             # Auto-export to HTML with timestamp
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
