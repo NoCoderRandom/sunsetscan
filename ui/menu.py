@@ -198,36 +198,58 @@ Socket Timeout:     {self.settings.socket_connect_timeout} seconds
         help_text = """
 [bold cyan]NetWatch Help[/bold cyan]
 
-NetWatch is a network scanner that discovers devices and checks their 
-software for End-of-Life (EOL) status.
+NetWatch discovers every device on your network, fingerprints running
+software, checks for known vulnerabilities and end-of-life dates,
+and produces a professional HTML security report.
 
-[bold]Scan Types:[/bold]
-• Quick Scan  - Fast scan of common ports, good for initial discovery
-• Full Scan   - Comprehensive scan with OS detection and service versions
-• Stealth Scan - Slower SYN scan to avoid detection
+[bold]Scan Profiles:[/bold]
+  QUICK    Fast scan of top 100 ports               (no root)
+  FULL     OS detection + version + NSE scripts      (root)
+  STEALTH  SYN scan with slow timing                 (root)
+  PING     Host discovery only — no port scan        (no root)
+  IOT      Cameras, routers, smart device ports      (no root)
+  SMB      Windows shares + EternalBlue check        (root)
 
 [bold]Target Formats:[/bold]
-• Single IP:     192.168.1.1
-• CIDR Range:    192.168.1.0/24
-• IP Range:      192.168.1.1-254
-• Hostname:      router.local
+  192.168.1.1            Single IP
+  192.168.1.0/24         CIDR range
+  192.168.1.*            Wildcard
+  192.168.1.1-100        IP range
+  192.168.1.1,5,10       Comma list
+  router.local           Hostname
 
-[bold]EOL Status:[/bold]
-• [red]CRITICAL[/red] - Product has reached End-of-Life
-• [yellow]WARNING[/yellow] - EOL approaching within 180 days
-• [green]OK[/green] - Product is supported
-• [dim]UNKNOWN[/dim] - EOL status cannot be determined
+[bold]Security Checks (run during Full Assessment):[/bold]
+  SSL/TLS     Expired certs, weak ciphers, self-signed
+  SSH         Weak algorithms, SSHv1, small host keys
+  SMB         SMBv1, EternalBlue, anonymous shares
+  FTP         Anonymous login, cleartext credentials
+  SNMP        Default community strings (public/private)
+  Web         Missing headers, login over HTTP, admin panels
+  DNS         DNS hijacking detection
+  UPnP        Port-mapping exposure
+  mDNS        Zeroconf device discovery
+  ARP         Spoofing detection (root)
+  CVE         Known vulnerabilities from OSV.dev
+  EOL         End-of-life dates from endoflife.date
 
-[bold]Keyboard Shortcuts:[/bold]
-• CTRL+C - Cancel current operation
+[bold]Severity Levels:[/bold]
+  [red]CRITICAL[/red]  Immediate risk — act today
+  [bold red]HIGH[/bold red]      Significant risk — fix this week
+  [yellow]MEDIUM[/yellow]    Notable risk — schedule a fix
+  [blue]LOW[/blue]       Minor concern — track and plan
+  [dim]INFO[/dim]      Informational — no action needed
 
-[bold]Command Line Flags:[/bold]
-  --target <CIDR>  Skip menu and scan directly
-  --verbose        Enable debug logging
-  --no-color       Disable colored output
-  --version        Show version and exit
+[bold]Key CLI Commands:[/bold]
+  netwatch --target 192.168.1.0/24                 Quick scan
+  netwatch --full-assessment --target 192.168.1.0/24  Full report
+  netwatch --target 192.168.1.0/24 --profile IOT   IoT device scan
+  netwatch --modules                               Show data modules
+  netwatch --download all                          Download all modules
+  netwatch --history                               View past scans
+  netwatch --diff                                  Compare last two scans
+  netwatch -i                                      Interactive mode
         """
-        
+
         self.console.print(help_text)
         Prompt.ask("\nPress ENTER to return to menu")
     

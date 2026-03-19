@@ -42,7 +42,7 @@ class Settings:
         upnp_discovery_timeout: Timeout for SSDP UPnP discovery (seconds)
     """
     tool_name: str = "NetWatch"
-    version: str = "1.6.1"
+    version: str = "1.6.2"
     banner_timeout: int = 3
     cache_ttl_hours: int = 24       # legacy — used by eol/cache.py
     cve_cache_ttl_days: int = 7     # CVE data refreshed weekly
@@ -198,17 +198,21 @@ BASELINE_FILENAME = "baseline.json"
 TABLE_MIN_WIDTH = 120
 PROGRESS_REFRESH_RATE = 10  # updates per second
 
-# Menu options
+# Menu options for old-style menu (ui/menu.py)
 MENU_OPTIONS = [
-    ("1", "Quick Scan", "Fast ping sweep + top 100 ports"),
-    ("2", "Full Scan", "OS detect + all services + banners"),
-    ("3", "Stealth Scan", "SYN scan (requires root/admin)"),
-    ("4", "Custom Target", "Specify IP, range, or CIDR"),
-    ("5", "Recheck EOL", "Reload last scan, refresh EOL status"),
-    ("6", "Export Report", "Save as JSON or HTML"),
-    ("7", "Settings", "View/change timeout, cache TTL, ports"),
-    ("8", "Help", "Show usage guide"),
-    ("9", "Exit", "Quit NetWatch"),
+    ("1", "Quick Scan", "Fast scan — top 100 ports"),
+    ("2", "Full Scan", "OS detect + version + scripts (root)"),
+    ("3", "Stealth Scan", "SYN scan, slow timing (root)"),
+    ("4", "IoT Scan", "Cameras, routers, smart devices"),
+    ("5", "SMB Scan", "Windows shares + EternalBlue check (root)"),
+    ("6", "Full Assessment", "Everything + HTML report"),
+    ("7", "Custom Target", "Specify IP, range, CIDR, or profile"),
+    ("8", "Export Report", "Save as JSON or HTML"),
+    ("9", "Scan History", "View past scans or compare diffs"),
+    ("m", "Modules", "Download/update data modules"),
+    ("s", "Settings", "View/change configuration"),
+    ("h", "Help", "Usage guide and scan profiles"),
+    ("q", "Exit", "Quit NetWatch"),
 ]
 
 # Banner ASCII art

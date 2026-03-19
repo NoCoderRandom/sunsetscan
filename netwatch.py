@@ -35,6 +35,7 @@ sys.path.insert(0, str(Path(__file__).parent))
 
 from rich.console import Console
 from rich.progress import Progress
+from rich.prompt import Prompt, Confirm
 
 from config.settings import Settings, SCAN_DESCRIPTIONS
 from core.scanner import NetworkScanner, ScanResult
@@ -190,7 +191,7 @@ class NetWatch:
         while True:
             try:
                 choice = self.menu.show_main_menu()
-                
+
                 if choice == "1":
                     self.run_quick_scan()
                 elif choice == "2":
@@ -198,19 +199,27 @@ class NetWatch:
                 elif choice == "3":
                     self.run_stealth_scan()
                 elif choice == "4":
-                    self.run_custom_target()
+                    self._run_profile_scan("IOT")
                 elif choice == "5":
-                    self.recheck_eol()
+                    self._run_profile_scan("SMB")
                 elif choice == "6":
-                    self.export_report()
+                    self._run_full_assessment_from_menu()
                 elif choice == "7":
-                    self.menu.show_settings()
+                    self.run_custom_target()
                 elif choice == "8":
-                    self.menu.show_help()
+                    self.export_report()
                 elif choice == "9":
+                    self._show_scan_history_menu()
+                elif choice == "m":
+                    self._show_modules_menu()
+                elif choice == "s":
+                    self.menu.show_settings()
+                elif choice == "h":
+                    self.menu.show_help()
+                elif choice == "q":
                     self.console.print("\n[green]Goodbye![/green]")
                     return 0
-                    
+
             except KeyboardInterrupt:
                 self.console.print("\n[yellow]Operation cancelled.[/yellow]")
             except Exception as e:
@@ -276,21 +285,88 @@ class NetWatch:
         if self.menu.confirm_scan("STEALTH", target):
             self.perform_scan(target, "STEALTH")
     
+    def _run_profile_scan(self, profile: str) -> None:
+        """Run a scan with the given profile."""
+        target = self.get_target()
+        if not target:
+            return
+        if self.menu.confirm_scan(profile, target):
+            self.perform_scan(target, profile)
+
+    def _run_full_assessment_from_menu(self) -> None:
+        """Run full assessment from menu (prompts for target)."""
+        target = self.get_target()
+        if not target:
+            return
+        self.console.print("[bold]Running Full Assessment...[/bold]")
+        self.run_full_assessment(target)
+
+    def _show_scan_history_menu(self) -> None:
+        """Show scan history and diff options."""
+        from core.scan_history import ScanHistory
+        history = ScanHistory()
+        rows = history.history_table()
+        if not rows:
+            self.console.print("[yellow]No scan history found. Run a scan first.[/yellow]")
+            return
+        self.console.print(f"\n[bold]Scan History[/bold] ({len(rows)} scans)\n")
+        self.console.print(
+            f"{'Timestamp':<18} {'Target':<22} {'Profile':<8} "
+            f"{'Hosts':<6} {'C':>4} {'H':>4} {'M':>4} {'L':>4}"
+        )
+        self.console.print("-" * 75)
+        for r in rows:
+            self.console.print(
+                f"{r['timestamp']:<18} {r['target']:<22} {r['profile']:<8} "
+                f"{r['hosts']:<6} {r['critical']:>4} {r['high']:>4} "
+                f"{r['medium']:>4} {r['low']:>4}"
+            )
+        self.console.print()
+        if Confirm.ask("Show diff of last two scans?", default=False):
+            diff = history.diff_last_two()
+            if diff is None:
+                self.console.print("[yellow]Need at least two scans for a diff.[/yellow]")
+            else:
+                self.console.print(f"\nDiff: {diff.older_ts[:19]}  ->  {diff.newer_ts[:19]}")
+                for line in diff.summary_lines():
+                    self.console.print(f"  {line}")
+        Prompt.ask("\nPress ENTER to return to menu")
+
+    def _show_modules_menu(self) -> None:
+        """Show data module status and offer downloads."""
+        from core.module_manager import ModuleManager
+        mm = ModuleManager()
+        mm.show_modules()
+        self.console.print()
+        if Confirm.ask("Download a module?", default=False):
+            name = Prompt.ask(
+                "Module name (or 'all')",
+                default="all"
+            )
+            if name.lower() == "all":
+                mm.download_all()
+            else:
+                mm.download(name)
+        Prompt.ask("\nPress ENTER to return to menu")
+
     def run_custom_target(self) -> None:
         """Run scan on custom user-specified target."""
         target = self.menu.prompt_target()
         if not target:
             return
-        
+
+        from config.settings import SCAN_PROFILES
+        profiles = list(SCAN_PROFILES.keys())
         self.console.print("\n[bold]Select scan profile:[/bold]")
-        self.console.print("  [1] Quick Scan")
-        self.console.print("  [2] Full Scan")
-        self.console.print("  [3] Stealth Scan")
-        
-        profile_choice = input("Choice [1]: ").strip() or "1"
-        profile_map = {"1": "QUICK", "2": "FULL", "3": "STEALTH"}
-        profile = profile_map.get(profile_choice, "QUICK")
-        
+        for i, p in enumerate(profiles, 1):
+            self.console.print(f"  [{i}] {p}")
+
+        profile_choice = input(f"Choice [1]: ").strip() or "1"
+        try:
+            profile = profiles[int(profile_choice) - 1]
+        except (ValueError, IndexError):
+            profile = "QUICK"
+
         if self.menu.confirm_scan(profile, target):
             self.perform_scan(target, profile)
     
@@ -1270,13 +1346,30 @@ def create_parser() -> argparse.ArgumentParser:
         description='NetWatch - Network EOL Scanner & Security Assessment Tool',
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
-Examples:
-  %(prog)s                          Launch interactive menu
-  %(prog)s --target 192.168.1.0/24  Scan local network
-  %(prog)s --target 10.0.0.1 --profile FULL  Full scan of single host
-  %(prog)s --target 192.168.1.1 --nse  Enhanced scan with NSE scripts
-  %(prog)s --version                Show version
-  %(prog)s --verbose                Enable debug logging
+scan profiles:
+  QUICK    Top 100 ports, fast timing (-T4 -F)                  no root
+  FULL     OS detect + version + NSE scripts (-T4 -A -sV -O)    root
+  STEALTH  SYN scan, slow timing (-sS -T2 -sV)                  root
+  PING     Host discovery only (-sn)                             no root
+  IOT      Camera/router/smart device ports (23,80,554,1900...) no root
+  SMB      Windows shares + EternalBlue check (135,139,445)      root
+
+examples:
+  %(prog)s -i                                       Interactive mode
+  %(prog)s --target 192.168.1.0/24                  Quick scan
+  %(prog)s --full-assessment --target 192.168.1.0/24  Full security report
+  %(prog)s --target 192.168.1.0/24 --profile IOT    IoT device scan
+  %(prog)s --target 192.168.1.0/24 --profile SMB    SMB/Windows scan
+  %(prog)s --target 192.168.1.1 --profile FULL --nse  Deep single-host scan
+  %(prog)s --target 192.168.1.0/24 --check-defaults Test default passwords
+  %(prog)s --target 192.168.1.0/24 --save-baseline  Save device baseline
+  %(prog)s --modules                                List data modules
+  %(prog)s --download all                           Download all modules
+  %(prog)s --history                                View past scans
+  %(prog)s --diff                                   Compare last two scans
+  %(prog)s --diff --since 7                         Compare against scan 7+ days ago
+  %(prog)s --setup                                  First-time setup
+  %(prog)s --update-cache                           Refresh CVE/EOL data
         """
     )
     
