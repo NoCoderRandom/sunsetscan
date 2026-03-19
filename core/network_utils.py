@@ -27,12 +27,40 @@ from urllib.error import URLError
 logger = logging.getLogger(__name__)
 
 
+def _is_wsl() -> bool:
+    """Detect if running inside Windows Subsystem for Linux."""
+    try:
+        with open("/proc/version", "r") as f:
+            return "microsoft" in f.read().lower()
+    except Exception:
+        return False
+
+
+def _get_gateway_ip() -> Optional[str]:
+    """Get the default gateway IP from the routing table."""
+    import subprocess
+    try:
+        out = subprocess.check_output(
+            ["ip", "route", "show", "default"], timeout=3, text=True
+        )
+        # "default via 192.168.1.1 dev eth0 ..."
+        for line in out.strip().splitlines():
+            parts = line.split()
+            if "via" in parts:
+                return parts[parts.index("via") + 1]
+    except Exception:
+        pass
+    return None
+
+
 def get_local_ip() -> Optional[str]:
     """Get the primary local IP address.
-    
-    Attempts to determine the local IP by connecting to an external
-    host. Falls back to localhost if unable to determine.
-    
+
+    On WSL, the socket trick returns the virtual adapter (172.x.x.x)
+    instead of the real home network.  When WSL is detected and the
+    gateway is a WSL virtual adapter, fall back to None so that
+    get_local_subnet() returns the safe 192.168.1.0/24 default.
+
     Returns:
         Local IP address string or None if undetermined
     """
@@ -42,10 +70,20 @@ def get_local_ip() -> Optional[str]:
             s.settimeout(2)
             s.connect(("8.8.8.8", 80))
             local_ip = s.getsockname()[0]
+
+            # On WSL the outbound IP is the virtual adapter (172.x).
+            # That subnet is useless for scanning home devices, so
+            # reject it and let the caller fall back to the default.
+            if _is_wsl() and local_ip.startswith(("172.",)):
+                logger.debug(
+                    f"WSL detected — ignoring virtual adapter IP {local_ip}"
+                )
+                return None
+
             return local_ip
     except Exception as e:
         logger.debug(f"Could not determine local IP via external connection: {e}")
-    
+
     # Fallback: try to resolve hostname
     try:
         hostname = socket.gethostname()
@@ -54,7 +92,7 @@ def get_local_ip() -> Optional[str]:
             return local_ip
     except Exception as e:
         logger.debug(f"Could not resolve hostname: {e}")
-    
+
     return None
 
 

@@ -25,15 +25,17 @@ from rich.table import Table
 from rich.panel import Panel
 from rich.prompt import Prompt, Confirm
 
-from config.settings import Settings
+from config.settings import Settings, SCAN_PROFILES
 from core.input_parser import parse_target_input, format_target_summary, get_local_subnet_suggestion
 from core.scanner import NetworkScanner, ScanResult, HostInfo
 from core.nse_scanner import NSEScanner
 from core.auth_tester import AuthTester
 from core.banner_grabber import BannerGrabber
+from core.scan_history import ScanHistory
 from eol.checker import EOLChecker
 from eol.cache import CacheManager
 from ui.display import Display
+from ui.export import ReportExporter
 
 logger = logging.getLogger(__name__)
 
@@ -105,6 +107,7 @@ class InteractiveController:
         self.discovered_hosts: Dict[str, DiscoveredHost] = {}
         self.current_target: str = ""
         self.scan_history: List[Dict] = []
+        self._last_scan_result: Optional[ScanResult] = None
         
         # Components
         self.scanner = NetworkScanner(settings=self.settings)
@@ -134,7 +137,7 @@ class InteractiveController:
         # Main menu loop
         while True:
             choice = self.show_main_menu()
-            
+
             if choice == "0":
                 self.console.print("\nGoodbye!")
                 return 0
@@ -143,10 +146,14 @@ class InteractiveController:
             elif choice == "2":
                 self.bulk_operations_menu()
             elif choice == "3":
-                self.network_menu()
+                self.run_full_assessment()
             elif choice == "4":
-                self.results_menu()
+                self.network_menu()
             elif choice == "5":
+                self.results_menu()
+            elif choice == "6":
+                self.modules_menu()
+            elif choice == "7":
                 self.settings_menu()
     
     def show_welcome(self) -> None:
@@ -308,28 +315,30 @@ class InteractiveController:
     
     def show_main_menu(self) -> str:
         """Display main menu and get user choice.
-        
+
         Returns:
             Menu choice string
         """
         self.console.print(f"\n[bold cyan]Main Menu[/bold cyan]")
         self.console.print(f"Current target: {self.current_target}")
         self.console.print(f"Discovered hosts: {len(self.discovered_hosts)}\n")
-        
+
         menu = """
 [1] Host Operations      - Scan/analyze specific hosts
 [2] Bulk Operations      - Actions on all discovered hosts
-[3] Network Menu         - Rescan, change target, discover
-[4] Results Menu         - View, export, compare results
-[5] Settings             - Configure scan options
+[3] Full Assessment      - Complete security audit + HTML report
+[4] Network Menu         - Rescan, change target, discover
+[5] Results & History    - View, export, compare results
+[6] Modules & Data       - Download data modules, update cache
+[7] Settings             - Configure scan options
 [0] Exit                 - Quit NetWatch
         """
-        
+
         self.console.print(menu)
-        
+
         return Prompt.ask(
             "Select option",
-            choices=["0", "1", "2", "3", "4", "5"],
+            choices=["0", "1", "2", "3", "4", "5", "6", "7"],
             default="1"
         )
     
@@ -382,38 +391,44 @@ class InteractiveController:
     def bulk_operations_menu(self) -> None:
         """Display and handle bulk operations menu."""
         self.console.print("\n[bold]Bulk Operations[/bold]")
-        
+
         menu = """
-[1] Scan all hosts       - Quick scan on all discovered
-[2] Deep scan all        - Full scan on all (slow)
-[3] Grab all banners     - Banner grab from all hosts
-[4] Check all EOL        - EOL check on all services
-[5] Check all credentials- Test for default passwords
-[6] Generate report      - Create network summary report
+[1] Quick scan all       - Quick scan on all discovered hosts
+[2] Deep scan all        - Full scan with OS detect (slow)
+[3] IoT scan all         - Scan IoT/smart device ports
+[4] SMB scan all         - Windows shares + EternalBlue check
+[5] Grab all banners     - Banner grab from all hosts
+[6] Check all EOL        - EOL check on all services
+[7] Check all credentials- Test for default passwords
+[8] Generate report      - Create network summary report
 [0] Back to main menu
         """
-        
+
         self.console.print(menu)
-        
+
         choice = Prompt.ask(
             "Select action",
-            choices=["0", "1", "2", "3", "4", "5", "6"],
+            choices=["0", "1", "2", "3", "4", "5", "6", "7", "8"],
             default="1"
         )
-        
+
         all_ips = list(self.discovered_hosts.keys())
-        
+
         if choice == "1":
             self.quick_port_scan(all_ips)
         elif choice == "2":
             self.deep_scan(all_ips)
         elif choice == "3":
-            self.grab_banners(all_ips)
+            self._profile_scan(all_ips, "IOT")
         elif choice == "4":
-            self.check_eol(all_ips)
+            self._profile_scan(all_ips, "SMB")
         elif choice == "5":
-            self.check_credentials(all_ips)
+            self.grab_banners(all_ips)
         elif choice == "6":
+            self.check_eol(all_ips)
+        elif choice == "7":
+            self.check_credentials(all_ips)
+        elif choice == "8":
             self.generate_network_report()
     
     def network_menu(self) -> None:
@@ -448,35 +463,35 @@ class InteractiveController:
     
     def results_menu(self) -> None:
         """Display and handle results menu."""
-        self.console.print("\n[bold]Results Menu[/bold]")
-        
+        self.console.print("\n[bold]Results & History[/bold]")
+
         menu = """
 [1] View discovered      - Show host list
 [2] View scan history    - Show previous scans
-[3] Export to JSON       - Save as JSON file
-[4] Export to HTML       - Save as HTML report
-[5] Compare results      - Compare with previous scan
+[3] Compare scans (diff) - Diff last two scans
+[4] Export to JSON       - Save as JSON file
+[5] Export to HTML       - Save as HTML report
 [0] Back to main menu
         """
-        
+
         self.console.print(menu)
-        
+
         choice = Prompt.ask(
             "Select action",
             choices=["0", "1", "2", "3", "4", "5"],
             default="1"
         )
-        
+
         if choice == "1":
             self.show_discovered_hosts()
         elif choice == "2":
             self.view_scan_history()
         elif choice == "3":
-            self.export_results("json")
-        elif choice == "4":
-            self.export_results("html")
-        elif choice == "5":
             self.compare_results()
+        elif choice == "4":
+            self.export_results("json")
+        elif choice == "5":
+            self.export_results("html")
     
     def settings_menu(self) -> None:
         """Display and handle settings menu."""
@@ -931,24 +946,149 @@ Device Types Found:
     
     def view_scan_history(self) -> None:
         """View scan history."""
-        self.console.print("\n[bold]Scan History[/bold]")
-        self.console.print("[yellow]Scan history not yet implemented[/yellow]")
-    
+        history = ScanHistory()
+        rows = history.history_table()
+        if not rows:
+            self.console.print("[yellow]No scan history found. Run a scan first.[/yellow]")
+            return
+        self.console.print(f"\n[bold]Scan History[/bold] ({len(rows)} scans)\n")
+        self.console.print(
+            f"{'Timestamp':<18} {'Target':<22} {'Profile':<8} "
+            f"{'Hosts':<6} {'C':>4} {'H':>4} {'M':>4} {'L':>4}"
+        )
+        self.console.print("-" * 75)
+        for r in rows:
+            self.console.print(
+                f"{r['timestamp']:<18} {r['target']:<22} {r['profile']:<8} "
+                f"{r['hosts']:<6} {r['critical']:>4} {r['high']:>4} "
+                f"{r['medium']:>4} {r['low']:>4}"
+            )
+
     def export_results(self, format_type: str) -> None:
         """Export results to file.
-        
+
         Args:
             format_type: 'json' or 'html'
         """
-        self.console.print(f"\n[blue]Exporting to {format_type.upper()}...[/blue]")
-        
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        filename = f"netwatch_export_{timestamp}.{format_type}"
-        
-        self.console.print(f"[green]Exported to: {filename}[/green]")
-        self.console.print("[yellow]Export functionality needs integration with ReportExporter[/yellow]")
-    
+        if not self._last_scan_result:
+            self.console.print("[yellow]No scan results to export. Run a scan first.[/yellow]")
+            return
+
+        try:
+            exporter = ReportExporter(settings=self.settings)
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            filename = f"netwatch_export_{timestamp}.{format_type}"
+
+            if format_type == "html":
+                exporter.export_html(
+                    scan_result=self._last_scan_result,
+                    filename=filename,
+                )
+            else:
+                exporter.export_json(
+                    scan_result=self._last_scan_result,
+                    filename=filename,
+                )
+            self.console.print(f"[green]Exported to: {filename}[/green]")
+        except Exception as e:
+            self.console.print(f"[red]Export failed: {e}[/red]")
+
     def compare_results(self) -> None:
-        """Compare current results with previous scan."""
-        self.console.print("\n[bold]Compare Results[/bold]")
-        self.console.print("[yellow]Comparison not yet implemented[/yellow]")
+        """Compare last two scans."""
+        history = ScanHistory()
+        diff = history.diff_last_two()
+        if diff is None:
+            self.console.print("[yellow]Need at least two scans for a diff.[/yellow]")
+            return
+        self.console.print(f"\n[bold]Diff:[/bold] {diff.older_ts[:19]}  ->  {diff.newer_ts[:19]}")
+        self.console.print("-" * 60)
+        for line in diff.summary_lines():
+            self.console.print(f"  {line}")
+
+    def _profile_scan(self, ips: List[str], profile: str) -> None:
+        """Run a scan with a specific profile on hosts."""
+        self.console.print(f"\n[blue]{profile} scanning {len(ips)} host(s)...[/blue]")
+        for ip in ips:
+            try:
+                result = self.scanner.scan(ip, profile=profile)
+                if ip in result.hosts:
+                    host_data = result.hosts[ip]
+                    disc_host = self.discovered_hosts.get(ip)
+                    if disc_host:
+                        disc_host.open_ports = list(host_data.ports.keys())
+                        disc_host.hostname = host_data.hostname
+                        disc_host.services = {
+                            p.port: p.service for p in host_data.ports.values()
+                        }
+                self.console.print(f"[green]{ip}: {profile} scan complete[/green]")
+            except Exception as e:
+                self.console.print(f"[red]{ip}: Scan failed - {e}[/red]")
+        self.show_discovered_hosts()
+
+    def run_full_assessment(self) -> None:
+        """Run full assessment on current target."""
+        if not self.current_target:
+            self.console.print("[red]No target set. Use Network Menu to set a target.[/red]")
+            return
+        self.console.print(f"\n[bold]Running Full Assessment on {self.current_target}...[/bold]")
+        self.console.print("[dim]This runs all scan phases + security checks + HTML export.[/dim]\n")
+
+        try:
+            import argparse
+            args = argparse.Namespace(
+                target=self.current_target, profile="QUICK", verbose=False,
+                no_color=False, nse=True, check_defaults=True, interactive=False,
+                full_assessment=True, setup=False, update_cache=False,
+                save_baseline=False, cache_status=False, check_version=False,
+                update=False, history=False, diff=False, since=None,
+                quiet=False, db="normal", modules=False, download=None,
+            )
+            from netwatch import NetWatch
+            app = NetWatch(args)
+            app.run_full_assessment(self.current_target)
+            self.console.print("[green]Full assessment complete.[/green]")
+        except Exception as e:
+            self.console.print(f"[red]Assessment failed: {e}[/red]")
+            logger.error(f"Full assessment error: {e}", exc_info=True)
+
+    def modules_menu(self) -> None:
+        """Show data modules and offer downloads."""
+        self.console.print("\n[bold]Modules & Data[/bold]")
+        try:
+            from core.module_manager import ModuleManager
+            mm = ModuleManager()
+
+            menu = """
+[1] Show module status   - List all data modules
+[2] Download a module    - Download a specific module
+[3] Download all modules - Download everything
+[4] Update caches        - Refresh CVE/EOL data
+[5] Cache status         - Show cache age and entries
+[0] Back to main menu
+            """
+            self.console.print(menu)
+
+            choice = Prompt.ask(
+                "Select action",
+                choices=["0", "1", "2", "3", "4", "5"],
+                default="1"
+            )
+
+            if choice == "1":
+                mm.show_modules()
+            elif choice == "2":
+                name = Prompt.ask("Module name")
+                mm.download(name)
+            elif choice == "3":
+                mm.download_all()
+            elif choice == "4":
+                from core.cache_manager import UnifiedCacheManager
+                cache = UnifiedCacheManager()
+                cache.update_all()
+                self.console.print("[green]Caches updated.[/green]")
+            elif choice == "5":
+                from core.update_manager import UpdateManager
+                mgr = UpdateManager()
+                mgr.show_cache_status()
+        except Exception as e:
+            self.console.print(f"[red]Error: {e}[/red]")
