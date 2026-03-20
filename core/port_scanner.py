@@ -33,6 +33,7 @@ import logging
 import shutil
 import subprocess
 import xml.etree.ElementTree as ET
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Callable, Dict, List, Optional
 
 from config.settings import Settings, SCAN_PROFILES, MASSCAN_RATES
@@ -197,7 +198,7 @@ class PortScanOrchestrator:
         if profile == "PING":
             return self._nmap.scan(target, profile)
 
-        return self._scan_masscan_nmap(target, profile)
+        return self._scan_masscan_nmap_parallel(target, profile)
 
     def _scan_masscan_nmap(self, target: str, profile: str) -> ScanResult:
         """Run masscan discovery then nmap service detection on found ports."""
@@ -240,6 +241,66 @@ class PortScanOrchestrator:
             f"(discovered by masscan)"
         )
         return self._nmap.scan(target, profile, arguments=nmap_args)
+
+    def _scan_masscan_nmap_parallel(self, target: str, profile: str) -> ScanResult:
+        """Run masscan discovery then parallel per-host nmap service detection.
+
+        When masscan discovers ports on multiple hosts, runs one nmap call per
+        host in parallel using ThreadPoolExecutor. Each host is scanned only
+        for the ports masscan found on that specific host (not the union).
+
+        Falls back to _scan_masscan_nmap() if only one host is discovered,
+        or to plain nmap if masscan finds nothing.
+        """
+        rate = MASSCAN_RATES.get(profile, MASSCAN_RATES.get("FULL", 2000))
+        rate = min(rate, _MASSCAN_MAX_RATE)
+
+        discovered = _run_masscan(target, rate)
+
+        if not discovered:
+            logger.info("masscan found no open ports — falling back to nmap")
+            return self._nmap.scan(target, profile)
+
+        # Single host — no benefit from parallel, use existing method
+        if len(discovered) <= 1:
+            return self._scan_masscan_nmap(target, profile)
+
+        # Build per-host nmap arguments
+        base_args = SCAN_PROFILES.get(profile, SCAN_PROFILES["FULL"])
+        skip_tokens = {"-F"}
+        kept = [t for t in base_args.split() if t not in skip_tokens]
+        if "-sV" not in kept and "-A" not in kept:
+            kept.append("-sV")
+        base_nmap = " ".join(kept)
+
+        def _scan_host(ip: str, ports: List[int]) -> ScanResult:
+            ports_str = ",".join(str(p) for p in sorted(ports))
+            nmap_args = f"{base_nmap} -p {ports_str}"
+            logger.info(f"parallel nmap: {ip} — {len(ports)} ports")
+            return self._nmap.scan(ip, profile, arguments=nmap_args)
+
+        combined = ScanResult(target=target, profile=profile)
+        max_workers = self._settings.nmap_parallel_hosts
+
+        logger.info(
+            f"launching parallel nmap: {len(discovered)} hosts, "
+            f"max_workers={max_workers}"
+        )
+
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            futures = {
+                executor.submit(_scan_host, ip, ports): ip
+                for ip, ports in discovered.items()
+            }
+            for future in as_completed(futures):
+                ip = futures[future]
+                try:
+                    result = future.result()
+                    combined.hosts.update(result.hosts)
+                except Exception as e:
+                    logger.warning(f"parallel nmap failed for {ip}: {e}")
+
+        return combined
 
     # ---- Convenience methods (mirror NetworkScanner) ----
 

@@ -20,12 +20,15 @@ import argparse
 import json
 import logging
 import os
+import shutil
 import sys
 import signal
 import platform
+import threading
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
 from pathlib import Path
-from typing import Optional, Dict, Any
+from typing import List, Optional, Dict, Any
 
 # Setup logger
 logger = logging.getLogger(__name__)
@@ -100,6 +103,87 @@ def check_privileges() -> bool:
         return False
 
 
+def check_scan_readiness() -> List[str]:
+    """Check whether required data and tools are available before scanning.
+
+    Returns a list of warning strings. Empty list means everything is ready.
+    This function never blocks — it only reports.
+    """
+    warnings: List[str] = []
+
+    # 1. nmap on PATH
+    if not shutil.which("nmap"):
+        warnings.append("nmap not found — install it first: sudo apt install nmap")
+
+    # 2. EOL cache populated (product-slug JSON files in data/cache/)
+    cache_dir = Path(__file__).parent / "data" / "cache"
+    non_eol_names = {
+        "cache_meta.json", "modules.json", "cve_cache.json", "eol_cache.json",
+        "credentials_mini.json", "credentials_full.json",
+        "wappalyzer_mini.json", "wappalyzer_tech.json",
+        "ja3_signatures.json", "snmp_communities.json",
+        "camera_credentials.json",
+    }
+    has_eol_cache = False
+    if cache_dir.is_dir():
+        for f in cache_dir.glob("*.json"):
+            if f.name not in non_eol_names:
+                has_eol_cache = True
+                break
+    if not has_eol_cache:
+        warnings.append("EOL database empty — run: python3 netwatch.py --setup")
+
+    # 3. CVE cache populated
+    cve_path = cache_dir / "cve_cache.json"
+    if not cve_path.exists() or cve_path.stat().st_size <= 100:
+        warnings.append("CVE database empty — run: python3 netwatch.py --setup")
+
+    # 4. Default modules installed
+    try:
+        mm = ModuleManager()
+        missing = []
+        if not mm.is_installed("credentials-mini"):
+            missing.append("credentials-mini")
+        if not mm.is_installed("wappalyzer-mini"):
+            missing.append("wappalyzer-mini")
+        if missing:
+            warnings.append("Default modules not installed — run: python3 netwatch.py --setup")
+    except Exception:
+        warnings.append("Default modules not installed — run: python3 netwatch.py --setup")
+
+    return warnings
+
+
+def _print_readiness_warnings(warnings: List[str]) -> None:
+    """Print pre-scan readiness warnings in a visible box."""
+    if not warnings:
+        return
+    try:
+        console = Console()
+        console.print()
+        console.print("=" * 60)
+        console.print("[bold yellow]Pre-scan check: missing data detected[/bold yellow]")
+        console.print("-" * 60)
+        for w in warnings:
+            console.print(f"  [yellow][!][/yellow] {w}")
+        console.print()
+        console.print("  Run [bold]'python3 netwatch.py --setup'[/bold] to fix all issues.")
+        console.print("=" * 60)
+        console.print()
+    except Exception:
+        # Fallback without Rich
+        print()
+        print("=" * 60)
+        print("Pre-scan check: missing data detected")
+        print("-" * 60)
+        for w in warnings:
+            print(f"  [!] {w}")
+        print()
+        print("  Run 'python3 netwatch.py --setup' to fix all issues.")
+        print("=" * 60)
+        print()
+
+
 def signal_handler(signum, frame):
     """Handle interrupt signals gracefully."""
     print("\n\n[yellow]Scan cancelled.[/yellow]")
@@ -160,7 +244,8 @@ class NetWatch:
         self.nse_results: Dict[str, Any] = {}
         self.auth_results: Dict[str, Any] = {}
         self.last_risk_scores: Dict = {}
-        
+        self._scan_lock = threading.Lock()
+
         # CLI arguments
         self.args = args
         
@@ -689,6 +774,160 @@ class NetWatch:
                 if report.get("suspected_services"):
                     print(f"LOW: {ip} — possible default credentials on ports (unconfirmed): {report['suspected_services']}")
     
+    def _arp_sweep(self, target: str) -> List[str]:
+        """Send ARP requests to all hosts in target; return list of IP strings.
+
+        Uses the same Scapy pattern as core/arp_checker._get_arp_table().
+        Requires root. Any failure returns [].
+        """
+        try:
+            from scapy.layers.l2 import ARP, Ether
+            from scapy.sendrecv import srp
+            import scapy.config
+            scapy.config.conf.verb = 0
+
+            arp_request = Ether(dst="ff:ff:ff:ff:ff:ff") / ARP(pdst=target)
+            answered, _ = srp(arp_request, timeout=3, verbose=False)
+            return [received.psrc for sent, received in answered]
+        except Exception:
+            return []
+
+    def _check_single_host(self, ip: str, host_info, scan_result: ScanResult) -> List[Finding]:
+        """Run all per-host security checks for a single host; return findings.
+
+        Designed to be called from a ThreadPoolExecutor. All writes to shared
+        instance state (last_eol_data) are protected by self._scan_lock.
+        Findings are returned as a list; the caller adds them to the registry.
+
+        Internally runs 8 independent checkers in parallel using a nested
+        ThreadPoolExecutor. Two chain-dependent EOL pipelines (JA3S→EOL,
+        SNMP→EOL) execute immediately after their predecessor completes
+        via as_completed() callbacks.
+        """
+        if host_info.state != "up":
+            return []
+
+        open_ports = [p.port for p in host_info.ports.values() if p.state == "open"]
+        all_findings: List[Finding] = []
+
+        # ---- Submit all independent checkers in parallel ----
+        with ThreadPoolExecutor(max_workers=8) as executor:
+            future_tags = {
+                executor.submit(_check_insecure_protocols, ip, open_ports): "protocols",
+                executor.submit(
+                    run_ssl_checks, ip, open_ports,
+                    timeout=self.settings.ssl_check_timeout,
+                ): "ssl",
+                executor.submit(
+                    run_web_checks, ip, open_ports,
+                    timeout=self.settings.web_check_timeout,
+                ): "web",
+                executor.submit(
+                    run_ftp_checks, ip, open_ports,
+                    timeout=self.settings.banner_timeout,
+                ): "ftp",
+                executor.submit(run_ssh_checks, ip, open_ports): "ssh",
+                executor.submit(run_smb_checks, ip, open_ports): "smb",
+                executor.submit(run_snmp_checks, ip, open_ports): "snmp",
+                executor.submit(self._run_cve_checks, ip, host_info): "cve",
+            }
+
+            for future in as_completed(future_tags):
+                tag = future_tags[future]
+                try:
+                    checker_findings = future.result()
+                    if checker_findings:
+                        all_findings.extend(checker_findings)
+
+                    # Chain-dependent steps run immediately after predecessor
+                    if tag == "ssl":
+                        ja3s_findings = self._run_ja3s_eol_pipeline(ip, open_ports)
+                        if ja3s_findings:
+                            all_findings.extend(ja3s_findings)
+                    elif tag == "snmp":
+                        snmp_eol_findings = self._run_snmp_eol_pipeline(ip)
+                        if snmp_eol_findings:
+                            all_findings.extend(snmp_eol_findings)
+
+                except Exception as e:
+                    logger.error(f"Checker '{tag}' failed for {ip}: {e}")
+
+        return all_findings
+
+    def _run_ja3s_eol_pipeline(self, ip: str, open_ports: List[int]) -> List[Finding]:
+        """Run JA3S→EOL matching after SSL checker has populated the cache.
+
+        Reads get_last_ja3s_match() for each open port, parses the app name
+        into a product slug + version, and feeds it to the EOL checker.
+        Writes to self.last_eol_data under self._scan_lock.
+        """
+        findings: List[Finding] = []
+        try:
+            for port in open_ports:
+                ja3s_match = get_last_ja3s_match(ip, port)
+                if ja3s_match:
+                    app_name, app_desc = ja3s_match
+                    parts = app_name.replace("/", " ").split()
+                    if len(parts) >= 2:
+                        product_slug = parts[0].lower()
+                        version = parts[1]
+                        eol_status = self.eol_checker.check_version(product_slug, version)
+                        with self._scan_lock:
+                            if ip not in self.last_eol_data:
+                                self.last_eol_data[ip] = {}
+                            self.last_eol_data[ip][port] = eol_status
+                        logger.info(
+                            f"JA3S→EOL: {ip}:{port} {product_slug} {version} "
+                            f"→ {eol_status.level.value}"
+                        )
+        except Exception as e:
+            logger.debug(f"JA3S EOL pipeline error for {ip}: {e}")
+        return findings
+
+    def _run_snmp_eol_pipeline(self, ip: str) -> List[Finding]:
+        """Run SNMP sysDescr→EOL matching after SNMP checker has populated the cache.
+
+        Reads get_last_sysdescr() for the host, parses firmware/OS info,
+        and feeds it to the EOL checker.
+        Writes to self.last_eol_data under self._scan_lock.
+        """
+        findings: List[Finding] = []
+        try:
+            sysdescr = get_last_sysdescr(ip)
+            if sysdescr:
+                parsed = parse_sysdescr(sysdescr)
+                if parsed:
+                    product_slug, version = parsed
+                    eol_status = self.eol_checker.check_version(product_slug, version)
+                    with self._scan_lock:
+                        if ip not in self.last_eol_data:
+                            self.last_eol_data[ip] = {}
+                        self.last_eol_data[ip][SNMP_PORT] = eol_status
+                    logger.info(
+                        f"SNMP sysDescr EOL: {ip} {product_slug} {version} → {eol_status.level.value}"
+                    )
+        except Exception as e:
+            logger.debug(f"SNMP sysDescr EOL pipeline error for {ip}: {e}")
+        return findings
+
+    def _run_cve_checks(self, ip: str, host_info) -> List[Finding]:
+        """Run CVE lookup for each detected service version on a host."""
+        findings: List[Finding] = []
+        for port_num, port in host_info.ports.items():
+            if port.service and port.version:
+                try:
+                    cve_findings = self.cve_checker.check(
+                        host=ip,
+                        product=port.service,
+                        version=port.version,
+                        port=port.port,
+                        protocol=port.protocol,
+                    )
+                    findings.extend(cve_findings)
+                except Exception as e:
+                    logger.debug(f"CVE check error {ip}:{port_num}: {e}")
+        return findings
+
     def run_security_checks(self, scan_result: ScanResult) -> FindingRegistry:
         """Run all new security checks and collect findings.
 
@@ -718,133 +957,26 @@ class NetWatch:
         with self.display.create_progress() as progress:
             task = progress.add_task("[cyan]Running security checks...", total=None)
 
-            for ip, host in scan_result.hosts.items():
-                if host.state != "up":
-                    continue
+            # ---- Per-host checks run in parallel ----
+            progress.update(task, description="[cyan]Running per-host security checks in parallel...")
+            futures: Dict[Any, str] = {}
+            with ThreadPoolExecutor(max_workers=self.settings.scan_worker_threads) as executor:
+                for ip, host_info in scan_result.hosts.items():
+                    future = executor.submit(
+                        self._check_single_host, ip, host_info, scan_result)
+                    futures[future] = ip
 
-                open_ports = [p.port for p in host.ports.values() if p.state == "open"]
+                all_findings: List[Finding] = []
+                for future in as_completed(futures):
+                    ip = futures[future]
+                    try:
+                        host_findings = future.result()
+                        all_findings.extend(host_findings)
+                        self.console.print(f"  [green]✓[/green] Checked {ip}")
+                    except Exception as e:
+                        logger.error(f"Security check failed for {ip}: {e}")
 
-                # ---- Insecure protocols ----
-                progress.update(task, description=f"[cyan]Checking protocols: {ip}")
-                self.finding_registry.add_all(
-                    _check_insecure_protocols(ip, open_ports)
-                )
-
-                # ---- SSL/TLS checks (includes JA3S fingerprinting) ----
-                progress.update(task, description=f"[cyan]SSL/TLS checks: {ip}")
-                try:
-                    ssl_findings = run_ssl_checks(
-                        ip, open_ports,
-                        timeout=self.settings.ssl_check_timeout,
-                    )
-                    self.finding_registry.add_all(ssl_findings)
-                except Exception as e:
-                    logger.debug(f"SSL check error for {ip}: {e}")
-
-                # ---- JA3S match → EOL pipeline ----
-                # If a JA3S signature matched a known software (e.g. "nginx 1.18.0"),
-                # feed the product name and version into the EOL checker.
-                try:
-                    for port in open_ports:
-                        ja3s_match = get_last_ja3s_match(ip, port)
-                        if ja3s_match:
-                            app_name, app_desc = ja3s_match
-                            # Try to extract product slug and version from App string
-                            # App strings can look like "nginx/1.18.0" or "Apache httpd 2.4.41"
-                            parts = app_name.replace("/", " ").split()
-                            if len(parts) >= 2:
-                                product_slug = parts[0].lower()
-                                version = parts[1]
-                                eol_status = self.eol_checker.check_version(product_slug, version)
-                                if ip not in self.last_eol_data:
-                                    self.last_eol_data[ip] = {}
-                                self.last_eol_data[ip][port] = eol_status
-                                logger.info(
-                                    f"JA3S→EOL: {ip}:{port} {product_slug} {version} "
-                                    f"→ {eol_status.level.value}"
-                                )
-                except Exception as e:
-                    logger.debug(f"JA3S EOL pipeline error for {ip}: {e}")
-
-                # ---- Web interface checks ----
-                progress.update(task, description=f"[cyan]Web checks: {ip}")
-                try:
-                    web_findings = run_web_checks(
-                        ip, open_ports,
-                        timeout=self.settings.web_check_timeout,
-                    )
-                    self.finding_registry.add_all(web_findings)
-                except Exception as e:
-                    logger.debug(f"Web check error for {ip}: {e}")
-
-                # ---- FTP checks ----
-                progress.update(task, description=f"[cyan]FTP checks: {ip}")
-                try:
-                    ftp_findings = run_ftp_checks(
-                        ip, open_ports, timeout=self.settings.banner_timeout
-                    )
-                    self.finding_registry.add_all(ftp_findings)
-                except Exception as e:
-                    logger.debug(f"FTP check error for {ip}: {e}")
-
-                # ---- SSH deep analysis ----
-                progress.update(task, description=f"[cyan]SSH analysis: {ip}")
-                try:
-                    ssh_findings = run_ssh_checks(ip, open_ports)
-                    self.finding_registry.add_all(ssh_findings)
-                except Exception as e:
-                    logger.debug(f"SSH check error for {ip}: {e}")
-
-                # ---- SMB deep analysis ----
-                progress.update(task, description=f"[cyan]SMB analysis: {ip}")
-                try:
-                    smb_findings = run_smb_checks(ip, open_ports)
-                    self.finding_registry.add_all(smb_findings)
-                except Exception as e:
-                    logger.debug(f"SMB check error for {ip}: {e}")
-
-                # ---- SNMP checks ----
-                progress.update(task, description=f"[cyan]SNMP checks: {ip}")
-                try:
-                    snmp_findings = run_snmp_checks(ip, open_ports)
-                    self.finding_registry.add_all(snmp_findings)
-                except Exception as e:
-                    logger.debug(f"SNMP check error for {ip}: {e}")
-
-                # ---- SNMP sysDescr → EOL pipeline ----
-                # If SNMP returned a sysDescr, parse it for firmware version
-                # and feed directly into EOL checker (bypasses nmap version detection).
-                try:
-                    sysdescr = get_last_sysdescr(ip)
-                    if sysdescr:
-                        parsed = parse_sysdescr(sysdescr)
-                        if parsed:
-                            product_slug, version = parsed
-                            eol_status = self.eol_checker.check_version(product_slug, version)
-                            if ip not in self.last_eol_data:
-                                self.last_eol_data[ip] = {}
-                            self.last_eol_data[ip][SNMP_PORT] = eol_status
-                            logger.info(
-                                f"SNMP sysDescr EOL: {ip} {product_slug} {version} → {eol_status.level.value}"
-                            )
-                except Exception as e:
-                    logger.debug(f"SNMP sysDescr EOL pipeline error for {ip}: {e}")
-
-                # ---- CVE lookup for each detected service version ----
-                progress.update(task, description=f"[cyan]CVE lookup: {ip}")
-                for port_num, port in host.ports.items():
-                    if port.service and port.version:
-                        try:
-                            cve_findings = self.cve_checker.check(
-                                host=ip,
-                                product=port.service,
-                                version=port.version,
-                                port=port.port,
-                                protocol=port.protocol,
-                            )
-                            self.finding_registry.add_all(cve_findings)
-                        except Exception as e:
-                            logger.debug(f"CVE check error {ip}:{port_num}: {e}")
+            self.finding_registry.add_all(all_findings)
 
             # ---- EOL results → Findings ----
             progress.update(task, description="[cyan]Converting EOL results...")
@@ -1217,32 +1349,41 @@ class NetWatch:
         try:
             # Phase 1: Discovery
             self.console.print("[bold blue]Phase 1/6: Host Discovery[/bold blue]")
-            discovery_result = self.scanner.ping_sweep(target)
-            
-            if not discovery_result:
+            if os.geteuid() == 0:
+                with ThreadPoolExecutor(max_workers=2) as executor:
+                    nmap_future = executor.submit(
+                        self.scanner.ping_sweep, target)
+                    arp_future = executor.submit(
+                        self._arp_sweep, target)
+                    nmap_hosts = set(nmap_future.result())
+                    arp_hosts  = set(arp_future.result())
+
+                extra = arp_hosts - nmap_hosts
+                if extra:
+                    self.console.print(
+                        f"  [cyan]ARP sweep found {len(extra)} additional "
+                        f"host(s) not visible to ping sweep: "
+                        f"{', '.join(sorted(extra))}[/cyan]")
+                discovered_hosts = sorted(nmap_hosts | arp_hosts)
+            else:
+                nmap_hosts = set(self.scanner.ping_sweep(target))
+                discovered_hosts = sorted(nmap_hosts)
+
+            if not discovered_hosts:
                 self.console.print("[yellow]No active hosts found.[/yellow]")
                 return 0
-            
-            discovered_hosts = list(discovery_result)
+
             self.console.print(f"[green]Discovered {len(discovered_hosts)} active hosts[/green]\n")
             
             # Phase 2: Port Scanning
             self.console.print("[bold blue]Phase 2/6: Port Scanning[/bold blue]")
-            scan_result = ScanResult(target=target, profile="FULL")
+            profile = self.args.profile if hasattr(self.args, 'profile') else "QUICK"
+            self.console.print(f"[dim]Scanning {len(discovered_hosts)} hosts in parallel...[/dim]")
+            scan_result = self.scanner.scan(target, profile=profile)
             scan_result.start_time = start_time
-            
-            for idx, ip in enumerate(discovered_hosts, 1):
-                self.console.print(f"[dim]Scanning {ip} ({idx}/{len(discovered_hosts)})...[/dim]")
-                try:
-                    host_result = self.scanner.quick_scan(ip)
-                    if ip in host_result.hosts:
-                        scan_result.hosts[ip] = host_result.hosts[ip]
-                except Exception as e:
-                    logger.debug(f"Scan failed for {ip}: {e}")
-            
             scan_result.end_time = datetime.now()
             self.last_scan_result = scan_result
-            self.console.print(f"[green]Port scanning complete: {len(scan_result.hosts)} hosts scanned[/green]\n")
+            self.console.print(f"[green]Port scan complete — {len(scan_result.hosts)} hosts with open ports[/green]\n")
             
             # Phase 3: Banner Grabbing
             self.console.print("[bold blue]Phase 3/6: Service Banner Grabbing[/bold blue]")
@@ -1310,7 +1451,10 @@ class NetWatch:
             success = self.exporter.export_html(
                 scan_result,
                 filename,
-                self.last_eol_data
+                self.last_eol_data,
+                self.finding_registry,
+                self.last_risk_scores,
+                None,
             )
             
             if success:
@@ -1319,7 +1463,14 @@ class NetWatch:
                 reports_dir = Path("reports")
                 reports_dir.mkdir(exist_ok=True)
                 report_path = reports_dir / filename
-                self.exporter.export_html(scan_result, str(report_path), self.last_eol_data)
+                self.exporter.export_html(
+                    scan_result,
+                    str(report_path),
+                    self.last_eol_data,
+                    self.finding_registry,
+                    self.last_risk_scores,
+                    None,
+                )
                 self.console.print(f"[bold green]Report also saved to: {report_path}[/bold green]")
             else:
                 self.console.print("[red]Failed to export report[/red]")
@@ -2043,12 +2194,15 @@ def main() -> int:
             print(f"  {line}")
         return 0
 
+    # --- Pre-scan readiness check (runs before any scan path) ---
+    _print_readiness_warnings(check_scan_readiness())
+
     # Check for interactive mode
     if args.interactive:
         from ui.interactive_controller import InteractiveController
         controller = InteractiveController()
         return controller.run()
-    
+
     # Check for full assessment mode
     if args.full_assessment:
         if not args.target:

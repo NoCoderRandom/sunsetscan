@@ -42,7 +42,7 @@ class Settings:
         upnp_discovery_timeout: Timeout for SSDP UPnP discovery (seconds)
     """
     tool_name: str = "NetWatch"
-    version: str = "1.6.2"
+    version: str = "1.7.0"
     banner_timeout: int = 3
     cache_ttl_hours: int = 24       # legacy — used by eol/cache.py
     cve_cache_ttl_days: int = 7     # CVE data refreshed weekly
@@ -56,6 +56,8 @@ class Settings:
     ssl_check_timeout: float = 5.0
     web_check_timeout: float = 5.0
     upnp_discovery_timeout: float = 3.0
+    nmap_parallel_hosts: int = 4
+    scan_worker_threads: int = 8
     history_retention_days: int = 90
     auto_save_history: bool = True
     
@@ -73,11 +75,11 @@ class Settings:
 # Rates are conservative to avoid overwhelming home routers.
 # Hard cap of 5000 pps is enforced in core/port_scanner.py regardless of this value.
 MASSCAN_RATES: Dict[str, int] = {
-    "QUICK":   1000,   # Fast but safe for home networks
-    "FULL":    1000,   # Full scan — same rate as QUICK
+    "QUICK":   2500,   # Fast but safe for home networks
+    "FULL":    2000,   # Full scan — slightly below QUICK
     "STEALTH":  100,   # Quiet scan — reduced noise footprint
-    "IOT":     1000,
-    "SMB":     1000,
+    "IOT":     2500,
+    "SMB":     2000,
 }
 
 # Scan profiles for nmap

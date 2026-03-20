@@ -1,9 +1,12 @@
 """
 NetWatch EOL Checker Module.
 
-This module queries the endoflife.date API to check software End-of-Life
-status. It handles API requests, version comparison using the packaging
-library, and determines EOL status levels (CRITICAL, WARNING, OK, UNKNOWN).
+This module checks software End-of-Life status using locally cached data
+from endoflife.date. No live API calls are made during scans — all data
+must be pre-populated via --setup or --update-cache.
+
+Uses the packaging library for semantic version comparison and determines
+EOL status levels (CRITICAL, WARNING, OK, UNKNOWN).
 
 Exports:
     EOLChecker: Main class for EOL checking
@@ -18,7 +21,6 @@ Example:
     print(f"Status: {status.level}, EOL Date: {status.eol_date}")
 """
 
-import json
 import logging
 import re
 from dataclasses import dataclass
@@ -26,10 +28,9 @@ from datetime import datetime, timedelta
 from enum import Enum
 from typing import Dict, List, Optional, Any
 
-import requests
 from packaging import version as pkg_version
 
-from config.settings import Settings, EOL_STATUS, ENDOFLIFE_API_BASE, ENDOFLIFE_API_TIMEOUT
+from config.settings import Settings, EOL_STATUS
 from eol.cache import CacheManager
 from eol.product_map import get_product_slug, NOT_TRACKED_PRODUCTS
 
@@ -85,92 +86,61 @@ class EOLStatus:
 
 class EOLChecker:
     """Checker for software End-of-Life status.
-    
-    This class queries the endoflife.date API to determine if a software
+
+    This class reads locally cached EOL data to determine if a software
     version has reached EOL, is approaching EOL, or is still supported.
-    It uses the packaging library for semantic version comparison and
-    caches API responses locally.
-    
+    No live API calls are made — data must be pre-populated via --setup.
+
     Attributes:
-        cache: CacheManager instance for API response caching
+        cache: CacheManager instance for cached EOL data
         settings: Settings configuration object
-        session: requests.Session for connection pooling
-        
+
     Example:
         checker = EOLChecker()
-        
+
         # Check a specific version
         status = checker.check_version("ubuntu", "20.04")
-        
+
         # Check with auto-detection from banner
         status = checker.check_banner("OpenSSH_8.2p1 Ubuntu-4ubuntu0.5")
-        
+
         # Get all available cycles for a product
         cycles = checker.get_product_cycles("nodejs")
     """
-    
+
     def __init__(
-        self, 
+        self,
         cache: Optional[CacheManager] = None,
         settings: Optional[Settings] = None
     ):
         """Initialize the EOL checker.
-        
+
         Args:
             cache: CacheManager instance (creates new if None)
             settings: Settings configuration object
         """
         self.settings = settings or Settings()
         self.cache = cache or CacheManager(settings=self.settings)
-        self.session = requests.Session()
-        self.session.headers.update({
-            'User-Agent': f'NetWatch/{self.settings.version}',
-            'Accept': 'application/json',
-        })
         logger.debug("EOLChecker initialized")
     
     def fetch_product_data(self, product: str) -> Optional[List[Dict]]:
-        """Fetch EOL data for a product from the API.
-        
-        First checks the local cache, then queries the API if needed.
-        
+        """Fetch EOL data for a product from local cache.
+
+        Returns cached data or None if not cached. No live API calls are
+        made — run --setup or --update-cache to populate the cache.
+
         Args:
             product: endoflife.date product slug
-            
+
         Returns:
             List of version cycle data or None if unavailable
         """
-        # Check cache first
         cached_data = self.cache.get(product)
         if cached_data:
             logger.debug(f"Using cached data for {product}")
             return cached_data
-        
-        # Fetch from API
-        url = f"{ENDOFLIFE_API_BASE}/{product}.json"
-        logger.debug(f"Fetching EOL data from: {url}")
-        
-        try:
-            response = self.session.get(
-                url,
-                timeout=ENDOFLIFE_API_TIMEOUT
-            )
-            response.raise_for_status()
-            
-            data = response.json()
-            
-            # Cache the response
-            self.cache.set(product, data)
-            
-            logger.debug(f"Fetched and cached data for {product}")
-            return data
-            
-        except requests.exceptions.RequestException as e:
-            logger.error(f"API request failed for {product}: {e}")
-            return None
-        except json.JSONDecodeError as e:
-            logger.error(f"Invalid JSON response for {product}: {e}")
-            return None
+        logger.debug(f"No cached EOL data for {product} — run --setup to populate")
+        return None
     
     def parse_eol_date(self, date_str: Any) -> Optional[datetime]:
         """Parse EOL date from various formats.
@@ -478,14 +448,12 @@ class EOLChecker:
         return self.fetch_product_data(product)
     
     def refresh_cache(self, product: str) -> bool:
-        """Force refresh cached data for a product.
-        
+        """Delete cached data for a product so it will be re-fetched on next --setup.
+
         Args:
             product: Product slug
-            
+
         Returns:
-            True if refresh succeeded
+            True if cache entry was deleted
         """
-        self.cache.delete(product)
-        data = self.fetch_product_data(product)
-        return data is not None
+        return self.cache.delete(product)
