@@ -2,6 +2,7 @@
 
 **Network security auditing for humans — powered by nmap, built for everyone.**
 
+[![Version](https://img.shields.io/badge/version-v1.7.0-blue)]
 [![Python 3.9+](https://img.shields.io/badge/python-3.9%2B-blue?logo=python&logoColor=white)](https://www.python.org/downloads/)
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20Linux%20%7C%20macOS-lightgrey?logo=windows)](https://github.com)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
@@ -30,6 +31,9 @@ NetWatch is a local-network security auditing tool for **home network owners and
 - NSE (Nmap Scripting Engine) integration for enhanced device detection
 - HTTP fingerprinting to identify routers, cameras, NAS devices, printers, and IoT
 - Automatic root-privilege fallback: FULL/STEALTH profiles gracefully degrade when run without sudo
+- Parallel security analysis — all per-host checks (SSL, SSH, FTP, SMB, SNMP, Web) run concurrently across hosts and within each host using thread pools
+- Phase 7 security analysis completes in under 10 seconds regardless of network size
+- Pre-scan readiness check — warns if nmap is missing, CVE/EOL databases are empty, or default modules are not installed. Runs before every scan, does not block scanning.
 
 ### Security Checks
 NetWatch runs 12 security checker modules during a full assessment:
@@ -53,7 +57,7 @@ NetWatch runs 12 security checker modules during a full assessment:
 - **CVE correlation** — maps detected service versions to known CVEs using OSV.dev
 - **EOL checking** — 150+ products checked against endoflife.date
 - **JA3S TLS fingerprinting** — identifies server software from TLS handshake signatures
-- Offline-safe: all data cached locally; scans never require internet access
+- Fully offline during scans — no external API calls are made during scanning. endoflife.date and OSV.dev are only contacted by `--setup` and `--update-cache`. Scans work without any internet connection as long as caches are populated.
 - Weekly CVE refresh, monthly EOL refresh — controlled by you
 
 ### Modular Data System
