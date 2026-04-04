@@ -39,6 +39,7 @@ sys.path.insert(0, str(Path(__file__).parent))
 from rich.console import Console
 from rich.progress import Progress
 from rich.prompt import Prompt, Confirm
+from rich.table import Table
 
 from config.settings import Settings, SCAN_DESCRIPTIONS
 from core.scanner import NetworkScanner, ScanResult
@@ -58,6 +59,7 @@ from core.upnp_checker import run_upnp_checks
 from core.ftp_checker import run_ftp_checks
 from core.ssh_checker import run_ssh_checks
 from core.snmp_checker import run_snmp_checks, get_last_sysdescr, parse_sysdescr, SNMP_PORT
+from core.device_identifier import DeviceIdentifier, DeviceIdentity
 from core.smb_checker import run_smb_checks
 from core.mdns_checker import run_mdns_discovery
 from core.arp_checker import run_arp_checks
@@ -236,6 +238,7 @@ class NetWatch:
         self.finding_registry = FindingRegistry()
         self.risk_scorer = RiskScorer()
         self.scan_history = ScanHistory()
+        self.device_identifier = DeviceIdentifier()
 
         # Store results for recheck/export
         self.last_scan_result: Optional[ScanResult] = None
@@ -244,6 +247,7 @@ class NetWatch:
         self.nse_results: Dict[str, Any] = {}
         self.auth_results: Dict[str, Any] = {}
         self.last_risk_scores: Dict = {}
+        self.last_device_identities: Dict[str, DeviceIdentity] = {}
         self._scan_lock = threading.Lock()
 
         # CLI arguments
@@ -335,7 +339,76 @@ class NetWatch:
             target = target  # Keep as-is for nmap to handle
         
         return self.perform_scan(target, profile)
-    
+
+    def run_identify_only(self, target: str, profile: str) -> int:
+        """Run scan + device identification only (no security checks).
+
+        Args:
+            target: Target to scan
+            profile: Scan profile to use
+
+        Returns:
+            Exit code
+        """
+        self.display.show_banner()
+
+        if not self.has_privileges:
+            self.display.show_warning("Running without root/admin privileges")
+
+        try:
+            with self.display.create_progress() as progress:
+                scan_task = progress.add_task(f"[cyan]Scanning {target}...", total=100)
+
+                def update_progress(msg: str, pct: float):
+                    progress.update(scan_task, description=f"[cyan]{msg}", completed=pct)
+
+                self.scanner.set_progress_callback(update_progress)
+                self.console.print(f"\n[bold blue]Starting {profile} scan on {target}...[/bold blue]")
+                scan_result = self.scanner.scan(target, profile)
+                progress.update(scan_task, completed=100)
+
+            self.last_scan_result = scan_result
+            self.last_target = target
+
+            if not scan_result.hosts:
+                self.console.print("[yellow]No hosts found.[/yellow]")
+                return 0
+
+            # Grab banners (needed for identification)
+            self.grab_banners(scan_result)
+
+            # Run device identification (no security checks)
+            self.console.print("\n[bold blue]Identifying devices...[/bold blue]")
+            self.last_device_identities.clear()
+            for ip, host_info in scan_result.hosts.items():
+                if host_info.state != "up":
+                    continue
+                try:
+                    identity = self.device_identifier.identify_preliminary(ip, host_info)
+                    if identity.confidence > 0:
+                        self.last_device_identities[ip] = identity
+                except Exception as e:
+                    logger.debug(f"Device identification failed for {ip}: {e}")
+
+            if self.last_device_identities:
+                self._print_device_id_table()
+            else:
+                self.console.print("[yellow]No devices could be identified.[/yellow]")
+
+            self.console.print(
+                f"\n[bold]{len(self.last_device_identities)}/{len(scan_result.hosts)} "
+                f"hosts identified[/bold]"
+            )
+            return 0
+
+        except KeyboardInterrupt:
+            self.console.print("\n[yellow]Scan interrupted by user[/yellow]")
+            return 130
+        except Exception as e:
+            logging.error(f"Identify scan failed: {e}", exc_info=True)
+            self.display.show_error(f"Identify scan failed: {e}")
+            return 1
+
     def run_quick_scan(self) -> None:
         """Run a quick scan."""
         target = self.get_target()
@@ -972,7 +1045,20 @@ class NetWatch:
                     try:
                         host_findings = future.result()
                         all_findings.extend(host_findings)
-                        self.console.print(f"  [green]✓[/green] Checked {ip}")
+                        # Preliminary device identification for per-host line
+                        host_info = scan_result.hosts.get(ip)
+                        if host_info and host_info.state == "up":
+                            try:
+                                prelim = self.device_identifier.identify_preliminary(ip, host_info)
+                                if prelim.confidence > 0:
+                                    label = prelim.summary()
+                                    self.console.print(f"  [green]✓[/green] {ip} — {label}")
+                                else:
+                                    self.console.print(f"  [green]✓[/green] Checked {ip}")
+                            except Exception:
+                                self.console.print(f"  [green]✓[/green] Checked {ip}")
+                        else:
+                            self.console.print(f"  [green]✓[/green] Checked {ip}")
                     except Exception as e:
                         logger.error(f"Security check failed for {ip}: {e}")
 
@@ -1042,9 +1128,84 @@ class NetWatch:
                 except Exception as e:
                     logger.debug(f"Baseline check error: {e}")
 
+            # ---- Device Identification ----
+            progress.update(task, description="[cyan]Identifying devices...")
+            self.last_device_identities.clear()
+            for ip, host_info in scan_result.hosts.items():
+                if host_info.state != "up":
+                    continue
+                try:
+                    host_findings = self.finding_registry.get_for_host(ip)
+                    identity = self.device_identifier.identify(ip, host_info, host_findings)
+                    if identity.confidence > 0:
+                        self.last_device_identities[ip] = identity
+                        self.finding_registry.add(Finding(
+                            severity=Severity.INFO,
+                            title=f"Device identified: {identity.summary()}",
+                            host=ip,
+                            category="Device Identification",
+                            description=(
+                                f"Type: {identity.device_type or 'Unknown'}\n"
+                                f"Vendor: {identity.vendor or 'Unknown'}\n"
+                                f"Model: {identity.model or 'Unknown'}\n"
+                                f"Version: {identity.version or 'Unknown'}"
+                            ),
+                            explanation=(
+                                "Device identity determined by combining evidence from "
+                                "multiple sources including MAC OUI, nmap OS detection, "
+                                "HTTP fingerprinting, TLS certificates, SSH banners, "
+                                "UPnP discovery, SNMP, and port heuristics."
+                            ),
+                            recommendation="No action required — informational finding.",
+                            evidence=f"Sources: {', '.join(identity.sources)} | Confidence: {identity.confidence:.0%}",
+                            tags=["device-id"],
+                        ))
+                except Exception as e:
+                    logger.debug(f"Device identification failed for {ip}: {e}")
+
+            # Print device identification summary table
+            if self.last_device_identities:
+                self._print_device_id_table()
+
         # Deduplicate (same host+port+title from multiple code paths)
         self.finding_registry.deduplicate()
         return self.finding_registry
+
+    def _print_device_id_table(self) -> None:
+        """Print a Rich table summarizing identified devices."""
+        table = Table(
+            title="Device Identification",
+            show_header=True,
+            header_style="bold cyan",
+        )
+        table.add_column("IP", style="dim", width=17)
+        table.add_column("Type", width=18)
+        table.add_column("Vendor", width=14)
+        table.add_column("Model", width=20)
+        table.add_column("Version", width=12)
+        table.add_column("Conf.", justify="right", width=6)
+
+        for ip in sorted(self.last_device_identities):
+            ident = self.last_device_identities[ip]
+            pct = int(ident.confidence * 100)
+            if pct >= 70:
+                conf_str = f"[green]{pct}%[/green]"
+            elif pct >= 40:
+                conf_str = f"[yellow]{pct}%[/yellow]"
+            else:
+                conf_str = f"[dim]{pct}%[/dim]"
+
+            table.add_row(
+                ip,
+                ident.device_type or "—",
+                ident.vendor or "—",
+                ident.model or "—",
+                ident.version or "—",
+                conf_str,
+            )
+
+        self.console.print()
+        self.console.print(table)
 
     def _eol_to_findings(
         self,
@@ -1455,8 +1616,9 @@ class NetWatch:
                 self.finding_registry,
                 self.last_risk_scores,
                 None,
+                device_identities=self.last_device_identities,
             )
-            
+
             if success:
                 self.console.print(f"[bold green]Report saved: {filename}[/bold green]")
                 # Also save to reports directory
@@ -1470,6 +1632,7 @@ class NetWatch:
                     self.finding_registry,
                     self.last_risk_scores,
                     None,
+                    device_identities=self.last_device_identities,
                 )
                 self.console.print(f"[bold green]Report also saved to: {report_path}[/bold green]")
             else:
@@ -1513,6 +1676,7 @@ examples:
   %(prog)s --target 192.168.1.0/24 --profile SMB    SMB/Windows scan
   %(prog)s --target 192.168.1.1 --profile FULL --nse  Deep single-host scan
   %(prog)s --target 192.168.1.0/24 --check-defaults Test default passwords
+  %(prog)s --target 192.168.1.0/24 --identify       Quick device inventory
   %(prog)s --target 192.168.1.0/24 --save-baseline  Save device baseline
   %(prog)s --modules                                List data modules
   %(prog)s --download all                           Download all modules
@@ -1583,6 +1747,12 @@ examples:
         '--update-cache',
         action='store_true',
         help='Manually refresh CVE and EOL caches (run weekly for best results)'
+    )
+
+    parser.add_argument(
+        '--identify',
+        action='store_true',
+        help='Run device identification only (skip security checks). Requires --target.'
     )
 
     parser.add_argument(
@@ -2202,6 +2372,15 @@ def main() -> int:
         from ui.interactive_controller import InteractiveController
         controller = InteractiveController()
         return controller.run()
+
+    # Check for identify-only mode
+    if args.identify:
+        if not args.target:
+            print("Error: --identify requires a target. Use --target to specify.")
+            print("Example: python netwatch.py --identify --target 192.168.1.0/24")
+            return 1
+        app = NetWatch(args)
+        return app.run_identify_only(args.target, args.profile)
 
     # Check for full assessment mode
     if args.full_assessment:

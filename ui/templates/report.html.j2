@@ -267,6 +267,35 @@
   .topo-device-name { font-size: 0.78rem; color: #6b7280; }
   .topo-device-ports { font-size: 0.72rem; color: #9ca3af; margin-top: 4px; }
   .topo-device-badge { font-size: 0.68rem; font-weight: 700; padding: 1px 6px; border-radius: 4px; width: fit-content; }
+  .topo-device-id { font-size: 0.76rem; color: #1e40af; font-weight: 600; margin-top: 2px; }
+  .topo-device-id-type { font-size: 0.7rem; color: #4b5563; font-style: italic; }
+
+  /* ===== DEVICE IDENTITY ===== */
+  .device-id-badge {
+    display: inline-flex; align-items: center; gap: 6px;
+    background: linear-gradient(135deg, #eff6ff 0%, #dbeafe 100%);
+    border: 1px solid #93c5fd; border-radius: 8px;
+    padding: 6px 14px; font-size: 0.82rem; color: #1e3a5f; font-weight: 600;
+  }
+  .device-id-badge .did-type { color: #3b82f6; font-weight: 700; }
+  .device-id-badge .did-conf { font-size: 0.7rem; color: #6b7280; font-weight: 400; }
+
+  /* ===== DEVICE INVENTORY TABLE ===== */
+  .inventory-table { width: 100%; border-collapse: collapse; font-size: 0.82rem; }
+  .inventory-table th {
+    background: #f1f5f9; color: #374151; font-weight: 700;
+    text-align: left; padding: 10px 14px; border-bottom: 2px solid #e2e8f0;
+    font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.5px;
+  }
+  .inventory-table td { padding: 8px 14px; border-bottom: 1px solid #f1f5f9; }
+  .inventory-table tr:hover { background: #f8fafc; }
+  .inventory-conf {
+    display: inline-block; min-width: 42px; text-align: center;
+    padding: 1px 8px; border-radius: 10px; font-size: 0.72rem; font-weight: 600;
+  }
+  .conf-high { background: #dcfce7; color: #166534; }
+  .conf-med  { background: #fef3c7; color: #92400e; }
+  .conf-low  { background: #f3f4f6; color: #6b7280; }
 
   /* ===== POSTURE COLORS ===== */
   .posture-critical { color: #dc2626; }
@@ -448,9 +477,16 @@
       {% set is_gw = host_ip.endswith('.1') or host_ip.endswith('.254') %}
       <div class="topo-device {% if is_gw %}gateway{% endif %}">
         <div class="topo-device-ip">{{ host_ip }}</div>
+        {% if device_identities and host_ip in device_identities %}
+        {% set did = device_identities[host_ip] %}
+        {% if did.device_type %}<div class="topo-device-id-type">{{ did.device_type }}</div>{% endif %}
+        {% if did.vendor or did.model %}<div class="topo-device-id">{{ did.vendor }}{% if did.vendor and did.model %} {% endif %}{{ did.model }}</div>{% endif %}
+        {% if did.version %}<div class="topo-device-name" style="font-family:monospace;">v{{ did.version }}</div>{% endif %}
+        {% else %}
         {% if host.hostname %}<div class="topo-device-name">{{ host.hostname }}</div>{% endif %}
         {% if host.vendor %}<div class="topo-device-name">{{ host.vendor }}</div>{% endif %}
         {% if host.os_guess %}<div class="topo-device-name" style="font-style:italic;">{{ host.os_guess[:40] }}</div>{% endif %}
+        {% endif %}
         {% if host.mac %}<div class="topo-device-name" style="font-family:monospace;">{{ host.mac }}</div>{% endif %}
         {% if is_gw %}
         <div class="topo-device-badge sev-info">Gateway</div>
@@ -475,6 +511,44 @@
       {% endfor %}
     </div>
   </div>
+
+  <!-- ====== DEVICE INVENTORY ====== -->
+  {% if device_identities %}
+  <div class="section">
+    <div class="section-title">&#128270; Device Inventory</div>
+    <div style="overflow-x:auto;">
+      <table class="inventory-table">
+        <thead>
+          <tr>
+            <th>IP Address</th>
+            <th>Type</th>
+            <th>Vendor</th>
+            <th>Model</th>
+            <th>Version</th>
+            <th>Confidence</th>
+            <th>Sources</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for ip, did in device_identities.items() | sort %}
+          <tr onclick="scrollToHost('{{ ip }}')" style="cursor:pointer;" title="Click to go to host section">
+            <td style="font-family:monospace; font-weight:600;">{{ ip }}</td>
+            <td>{{ did.device_type or '—' }}</td>
+            <td style="font-weight:600;">{{ did.vendor or '—' }}</td>
+            <td>{{ did.model or '—' }}</td>
+            <td style="font-family:monospace;">{{ did.version or '—' }}</td>
+            <td>
+              {% set conf_pct = (did.confidence * 100) | int %}
+              <span class="inventory-conf {% if conf_pct >= 70 %}conf-high{% elif conf_pct >= 40 %}conf-med{% else %}conf-low{% endif %}">{{ conf_pct }}%</span>
+            </td>
+            <td style="font-size:0.72rem; color:#6b7280;">{{ did.sources | join(', ') }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+  {% endif %}
 
   <!-- ====== FINDINGS SUMMARY TABLE ====== -->
   {% if all_findings %}
@@ -520,8 +594,13 @@
       <div class="host-header" onclick="toggleHost('{{ host_ip|replace('.', '-') }}')">
         <div>
           <span class="host-ip">{{ host_ip }}</span>
+          {% if device_identities and host_ip in device_identities %}
+          {% set did = device_identities[host_ip] %}
+          <span class="host-name">&bull; {{ did.vendor }}{% if did.vendor and did.model %} {% endif %}{{ did.model }}{% if did.device_type %} ({{ did.device_type }}){% endif %}</span>
+          {% else %}
           {% if host.hostname %}<span class="host-name">{{ host.hostname }}</span>{% endif %}
           {% if host.vendor %}<span class="host-name">&bull; {{ host.vendor }}</span>{% endif %}
+          {% endif %}
         </div>
         <div class="host-badges">
           {% set hcounts = host_finding_counts.get(host_ip, {}) %}
@@ -549,6 +628,17 @@
           <span>State: {{ host.state }}</span>
           <span>Open ports: {{ host.ports | length }}</span>
         </div>
+        {% if device_identities and host_ip in device_identities %}
+        {% set did = device_identities[host_ip] %}
+        <div style="margin-bottom: 14px;">
+          <div class="device-id-badge">
+            {% if did.device_type %}<span class="did-type">{{ did.device_type }}</span> &mdash; {% endif %}
+            {{ did.vendor }}{% if did.vendor and did.model %} {% endif %}{{ did.model }}
+            {% if did.version %} v{{ did.version }}{% endif %}
+            <span class="did-conf">{{ (did.confidence * 100) | int }}% confidence</span>
+          </div>
+        </div>
+        {% endif %}
 
         <!-- Findings for this host -->
         {% if host_findings %}

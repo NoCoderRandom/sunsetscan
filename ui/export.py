@@ -82,6 +82,7 @@ class ReportExporter:
         filepath: str,
         eol_data: Optional[Dict[str, Dict[int, EOLStatus]]] = None,
         findings=None,  # Optional FindingRegistry
+        device_identities=None,  # Optional Dict[str, DeviceIdentity]
     ) -> bool:
         """Export scan results to JSON format."""
         try:
@@ -116,6 +117,13 @@ class ReportExporter:
             if findings is not None:
                 export_data["summary"]["findings"] = findings.counts()
                 export_data["findings"] = [f.to_dict() for f in findings.get_all()]
+
+            # Device identities
+            if device_identities:
+                export_data["device_identities"] = {
+                    ip: (did.to_dict() if hasattr(did, 'to_dict') else did)
+                    for ip, did in device_identities.items()
+                }
 
             # Host details
             for ip, host in scan_result.hosts.items():
@@ -177,6 +185,7 @@ class ReportExporter:
         findings=None,          # Optional FindingRegistry
         risk_scores=None,       # Optional Dict[str, DeviceRisk] from RiskScorer
         scan_diff=None,         # Optional ScanDiff from ScanHistory
+        device_identities=None, # Optional Dict[str, DeviceIdentity]
     ) -> bool:
         """Export scan results to a professional HTML report.
 
@@ -184,7 +193,8 @@ class ReportExporter:
         """
         try:
             html = self._generate_html(scan_result, eol_data, findings,
-                                       risk_scores=risk_scores, scan_diff=scan_diff)
+                                       risk_scores=risk_scores, scan_diff=scan_diff,
+                                       device_identities=device_identities)
             path = Path(filepath)
             path.parent.mkdir(parents=True, exist_ok=True)
             with open(path, "w", encoding="utf-8") as f:
@@ -202,20 +212,22 @@ class ReportExporter:
         findings=None,
         risk_scores=None,
         scan_diff=None,
+        device_identities=None,
     ) -> str:
         """Generate HTML. Uses Jinja2 template when available."""
         env = _get_jinja_env()
         if env:
             try:
                 return self._render_jinja(env, scan_result, eol_data, findings,
-                                          risk_scores=risk_scores, scan_diff=scan_diff)
+                                          risk_scores=risk_scores, scan_diff=scan_diff,
+                                          device_identities=device_identities)
             except Exception as e:
                 logger.warning(f"Jinja2 render failed, falling back to legacy: {e}")
 
         return self._legacy_html(scan_result, eol_data)
 
     def _render_jinja(self, env, scan_result, eol_data, findings,
-                      risk_scores=None, scan_diff=None) -> str:
+                      risk_scores=None, scan_diff=None, device_identities=None) -> str:
         """Render the Jinja2 report template."""
         template = env.get_template("report.html.j2")
 
@@ -300,6 +312,12 @@ class ReportExporter:
             findings=findings, scan_diff=scan_diff,
         )
 
+        # Build device identity proxies for template
+        did_for_template = {}
+        if device_identities:
+            for ip, did in device_identities.items():
+                did_for_template[ip] = did.to_dict() if hasattr(did, 'to_dict') else did
+
         return template.render(
             metadata=metadata,
             counts=counts,
@@ -312,6 +330,7 @@ class ReportExporter:
             risk_scores=risk_scores or {},
             scan_diff=scan_diff,
             executive_summary=executive_summary,
+            device_identities=did_for_template,
         )
 
     def _build_executive_summary(self, counts: dict, scan_result, risk_scores,
@@ -535,13 +554,16 @@ class ReportExporter:
         findings=None,
         risk_scores=None,
         scan_diff=None,
+        device_identities=None,
     ) -> bool:
         """Export in the specified format (json or html)."""
         if format_type.lower() == "json":
-            return self.export_json(scan_result, filepath, eol_data, findings)
+            return self.export_json(scan_result, filepath, eol_data, findings,
+                                    device_identities=device_identities)
         elif format_type.lower() == "html":
             return self.export_html(scan_result, filepath, eol_data, findings,
-                                    risk_scores=risk_scores, scan_diff=scan_diff)
+                                    risk_scores=risk_scores, scan_diff=scan_diff,
+                                    device_identities=device_identities)
         else:
             logger.error(f"Unknown export format: {format_type}")
             return False

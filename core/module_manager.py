@@ -108,6 +108,15 @@ MODULE_REGISTRY: Dict[str, Dict[str, Any]] = {
         "default": False,
         "parser": "_parse_camera_credentials",
     },
+    "mac-oui": {
+        "description": "IEEE MAC address OUI vendor database",
+        "source": "IEEE Standards Association",
+        "url": "https://standards-oui.ieee.org/oui/oui.csv",
+        "local_path": "data/cache/mac_oui.json",
+        "size_estimate": "4MB",
+        "default": True,
+        "parser": "_parse_mac_oui",
+    },
 }
 
 # Top 500 web technologies by usage frequency (used for wappalyzer-mini)
@@ -317,6 +326,39 @@ def _parse_camera_credentials(raw_text: str) -> List[Dict]:
     return entries
 
 
+def _parse_mac_oui(raw_text: str) -> Dict:
+    """Parse IEEE OUI CSV into {MAC_PREFIX: vendor_name} mapping.
+
+    The IEEE CSV has columns: Registry, Assignment (hex prefix),
+    Organization Name, Organization Address.
+    We extract the 3-byte OUI prefix and map it to the organization name.
+    """
+    oui_map: Dict[str, str] = {}
+    try:
+        reader = csv.reader(io.StringIO(raw_text))
+        header_skipped = False
+        for row in reader:
+            if not row or len(row) < 3:
+                continue
+            # Skip header row
+            if not header_skipped:
+                if row[0].strip().lower() in ("registry", ""):
+                    header_skipped = True
+                    continue
+                header_skipped = True
+            # Column 1 = hex assignment (e.g. "AABBCC"), Column 2 = org name
+            hex_prefix = row[1].strip().upper()
+            org_name = row[2].strip()
+            if len(hex_prefix) == 6 and org_name:
+                # Convert AABBCC to AA:BB:CC
+                formatted = f"{hex_prefix[0:2]}:{hex_prefix[2:4]}:{hex_prefix[4:6]}"
+                oui_map[formatted] = org_name
+    except Exception as e:
+        logger.warning(f"mac-oui parse error: {e}")
+    logger.info(f"Parsed {len(oui_map)} OUI entries from IEEE database")
+    return oui_map
+
+
 # Map parser names to functions
 _PARSERS = {
     "_parse_credentials_mini": _parse_credentials_mini,
@@ -326,6 +368,7 @@ _PARSERS = {
     "_parse_ja3_signatures": _parse_ja3_signatures,
     "_parse_snmp_communities": _parse_snmp_communities,
     "_parse_camera_credentials": _parse_camera_credentials,
+    "_parse_mac_oui": _parse_mac_oui,
 }
 
 
