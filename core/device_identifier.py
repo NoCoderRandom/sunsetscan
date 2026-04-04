@@ -627,12 +627,31 @@ class DeviceIdentifier:
 
             for pattern, vendor, device_type, conf in _SSH_BANNER_PATTERNS:
                 if pattern.search(banner):
-                    return _Evidence(
+                    results = [_Evidence(
                         source="ssh_banner",
                         vendor=self._normalize_vendor(vendor),
                         device_type=device_type,
                         confidence=conf,
-                    )
+                    )]
+                    # Try to extract Ubuntu release version from SSH package revision
+                    ubuntu_match = re.search(r'(\d+)ubuntu\d+', banner)
+                    if ubuntu_match:
+                        prefix = ubuntu_match.group(1) + "ubuntu"
+                        version_hints = {
+                            "4ubuntu": "20.04",
+                            "7ubuntu": "22.04",
+                            "9ubuntu": "24.04",
+                        }
+                        ubuntu_ver = version_hints.get(prefix)
+                        if ubuntu_ver:
+                            results.append(_Evidence(
+                                source="ssh_banner_os_hint",
+                                vendor="Canonical",
+                                version=ubuntu_ver,
+                                device_type="Server",
+                                confidence=0.15,
+                            ))
+                    return results
 
         # Also check SSH findings for banner info
         for f in findings:

@@ -85,7 +85,7 @@ MASSCAN_RATES: Dict[str, int] = {
 # Scan profiles for nmap
 # Keys are profile names, values are nmap argument strings
 SCAN_PROFILES: Dict[str, str] = {
-    "QUICK":  "-T4 -F",                                    # Fast, common ports only
+    "QUICK":  "-T4 -F -sV --version-intensity 2",            # Fast, common ports + light version detection
     "FULL":   "-T4 -A -sV -O --osscan-guess",              # OS detect + version + scripts
     "STEALTH":"-sS -T2 -sV",                               # SYN scan, slower, quieter
     "PING":   "-sn",                                       # Ping sweep only
@@ -97,9 +97,9 @@ SCAN_PROFILES: Dict[str, str] = {
 SCAN_DESCRIPTIONS: Dict[str, Dict[str, str]] = {
     "QUICK": {
         "name": "Quick Scan",
-        "description": "Fast scan of top 100 ports with aggressive timing",
-        "features": ["Top 100 common ports", "Fast timing (-T4)", "Host discovery"],
-        "estimated_time": "30 seconds - 2 minutes",
+        "description": "Fast scan of top 100 ports with aggressive timing and light version detection",
+        "features": ["Top 100 common ports", "Fast timing (-T4)", "Light service version detection (-sV intensity 2)", "Host discovery"],
+        "estimated_time": "1 - 3 minutes",
         "requires_root": False,
     },
     "FULL": {

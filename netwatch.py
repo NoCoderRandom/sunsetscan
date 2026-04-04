@@ -20,6 +20,7 @@ import argparse
 import json
 import logging
 import os
+import re
 import shutil
 import sys
 import signal
@@ -70,9 +71,27 @@ from core.update_manager import UpdateManager
 from core.module_manager import ModuleManager, MODULE_REGISTRY
 from eol.checker import EOLChecker, EOLStatus, EOLStatusLevel
 from eol.cache import CacheManager
+from eol.product_map import get_product_slug, NOT_TRACKED_PRODUCTS
 from ui.menu import Menu
 from ui.display import Display
 from ui.export import ReportExporter
+
+
+# Maps device-identity vendor names to endoflife.date product slugs.
+# Supplements get_product_slug() for cases where vendor alone identifies the product.
+_IDENTITY_EOL_MAP = {
+    "synology": "synology-dsm",
+    "qnap": "qnap-qts",
+    "mikrotik": "mikrotik",
+    "netgate": "pfsense",
+    "proxmox": "proxmox-ve",
+    "vmware": "vmware-esxi",
+    "cisco": "cisco-ios-xe",
+    "juniper": "junos",
+    "canonical": "ubuntu",
+    "red hat": "rhel",
+    "microsoft": "windows-server",
+}
 
 
 def setup_logging(verbose: bool = False) -> None:
@@ -392,13 +411,18 @@ class NetWatch:
 
             if self.last_device_identities:
                 self._print_device_id_table()
+                from collections import Counter
+                type_counts = Counter(
+                    (i.device_type or "Unknown")
+                    for i in self.last_device_identities.values()
+                )
+                parts = [f"{c} {t.lower()}s" for t, c in type_counts.most_common()]
+                self.console.print(
+                    f"\n[bold]{len(self.last_device_identities)} devices identified[/bold] "
+                    f"({', '.join(parts)})"
+                )
             else:
                 self.console.print("[yellow]No devices could be identified.[/yellow]")
-
-            self.console.print(
-                f"\n[bold]{len(self.last_device_identities)}/{len(scan_result.hosts)} "
-                f"hosts identified[/bold]"
-            )
             return 0
 
         except KeyboardInterrupt:
@@ -718,24 +742,50 @@ class NetWatch:
                     # means we cannot match to an EOL cycle; skip avoids false UNKNOWNs.
                     has_version = bool(port.version and port.version.strip())
                     has_banner = bool(port.banner and port.banner.strip())
-                    if not has_version and not has_banner:
+                    has_firmware = bool(
+                        getattr(port, 'http_fingerprint', None)
+                        and getattr(port.http_fingerprint, 'firmware_version', '')
+                    )
+                    if not has_version and not has_banner and not has_firmware:
                         progress.update(eol_task, advance=1)
                         continue
+
+                    eol_status = None
 
                     # Try banner first if available
                     if has_banner:
                         eol_status = self.eol_checker.check_banner(port.banner)
-                    else:
-                        # Use service name and version
+
+                    # Fall back to service name + version
+                    if (not eol_status or not eol_status.product
+                            or eol_status.product == "unknown") and has_version:
                         eol_status = self.eol_checker.check_version(
                             port.service,
                             port.version or ""
                         )
 
+                    # Fall back to HTTP fingerprint firmware_version
+                    if (not eol_status or not eol_status.product
+                            or eol_status.product == "unknown") and has_firmware:
+                        fp = port.http_fingerprint
+                        fw_slug = get_product_slug(fp.device_type or "")
+                        if not fw_slug and fp.device_type:
+                            # Try vendor part of device_type (e.g. "TP-Link Router" -> "tp-link")
+                            vendor_part = fp.device_type.split()[0] if fp.device_type else ""
+                            fw_slug = get_product_slug(vendor_part)
+                        if fw_slug:
+                            eol_status = self.eol_checker.check_version(
+                                fw_slug, fp.firmware_version
+                            )
+                            logger.debug(
+                                f"HTTP fingerprint EOL: {ip}:{port_num} "
+                                f"{fw_slug} {fp.firmware_version}"
+                            )
+
                     # Only store the result if we actually identified a product.
                     # product="unknown" means the banner/service gave no useful info —
                     # these are N/A, not meaningful UNKNOWN EOL results.
-                    if eol_status.product and eol_status.product != "unknown":
+                    if eol_status and eol_status.product and eol_status.product != "unknown":
                         self.last_eol_data[ip][port_num] = eol_status
                     progress.update(eol_task, advance=1)
     
@@ -983,6 +1033,134 @@ class NetWatch:
             logger.debug(f"SNMP sysDescr EOL pipeline error for {ip}: {e}")
         return findings
 
+    def _run_identity_eol_pipeline(self) -> List[Finding]:
+        """Bridge device identities into EOL checking.
+
+        Iterates self.last_device_identities and, for each identity with a
+        vendor+version, attempts to map to an endoflife.date slug and check
+        EOL status.  Results are stored under port 0 (firmware-level) in
+        self.last_eol_data.
+        """
+        findings: List[Finding] = []
+        for ip, identity in self.last_device_identities.items():
+            if not identity.version:
+                continue
+
+            # Try multiple lookup strategies to find a product slug
+            slug = None
+            vendor_lower = identity.vendor.lower() if identity.vendor else ""
+            model_lower = identity.model.lower() if identity.model else ""
+
+            # 1) Direct vendor lookup in our identity-specific map
+            if vendor_lower in _IDENTITY_EOL_MAP:
+                slug = _IDENTITY_EOL_MAP[vendor_lower]
+
+            # 2) Try "{vendor} {device_type}" in general product map
+            if not slug and vendor_lower and identity.device_type:
+                slug = get_product_slug(f"{vendor_lower} {identity.device_type}")
+
+            # 3) Try model name as key (e.g. "routeros" -> "mikrotik")
+            if not slug and model_lower:
+                slug = get_product_slug(model_lower)
+
+            # 4) Fall back to plain vendor name in general product map
+            if not slug and vendor_lower:
+                slug = get_product_slug(vendor_lower)
+
+            if not slug:
+                logger.debug(
+                    f"Identity→EOL: no slug for {ip} "
+                    f"(vendor={identity.vendor}, model={identity.model})"
+                )
+                continue
+
+            # Skip products known to be untracked
+            if slug in NOT_TRACKED_PRODUCTS:
+                logger.debug(f"Identity→EOL: {ip} {slug} not tracked, skipping")
+                continue
+
+            try:
+                eol_status = self.eol_checker.check_version(slug, identity.version)
+            except Exception as e:
+                logger.debug(f"Identity→EOL check error for {ip} {slug}: {e}")
+                continue
+
+            # Store under port 0 = firmware-level EOL
+            with self._scan_lock:
+                if ip not in self.last_eol_data:
+                    self.last_eol_data[ip] = {}
+                self.last_eol_data[ip][0] = eol_status
+
+            logger.info(
+                f"Identity→EOL: {ip} {slug} {identity.version} "
+                f"→ {eol_status.level.value}"
+            )
+
+            # Generate findings for firmware EOL
+            if eol_status.level == EOLStatusLevel.CRITICAL:
+                findings.append(Finding(
+                    severity=Severity.HIGH,
+                    title=f"Firmware end-of-life: {identity.vendor} {identity.version}",
+                    host=ip,
+                    port=0,
+                    category="End-of-Life Firmware",
+                    description=eol_status.message,
+                    explanation=(
+                        f"{identity.vendor} {identity.version} has reached End-of-Life. "
+                        "The vendor no longer releases security patches for this version."
+                    ),
+                    recommendation=(
+                        f"Upgrade {identity.vendor} {identity.model or 'device'} firmware "
+                        f"to the latest supported version "
+                        f"({eol_status.latest_version or 'check vendor site'})."
+                    ),
+                    evidence=(
+                        f"Device: {identity.summary()} | "
+                        f"Product: {eol_status.product} {eol_status.version}"
+                    ),
+                    tags=["eol", "firmware", slug],
+                ))
+            elif eol_status.level == EOLStatusLevel.WARNING:
+                findings.append(Finding(
+                    severity=Severity.MEDIUM,
+                    title=(
+                        f"Firmware EOL approaching: {identity.vendor} {identity.version} "
+                        f"({eol_status.days_remaining} days)"
+                    ),
+                    host=ip,
+                    port=0,
+                    category="End-of-Life Firmware",
+                    description=eol_status.message,
+                    explanation=(
+                        f"{identity.vendor} {identity.version} reaches End-of-Life "
+                        f"in {eol_status.days_remaining} days."
+                    ),
+                    recommendation=(
+                        f"Plan firmware upgrade for {identity.vendor} "
+                        f"{identity.model or 'device'} before EOL."
+                    ),
+                    evidence=(
+                        f"Device: {identity.summary()} | "
+                        f"Product: {eol_status.product} {eol_status.version}"
+                    ),
+                    tags=["eol", "firmware", slug],
+                ))
+
+        return findings
+
+    # Patterns to extract SSH daemon product + version from banners
+    _SSH_CVE_PATTERNS = [
+        (re.compile(r'OpenSSH[_\s]([\d.p]+)', re.I), "openssh"),
+        (re.compile(r'dropbear[_\s]([\d.]+)', re.I), "dropbear"),
+    ]
+
+    # Map Ubuntu SSH package revision prefix to Ubuntu release version
+    _UBUNTU_SSH_RELEASE_MAP = {
+        "4ubuntu": "20.04",
+        "7ubuntu": "22.04",
+        "9ubuntu": "24.04",
+    }
+
     def _run_cve_checks(self, ip: str, host_info) -> List[Finding]:
         """Run CVE lookup for each detected service version on a host."""
         findings: List[Finding] = []
@@ -999,6 +1177,59 @@ class NetWatch:
                     findings.extend(cve_findings)
                 except Exception as e:
                     logger.debug(f"CVE check error {ip}:{port_num}: {e}")
+
+            # SSH banner → CVE pipeline: extract OpenSSH/dropbear versions
+            if port.service == "ssh":
+                banner = port.banner or port.version or ""
+                for pat, product in self._SSH_CVE_PATTERNS:
+                    m = pat.search(banner)
+                    if m:
+                        ssh_version = m.group(1)
+                        try:
+                            ssh_cve = self.cve_checker.check(
+                                host=ip,
+                                product=product,
+                                version=ssh_version,
+                                port=port.port,
+                                protocol=port.protocol,
+                            )
+                            findings.extend(ssh_cve)
+                            logger.debug(
+                                f"SSH banner CVE: {ip}:{port.port} "
+                                f"{product} {ssh_version} → {len(ssh_cve)} CVEs"
+                            )
+                        except Exception as e:
+                            logger.debug(f"SSH CVE check error {ip}:{port_num}: {e}")
+                        break
+
+            # HTTP fingerprint → CVE pipeline: check raw_headers Server for versions
+            if port.http_fingerprint:
+                fp = port.http_fingerprint
+                raw_headers = getattr(fp, "raw_headers", None) or {}
+                server_hdr = raw_headers.get("Server", "") if isinstance(raw_headers, dict) else ""
+                if server_hdr and "/" in server_hdr:
+                    # e.g. "Apache/2.4.29" or "nginx/1.18.0"
+                    parts = server_hdr.split("/", 1)
+                    hdr_product = parts[0].strip().lower()
+                    hdr_version = parts[1].split()[0].strip()
+                    # Avoid duplicate if nmap already reported same service+version
+                    if hdr_version and not (port.service and port.version == hdr_version):
+                        try:
+                            hdr_cve = self.cve_checker.check(
+                                host=ip,
+                                product=hdr_product,
+                                version=hdr_version,
+                                port=port.port,
+                                protocol=port.protocol,
+                            )
+                            findings.extend(hdr_cve)
+                            logger.debug(
+                                f"HTTP header CVE: {ip}:{port.port} "
+                                f"{hdr_product} {hdr_version} → {len(hdr_cve)} CVEs"
+                            )
+                        except Exception as e:
+                            logger.debug(f"HTTP header CVE check error {ip}:{port_num}: {e}")
+
         return findings
 
     def run_security_checks(self, scan_result: ScanResult) -> FindingRegistry:
@@ -1052,6 +1283,8 @@ class NetWatch:
                                 prelim = self.device_identifier.identify_preliminary(ip, host_info)
                                 if prelim.confidence > 0:
                                     label = prelim.summary()
+                                    if len(label) > 50:
+                                        label = label[:47] + "..."
                                     self.console.print(f"  [green]✓[/green] {ip} — {label}")
                                 else:
                                     self.console.print(f"  [green]✓[/green] Checked {ip}")
@@ -1163,6 +1396,15 @@ class NetWatch:
                 except Exception as e:
                     logger.debug(f"Device identification failed for {ip}: {e}")
 
+            # ---- Identity → EOL bridge ----
+            if self.last_device_identities:
+                progress.update(task, description="[cyan]Checking firmware EOL via device identity...")
+                try:
+                    identity_eol_findings = self._run_identity_eol_pipeline()
+                    self.finding_registry.add_all(identity_eol_findings)
+                except Exception as e:
+                    logger.debug(f"Identity→EOL pipeline error: {e}")
+
             # Print device identification summary table
             if self.last_device_identities:
                 self._print_device_id_table()
@@ -1173,39 +1415,10 @@ class NetWatch:
 
     def _print_device_id_table(self) -> None:
         """Print a Rich table summarizing identified devices."""
-        table = Table(
-            title="Device Identification",
-            show_header=True,
-            header_style="bold cyan",
+        self.display.show_device_inventory(
+            self.last_device_identities,
+            self.last_eol_data,
         )
-        table.add_column("IP", style="dim", width=17)
-        table.add_column("Type", width=18)
-        table.add_column("Vendor", width=14)
-        table.add_column("Model", width=20)
-        table.add_column("Version", width=12)
-        table.add_column("Conf.", justify="right", width=6)
-
-        for ip in sorted(self.last_device_identities):
-            ident = self.last_device_identities[ip]
-            pct = int(ident.confidence * 100)
-            if pct >= 70:
-                conf_str = f"[green]{pct}%[/green]"
-            elif pct >= 40:
-                conf_str = f"[yellow]{pct}%[/yellow]"
-            else:
-                conf_str = f"[dim]{pct}%[/dim]"
-
-            table.add_row(
-                ip,
-                ident.device_type or "—",
-                ident.vendor or "—",
-                ident.model or "—",
-                ident.version or "—",
-                conf_str,
-            )
-
-        self.console.print()
-        self.console.print(table)
 
     def _eol_to_findings(
         self,
@@ -1445,7 +1658,17 @@ class NetWatch:
                     pass  # Not tracked — excluded from UNKNOWN count
                 else:
                     stats['unknown'] += 1
-        
+
+        # Device identification stats
+        from collections import Counter
+        stats['devices_identified'] = len(self.last_device_identities)
+        stats['devices_total'] = stats['hosts_up']
+        type_counts = Counter(
+            (ident.device_type or "Unknown")
+            for ident in self.last_device_identities.values()
+        )
+        stats['device_types'] = dict(type_counts.most_common())
+
         return stats
     
     def run_full_assessment(self, target: str) -> int:
@@ -1594,6 +1817,20 @@ class NetWatch:
                 f"[blue]{counts['LOW']} Low[/blue]  "
                 f"[dim]{counts['INFO']} Info[/dim]"
             )
+
+            # Device identification summary
+            if self.last_device_identities:
+                from collections import Counter
+                type_counts = Counter(
+                    (i.device_type or "Unknown")
+                    for i in self.last_device_identities.values()
+                )
+                parts = [f"{c} {t}" for t, c in type_counts.most_common()]
+                self.console.print(
+                    f"[bold]Devices identified:[/bold] "
+                    f"{len(self.last_device_identities)}/{len(scan_result.hosts)} "
+                    f"({', '.join(parts)})"
+                )
 
             # Compute and display risk scores
             self.last_risk_scores = self.risk_scorer.score_all(self.finding_registry)

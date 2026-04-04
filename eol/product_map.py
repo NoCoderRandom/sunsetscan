@@ -70,6 +70,15 @@ NOT_TRACKED_PRODUCTS = {
     # Enterprise platforms not individually tracked
     "sonicwall-sma",
     "fortios",
+    "watchguard",
+    "arubaos",
+    # Server management / BMC — no endoflife.date tracking
+    # https://endoflife.date/api/huawei-vrp.json  -> 404
+    "huawei-vrp",
+    # https://endoflife.date/api/hp-ilo.json  -> 404
+    "hp-ilo",
+    # https://endoflife.date/api/idrac.json  -> 404
+    "idrac",
     "xen",
     "xenserver",
     # Generic nmap service names — these are protocol/port identifiers,
@@ -366,6 +375,17 @@ PRODUCT_MAP = {
     "fortios": "fortios",
     "fortigate": "fortios",
     "sonicwall": "sonicwall-sma",
+    "sonicos": "sonicwall-sma",
+    "watchguard": "watchguard",
+    "fireware": "watchguard",
+    "arubaos": "arubaos",
+    "aruba": "arubaos",
+    "huawei vrp": "huawei-vrp",
+    "huawei": "huawei-vrp",
+    "hp ilo": "hp-ilo",
+    "ilo": "hp-ilo",
+    "idrac": "idrac",
+    "dell idrac": "idrac",
 
     # Java Application Servers - additional
     "wildfly": "wildfly",

@@ -307,6 +307,19 @@ class Display:
             summary_text.append(f"OK:       {ok}\n")
             summary_text.append(f"UNKNOWN:  {unknown}\n")
         
+        # Device identification stats
+        devices_id = stats.get('devices_identified', 0)
+        devices_total = stats.get('devices_total', 0)
+        device_types = stats.get('device_types', {})
+        if devices_id > 0:
+            type_parts = [f"{v} {k}" for k, v in device_types.items()]
+            summary_text.append(
+                f"\nDevices identified: {devices_id}/{devices_total}"
+            )
+            if type_parts:
+                summary_text.append(f" ({', '.join(type_parts)})")
+            summary_text.append("\n")
+
         # Add recommendations
         if critical > 0:
             summary_text.append(f"\n⚠ {critical} services have reached EOL and should be updated immediately!", 
@@ -399,6 +412,81 @@ Hosts:      {len(scan_result.hosts)}
         """
         print(f"INFO: {message}")
     
+    def show_device_inventory(
+        self,
+        device_identities: Dict[str, Any],
+        eol_data: Optional[Dict[str, Dict[int, Any]]] = None,
+    ) -> None:
+        """Display device identification results in a Rich table.
+
+        Args:
+            device_identities: {ip: DeviceIdentity} dict
+            eol_data: Optional {ip: {port: EOLStatus}} for firmware EOL column
+        """
+        if not device_identities:
+            self.console.print("[yellow]No devices identified.[/yellow]")
+            return
+
+        table = Table(
+            title="Device Identification",
+            show_header=True,
+            header_style="bold cyan",
+        )
+        table.add_column("IP", style="dim", width=17)
+        table.add_column("Type", width=18)
+        table.add_column("Vendor", width=14)
+        table.add_column("Model", width=20)
+        table.add_column("Version", width=12)
+        table.add_column("Conf.", justify="right", width=6)
+        table.add_column("EOL", width=12)
+
+        eol_data = eol_data or {}
+
+        for ip in sorted(device_identities):
+            ident = device_identities[ip]
+            pct = int(ident.confidence * 100)
+            if pct >= 70:
+                conf_str = f"[green]{pct}%[/green]"
+            elif pct >= 40:
+                conf_str = f"[yellow]{pct}%[/yellow]"
+            else:
+                conf_str = f"[dim]{pct}%[/dim]"
+
+            # Truncate long model/version strings
+            model_str = (ident.model or "—")[:20]
+            version_str = (ident.version or "—")[:12]
+
+            # Firmware EOL status (port 0)
+            eol_entry = eol_data.get(ip, {}).get(0)
+            if eol_entry:
+                if eol_entry.level == EOLStatusLevel.CRITICAL:
+                    eol_date_str = (
+                        eol_entry.eol_date.strftime("%Y-%m-%d")
+                        if eol_entry.eol_date else "Yes"
+                    )
+                    eol_str = f"[red]EOL {eol_date_str}[/red]"
+                elif eol_entry.level == EOLStatusLevel.WARNING:
+                    eol_str = f"[yellow]Soon ({eol_entry.days_remaining}d)[/yellow]"
+                elif eol_entry.level == EOLStatusLevel.OK:
+                    eol_str = "[green]OK[/green]"
+                else:
+                    eol_str = "—"
+            else:
+                eol_str = "—"
+
+            table.add_row(
+                ip,
+                ident.device_type or "—",
+                ident.vendor or "—",
+                model_str,
+                version_str,
+                conf_str,
+                eol_str,
+            )
+
+        self.console.print()
+        self.console.print(table)
+
     def clear(self) -> None:
         """Clear the console."""
         self.console.clear()

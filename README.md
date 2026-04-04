@@ -60,6 +60,17 @@ NetWatch runs 12 security checker modules during a full assessment:
 - Fully offline during scans — no external API calls are made during scanning. endoflife.date and OSV.dev are only contacted by `--setup` and `--update-cache`. Scans work without any internet connection as long as caches are populated.
 - Weekly CVE refresh, monthly EOL refresh — controlled by you
 
+### Device Identification
+- **14 evidence extractors** fuse MAC OUI, nmap OS, HTTP fingerprinting,
+  TLS certificates, SSH banners, UPnP, SNMP sysDescr, Wappalyzer, mDNS,
+  JA3S TLS fingerprints, FTP banners, port heuristics, and nmap service
+  fields into a unified device identity per host
+- Identifies vendor, model, firmware version, and device type with
+  confidence scoring (agreement bonuses when multiple sources confirm)
+- Supports 130+ vendor aliases for name normalization
+- Results displayed in terminal table and HTML report device inventory
+- Quick asset inventory mode: `--identify` flag skips security checks
+
 ### Modular Data System
 NetWatch includes 7 downloadable data modules that extend detection capabilities:
 
@@ -220,6 +231,7 @@ python3 netwatch.py --download all
 | `--profile PROFILE` | Scan profile: QUICK, FULL, STEALTH, PING, IOT, SMB (default: QUICK) | Varies |
 | `-i`, `--interactive` | Launch guided interactive mode | No |
 | `--full-assessment` | Complete assessment: all phases + auto HTML export | No |
+| `--identify` | Run device identification only (skip security checks) | No |
 | `--nse` | Enable Nmap Scripting Engine for enhanced detection | No |
 | `--check-defaults` | Test for factory-default credentials (your own devices only) | No |
 | `--save-baseline` | Save scan as trusted device baseline for rogue detection | No |
@@ -246,7 +258,7 @@ python3 netwatch.py --download all
 | Profile | nmap flags | Speed | Root | Best for |
 |---|---|---|---|---|
 | **PING** | `-sn` | ~30s | No | Finding active devices quickly |
-| **QUICK** | `-T4 -F` | 1-3 min | No | First look at a network |
+| **QUICK** | `-T4 -F -sV --version-intensity 2` | 1-3 min | No | First look at a network (with light version detection) |
 | **FULL** | `-T4 -A -sV -O --osscan-guess` | 5-15 min | Yes | Deep analysis of specific hosts |
 | **STEALTH** | `-sS -T2 -sV` | 10-30 min | Yes | Low-noise scanning |
 | **IOT** | `-T4 -sV -p 23,80,443,8080,8443,554,1900,5000,5001,7547,49152 --open` | 1-3 min | No | Cameras, routers, smart devices |
@@ -307,6 +319,53 @@ Every `--full-assessment` produces a self-contained HTML report with:
 - **Recommendations** — prioritised action list
 
 Reports open in any browser with no internet required.
+
+---
+
+## Device Identification
+
+NetWatch automatically identifies network devices by combining evidence
+from 14 different sources. Each source contributes a vendor, model,
+version, or device type with a confidence score. The fusion algorithm
+sums agreeing sources (with bonuses for multi-source agreement) and
+penalizes conflicting evidence.
+
+### Quick Asset Inventory
+
+To see what's on your network without running security checks:
+
+```bash
+python3 netwatch.py --identify --target 192.168.1.0/24
+```
+
+This runs a port scan with banner grabbing and prints a device
+identification table. No security analysis, no report — just a fast
+inventory.
+
+### Evidence Sources
+
+| Source | What it reads | Confidence |
+|--------|--------------|------------|
+| MAC OUI | IEEE vendor prefix from MAC address | 0.40-0.45 |
+| nmap OS | OS fingerprint guess | varies |
+| HTTP fingerprint | Device type, model, firmware from web UI | 0.50+ |
+| HTTP headers | Server, X-Powered-By response headers | 0.20-0.50 |
+| TLS certificate | CN, issuer, organization fields | 0.35 |
+| SSH banner | SSH daemon identification string | 0.10-0.70 |
+| UPnP | SSDP manufacturer, model, device type | 0.75 |
+| SNMP sysDescr | System description from SNMP MIB | 0.85 |
+| Wappalyzer | CPE strings and technology categories | 0.30-0.45 |
+| mDNS/Zeroconf | Service type advertisements | 0.55 |
+| JA3S | TLS handshake fingerprint database | 0.50 |
+| FTP banner | FTP server software identification | 0.25-0.35 |
+| Port heuristics | Open port combination patterns | 0.10-0.70 |
+| nmap services | Service product and version fields | 0.45 |
+
+Identification results appear in:
+- Terminal device inventory table (during scan and via `--identify`)
+- HTML report topology cards and device inventory section
+- JSON export `device_identities` section
+- Interactive mode menu option [8] Device Inventory
 
 ---
 

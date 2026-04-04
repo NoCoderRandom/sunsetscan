@@ -155,6 +155,8 @@ class InteractiveController:
                 self.modules_menu()
             elif choice == "7":
                 self.settings_menu()
+            elif choice == "8":
+                self._run_device_inventory()
     
     def show_welcome(self) -> None:
         """Display welcome message."""
@@ -331,6 +333,7 @@ class InteractiveController:
 [5] Results & History    - View, export, compare results
 [6] Modules & Data       - Download data modules, update cache
 [7] Settings             - Configure scan options
+[8] Device Inventory     - Identify all devices on the network
 [0] Exit                 - Quit NetWatch
         """
 
@@ -338,7 +341,7 @@ class InteractiveController:
 
         return Prompt.ask(
             "Select option",
-            choices=["0", "1", "2", "3", "4", "5", "6", "7"],
+            choices=["0", "1", "2", "3", "4", "5", "6", "7", "8"],
             default="1"
         )
     
@@ -493,6 +496,45 @@ class InteractiveController:
         elif choice == "5":
             self.export_results("html")
     
+    def _run_device_inventory(self) -> None:
+        """Run device identification on all discovered hosts."""
+        if not self._last_scan_result or not self._last_scan_result.hosts:
+            self.console.print(
+                "[yellow]No scan results available. Run a scan first "
+                "(option 1 or 3).[/yellow]"
+            )
+            return
+
+        from core.device_identifier import DeviceIdentifier
+        from collections import Counter
+
+        identifier = DeviceIdentifier()
+        device_identities = {}
+
+        self.console.print("\n[bold blue]Identifying devices...[/bold blue]")
+        for ip, host_info in self._last_scan_result.hosts.items():
+            if host_info.state != "up":
+                continue
+            try:
+                identity = identifier.identify_preliminary(ip, host_info)
+                if identity.confidence > 0:
+                    device_identities[ip] = identity
+            except Exception as e:
+                logger.debug(f"Device identification failed for {ip}: {e}")
+
+        self.display.show_device_inventory(device_identities)
+
+        # Print summary line
+        if device_identities:
+            type_counts = Counter(
+                (i.device_type or "Unknown") for i in device_identities.values()
+            )
+            parts = [f"{c} {t}" for t, c in type_counts.most_common()]
+            self.console.print(
+                f"\n[bold]{len(device_identities)}/{len(self._last_scan_result.hosts)} "
+                f"hosts identified ({', '.join(parts)})[/bold]"
+            )
+
     def settings_menu(self) -> None:
         """Display and handle settings menu."""
         self.console.print("\n[bold]Settings[/bold]")

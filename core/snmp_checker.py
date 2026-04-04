@@ -46,6 +46,22 @@ _SYSDESCR_PATTERNS: List[Tuple] = [
     (re.compile(r'FreeBSD\s+(\d+\.\d+)', re.I), 'freebsd'),
     (re.compile(r'CentOS\s+(?:Linux\s+)?(\d+)', re.I), 'centos'),
     (re.compile(r'Red\s+Hat\s+Enterprise\s+Linux\s+(?:Server\s+)?(\d+)', re.I), 'rhel'),
+    # Firewalls / Security Appliances
+    (re.compile(r'FortiGate.*?v(\d+\.\d+\.\d+)', re.I), 'fortios'),
+    (re.compile(r'FortiOS[- ]v?(\d+\.\d+(?:\.\d+)?)', re.I), 'fortios'),
+    (re.compile(r'WatchGuard.*?Fireware[/ ]v?(\d+\.\d+(?:\.\d+)?)', re.I), 'watchguard'),
+    (re.compile(r'SonicOS[- ](\d+\.\d+(?:\.\d+)?)', re.I), 'sonicwall-sma'),
+    (re.compile(r'ArubaOS[- ](\d+\.\d+(?:\.\d+)?)', re.I), 'arubaos'),
+    (re.compile(r'OPNsense[- ](\d+\.\d+(?:\.\d+)?)', re.I), 'opnsense'),
+    # Network equipment — vendor-specific version formats
+    (re.compile(r'Huawei.*?VRP.*?V(\d+R\d+(?:C\d+)?)', re.I), 'huawei-vrp'),
+    # Server management / BMC
+    (re.compile(r'iLO\s*\d+\s+v?(\d+\.\d+)', re.I), 'hp-ilo'),
+    (re.compile(r'iDRAC[- ]?(\d+)', re.I), 'idrac'),
+    # NAS / Storage
+    (re.compile(r'(?:TrueNAS|FreeNAS)[- ](\d+\.\d+(?:\.\d+)?)', re.I), 'freenas'),
+    # Windows via SNMP
+    (re.compile(r'Windows Server (\d{4}(?:\s+R2)?)', re.I), 'windows-server'),
 ]
 
 

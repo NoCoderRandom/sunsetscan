@@ -30,11 +30,14 @@ Exports:
 """
 
 import logging
+import os
+import re
 import shutil
 import subprocess
 import xml.etree.ElementTree as ET
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from typing import Callable, Dict, List, Optional
+from datetime import datetime
+from typing import Callable, Dict, List, Optional, Tuple
 
 from config.settings import Settings, SCAN_PROFILES, MASSCAN_RATES
 from core.scanner import NetworkScanner, ScanResult
@@ -45,17 +48,46 @@ _MASSCAN_MAX_RATE = 5000  # Hard cap — never exceed this
 
 
 def _masscan_available() -> bool:
-    """Return True if masscan binary is on PATH."""
-    return shutil.which("masscan") is not None
+    """Return True if masscan binary is on PATH AND we have root privileges.
+
+    masscan requires raw socket access (root/sudo). If the binary exists
+    but we're not root, every invocation would fail and waste time before
+    falling back to nmap — so we check both conditions up front.
+    """
+    if shutil.which("masscan") is None:
+        return False
+    if os.geteuid() != 0:
+        logger.debug("masscan found but not running as root — disabled")
+        return False
+    return True
 
 
-def _run_masscan(target: str, rate: int, timeout: int = 300) -> Dict[str, List[int]]:
+def _extract_profile_ports(profile: str) -> Optional[str]:
+    """Extract explicit port list from a profile's nmap arguments.
+
+    Returns the port string (e.g. "23,80,443,...") if the profile has a
+    ``-p`` flag, or None if it uses default ports (like QUICK with ``-F``).
+    """
+    args = SCAN_PROFILES.get(profile, "")
+    m = re.search(r'-p\s+(\S+)', args)
+    return m.group(1) if m else None
+
+
+def _run_masscan(
+    target: str,
+    rate: int,
+    ports: str = "1-65535",
+    timeout: int = 300,
+    progress_callback: Optional[Callable] = None,
+) -> Dict[str, List[int]]:
     """Run masscan and return discovered open ports per host.
 
     Args:
-        target:  CIDR, IP range, or single host.
-        rate:    Packets per second (capped at _MASSCAN_MAX_RATE).
-        timeout: Subprocess timeout in seconds.
+        target:   CIDR, IP range, or single host.
+        rate:     Packets per second (capped at _MASSCAN_MAX_RATE).
+        ports:    Port specification (default all ports).
+        timeout:  Subprocess timeout in seconds.
+        progress_callback: Optional (msg, pct) callback for status updates.
 
     Returns:
         {ip_address: [open_port, ...]} for all discovered hosts.
@@ -66,11 +98,13 @@ def _run_masscan(target: str, rate: int, timeout: int = 300) -> Dict[str, List[i
         "masscan",
         target,
         "--rate", str(rate),
-        "-p", "1-65535",
+        "-p", ports,
         "-oX", "-",      # XML to stdout
         "--wait", "3",   # wait 3 s after last packet before exiting
     ]
     logger.info(f"masscan: {' '.join(cmd)}")
+    if progress_callback:
+        progress_callback("masscan port discovery...", 5)
     try:
         result = subprocess.run(
             cmd,
@@ -78,8 +112,16 @@ def _run_masscan(target: str, rate: int, timeout: int = 300) -> Dict[str, List[i
             timeout=timeout,
             text=True,
         )
-        # masscan exits 0 on success; treat any output as worth parsing
-        return _parse_masscan_xml(result.stdout)
+        if result.returncode != 0 and result.stderr:
+            stderr_line = result.stderr.strip().splitlines()[0] if result.stderr.strip() else ""
+            logger.warning(f"masscan exited {result.returncode}: {stderr_line}")
+        parsed = _parse_masscan_xml(result.stdout)
+        if progress_callback:
+            progress_callback(
+                f"masscan discovered {sum(len(v) for v in parsed.values())} ports",
+                15,
+            )
+        return parsed
     except subprocess.TimeoutExpired:
         logger.warning("masscan timed out — falling back to nmap")
         return {}
@@ -200,42 +242,66 @@ class PortScanOrchestrator:
 
         return self._scan_masscan_nmap_parallel(target, profile)
 
+    @staticmethod
+    def _build_nmap_args(profile: str, ports: List[int]) -> str:
+        """Build nmap arguments with masscan-discovered ports injected.
+
+        Removes ``-F`` and any existing ``-p`` from the profile's flags,
+        inserts the masscan-discovered ports, and ensures ``-sV`` is present.
+        """
+        base_args = SCAN_PROFILES.get(profile, SCAN_PROFILES["FULL"])
+
+        # Tokenise, stripping -F and any existing -p <value> pair
+        tokens = base_args.split()
+        kept: List[str] = []
+        skip_next = False
+        for tok in tokens:
+            if skip_next:
+                skip_next = False
+                continue
+            if tok == "-F":
+                continue
+            if tok == "-p":
+                skip_next = True  # drop the following port value too
+                continue
+            # Handle -pXXX (no space between -p and value)
+            if tok.startswith("-p") and len(tok) > 2 and tok[2:3].isdigit():
+                continue
+            kept.append(tok)
+
+        if "-sV" not in kept and "-A" not in kept:
+            kept.append("-sV")
+
+        ports_str = ",".join(str(p) for p in sorted(ports))
+        kept.extend(["-p", ports_str])
+        return " ".join(kept)
+
     def _scan_masscan_nmap(self, target: str, profile: str) -> ScanResult:
         """Run masscan discovery then nmap service detection on found ports."""
         rate = MASSCAN_RATES.get(profile, MASSCAN_RATES.get("FULL", 1000))
         rate = min(rate, _MASSCAN_MAX_RATE)
 
-        discovered = _run_masscan(target, rate)
+        # Use profile-specific ports for masscan if the profile defines them
+        masscan_ports = _extract_profile_ports(profile) or "1-65535"
+
+        discovered = _run_masscan(
+            target, rate, ports=masscan_ports,
+            progress_callback=self._nmap._progress_callback,
+        )
 
         if not discovered:
-            # masscan found nothing (or failed) — fall back to nmap
             logger.info("masscan found no open ports — falling back to nmap")
             return self._nmap.scan(target, profile)
 
         # Collect union of all open ports across all discovered hosts
-        all_ports = set()
+        all_ports: set = set()
         for ports in discovered.values():
             all_ports.update(ports)
 
         if not all_ports:
             return self._nmap.scan(target, profile)
 
-        # Build nmap arguments: use profile's base flags but replace port discovery
-        # with the exact ports masscan found, and ensure -sV is included.
-        base_args = SCAN_PROFILES.get(profile, SCAN_PROFILES["FULL"])
-
-        # Remove flags that conflict with explicit port list or that masscan replaces
-        skip_tokens = {"-F"}           # -F = fast scan (top 100 ports) — we specify ports
-        kept = [t for t in base_args.split() if t not in skip_tokens]
-
-        # Ensure service version detection
-        if "-sV" not in kept and "-A" not in kept:
-            kept.append("-sV")
-
-        ports_str = ",".join(str(p) for p in sorted(all_ports))
-        kept.extend(["-p", ports_str])
-
-        nmap_args = " ".join(kept)
+        nmap_args = self._build_nmap_args(profile, sorted(all_ports))
         logger.info(
             f"nmap service scan: {len(all_ports)} ports on {target} "
             f"(discovered by masscan)"
@@ -255,7 +321,13 @@ class PortScanOrchestrator:
         rate = MASSCAN_RATES.get(profile, MASSCAN_RATES.get("FULL", 2000))
         rate = min(rate, _MASSCAN_MAX_RATE)
 
-        discovered = _run_masscan(target, rate)
+        # Use profile-specific ports for masscan if the profile defines them
+        masscan_ports = _extract_profile_ports(profile) or "1-65535"
+
+        discovered = _run_masscan(
+            target, rate, ports=masscan_ports,
+            progress_callback=self._nmap._progress_callback,
+        )
 
         if not discovered:
             logger.info("masscan found no open ports — falling back to nmap")
@@ -265,21 +337,14 @@ class PortScanOrchestrator:
         if len(discovered) <= 1:
             return self._scan_masscan_nmap(target, profile)
 
-        # Build per-host nmap arguments
-        base_args = SCAN_PROFILES.get(profile, SCAN_PROFILES["FULL"])
-        skip_tokens = {"-F"}
-        kept = [t for t in base_args.split() if t not in skip_tokens]
-        if "-sV" not in kept and "-A" not in kept:
-            kept.append("-sV")
-        base_nmap = " ".join(kept)
-
         def _scan_host(ip: str, ports: List[int]) -> ScanResult:
-            ports_str = ",".join(str(p) for p in sorted(ports))
-            nmap_args = f"{base_nmap} -p {ports_str}"
+            nmap_args = self._build_nmap_args(profile, ports)
             logger.info(f"parallel nmap: {ip} — {len(ports)} ports")
             return self._nmap.scan(ip, profile, arguments=nmap_args)
 
+        start_time = datetime.now()
         combined = ScanResult(target=target, profile=profile)
+        combined.start_time = start_time
         max_workers = self._settings.nmap_parallel_hosts
 
         logger.info(
@@ -287,19 +352,33 @@ class PortScanOrchestrator:
             f"max_workers={max_workers}"
         )
 
+        if self._nmap._progress_callback:
+            self._nmap._progress_callback(
+                f"nmap service detection on {len(discovered)} hosts...", 20
+            )
+
         with ThreadPoolExecutor(max_workers=max_workers) as executor:
             futures = {
                 executor.submit(_scan_host, ip, ports): ip
                 for ip, ports in discovered.items()
             }
+            done_count = 0
             for future in as_completed(futures):
                 ip = futures[future]
+                done_count += 1
                 try:
                     result = future.result()
                     combined.hosts.update(result.hosts)
+                    if self._nmap._progress_callback:
+                        pct = 20 + int(80 * done_count / len(futures))
+                        self._nmap._progress_callback(
+                            f"nmap: {done_count}/{len(discovered)} hosts done", pct
+                        )
                 except Exception as e:
                     logger.warning(f"parallel nmap failed for {ip}: {e}")
 
+        combined.end_time = datetime.now()
+        combined.duration = (combined.end_time - start_time).total_seconds()
         return combined
 
     # ---- Convenience methods (mirror NetworkScanner) ----

@@ -525,6 +525,7 @@
             <th>Vendor</th>
             <th>Model</th>
             <th>Version</th>
+            <th>Firmware EOL</th>
             <th>Confidence</th>
             <th>Sources</th>
           </tr>
@@ -537,6 +538,18 @@
             <td style="font-weight:600;">{{ did.vendor or '—' }}</td>
             <td>{{ did.model or '—' }}</td>
             <td style="font-family:monospace;">{{ did.version or '—' }}</td>
+            <td>
+              {% set fw_eol = eol_data.get(ip, {}).get(0) if eol_data else None %}
+              {% if fw_eol and fw_eol.level.value == 'CRITICAL' %}
+                <span class="sev-badge sev-high" style="font-size:0.72rem;">EOL {{ fw_eol.eol_date.strftime('%Y-%m-%d') if fw_eol.eol_date else '' }}</span>
+              {% elif fw_eol and fw_eol.level.value == 'WARNING' %}
+                <span class="sev-badge sev-medium" style="font-size:0.72rem;">Soon ({{ fw_eol.days_remaining }}d)</span>
+              {% elif fw_eol and fw_eol.level.value == 'OK' %}
+                <span style="color:#059669; font-weight:600; font-size:0.72rem;">OK</span>
+              {% else %}
+                <span style="color:#9ca3af;">—</span>
+              {% endif %}
+            </td>
             <td>
               {% set conf_pct = (did.confidence * 100) | int %}
               <span class="inventory-conf {% if conf_pct >= 70 %}conf-high{% elif conf_pct >= 40 %}conf-med{% else %}conf-low{% endif %}">{{ conf_pct }}%</span>
