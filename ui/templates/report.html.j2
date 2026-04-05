@@ -482,6 +482,7 @@
         {% if did.device_type %}<div class="topo-device-id-type">{{ did.device_type }}</div>{% endif %}
         {% if did.vendor or did.model %}<div class="topo-device-id">{{ did.vendor }}{% if did.vendor and did.model %} {% endif %}{{ did.model }}</div>{% endif %}
         {% if did.version %}<div class="topo-device-name" style="font-family:monospace;">v{{ did.version }}</div>{% endif %}
+        {% if host.hostname %}<div class="topo-device-name">{{ host.hostname }}</div>{% endif %}
         {% else %}
         {% if host.hostname %}<div class="topo-device-name">{{ host.hostname }}</div>{% endif %}
         {% if host.vendor %}<div class="topo-device-name">{{ host.vendor }}</div>{% endif %}
@@ -706,6 +707,7 @@
                 <th>Port</th>
                 <th>Protocol</th>
                 <th>Service</th>
+                <th>Software</th>
                 <th>Version</th>
                 <th>EOL Status</th>
               </tr>
@@ -717,6 +719,7 @@
                 <td>{{ port.port }}</td>
                 <td>{{ port.protocol }}</td>
                 <td>{{ port.service or '—' }}</td>
+                <td>{% if port.http_fingerprint and port.http_fingerprint.device_type %}{{ port.http_fingerprint.device_type }}{% elif port.banner %}{{ port.banner[:30] }}{% else %}—{% endif %}</td>
                 <td>{{ port.version or '—' }}</td>
                 <td>
                   {% if eol %}

@@ -5,6 +5,53 @@ Also check: prompts/ directory for planned work.
 
 ---
 
+## Session — 2026-04-05: Device Detection Fix & HTML Report Improvement
+
+### Problem
+Device identification was misidentifying devices:
+- 192.168.50.1 (ASUS RT-AX92U router) → "generic-httpd" or "Apache"
+- 192.168.50.61 (Synology NAS) → "nginx"
+- 192.168.50.84 (ASUS AiMesh node) → "generic-httpd"
+
+Root causes:
+1. No hostname-based extractor (hostname "RT-AX92U-7130" was ignored)
+2. HTTP fingerprinter didn't recognize ASUS `httpd/2.0` Server header or `Main_Login.asp` redirect
+3. Port 5000 (Synology DSM) wasn't in `HTTP_PORTS` — never got fingerprinted
+4. Generic web server names (nginx, Apache, httpd) were promoted to device-level identity
+5. Wappalyzer CPE for nginx (`f5:nginx`) set vendor to "F5" and model to "nginx"
+6. HTTP fingerprinter model regexes had false positives (TP-Link "Deco" matched `decodeURIComponent`)
+
+### Fixes applied
+
+| File | Change |
+|------|--------|
+| `core/device_identifier.py` | **NEW `_extract_from_hostname()`** — 10 hostname patterns (ASUS RT/GT/TUF/ROG, Synology DS/RS, QNAP TS, Ubiquiti, MikroTik, etc.). Confidence 0.6 for vendor match, 0.3 for type-only. Added to both `identify()` and `identify_preliminary()` extractor lists. |
+| `core/device_identifier.py` | **`_extract_from_http_fingerprint()`** — Added `_FP_VENDOR_MAP` to properly map vendor-like device_types (ASUS→Router, Synology→NAS, etc.) and `_GENERIC_WEB_TYPES` filter to skip nginx/apache/httpd as device evidence. |
+| `core/device_identifier.py` | **`_extract_from_wappalyzer()`** — Added `_GENERIC_SOFTWARE_CPES` filter to skip nginx, Apache, PHP, jQuery etc. from CPE parsing and category mapping. Prevents F5/nginx from polluting device identity. |
+| `core/device_identifier.py` | **`_HTTP_SERVER_PATTERNS`** — Added `httpd/2.0` → ASUS Router pattern. |
+| `core/device_identifier.py` | **`_PORT_DEVICE_HINTS`** — Added `{5000}` → NAS with confidence 0.25 (single port Synology hint). |
+| `core/device_identifier.py` | **`_extract_from_nmap_service_info()`** — Added `samba smbd` → NAS pattern. |
+| `core/http_fingerprinter.py` | **COMMON_PATHS** — Added `/Main_Login.asp` (ASUS), `/message.htm` (AiMesh), `/webman/index.cgi` (Synology). |
+| `core/http_fingerprinter.py` | **HEADER_SIGNATURES** — Added `httpd/2.0` → ASUS (confidence 0.5) and `Synology` header. |
+| `core/http_fingerprinter.py` | **DEVICE_SIGNATURES** — Added ASUS patterns (`Main_Login.asp`, `AiMesh router`), Synology patterns (`synoSDSjslib`, `webman/index.cgi`), QNAP patterns. Fixed ASUS Router Model regex. Fixed TP-Link/Netgear model regexes to avoid false positives. Fixed Synology Firmware regex (was matching CSS cache busters). |
+| `core/http_fingerprinter.py` | **`_analyze_response()`** — Vendor-specific body detections now override generic header detections. Model detection now checks vendor match. |
+| `core/banner_grabber.py` | **HTTP_PORTS** — Added 5000, 5001 for Synology DSM fingerprinting. |
+| `netwatch.py` | Fixed pluralization bug ("1 nass" → "1 nas"). |
+| `ui/templates/report.html.j2` | Added "Software" column to Open Ports table showing per-port HTTP fingerprint. Added hostname to topology cards when device identity exists. |
+
+### Results after fix
+
+| IP | Type | Vendor | Model | Before |
+|----|------|--------|-------|--------|
+| 192.168.50.1 | Router | ASUS | RT-AX92U | generic-httpd |
+| 192.168.50.61 | NAS | Synology | — | nginx |
+| 192.168.50.84 | Router | ASUS | RT-AX92U | generic-httpd |
+
+### Extractor count: 15 (was 14)
+New extractor: `_extract_from_hostname`
+
+---
+
 ## Session — 2026-04-04 (Part 1): Device Identification Engine (BUILT)
 
 ### What was done

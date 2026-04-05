@@ -111,6 +111,9 @@ class HttpFingerprinter:
         "/login",
         "/login.html",
         "/index.html",
+        "/Main_Login.asp",       # ASUS routers
+        "/message.htm",          # ASUS AiMesh nodes
+        "/webman/index.cgi",     # Synology DSM
         "/status",
         "/info",
         "/system",
@@ -136,18 +139,32 @@ class HttpFingerprinter:
         ("TP-Link Firmware", r'Firmware\s*(?:Version)?[:\s]*V?([\d.]+(?:\s*Build\s*[\d]+)?)', 1),
         ("TP-Link Firmware Alt", r'Firmware[^\d]{0,10}(\d+\.\d+[^\s<]*)', 1),
         ("TP-Link Hardware", r'Hardware\s*(?:Version)?[:\s]*([\w\s\d.]+)', 1),
-        ("TP-Link Model", r'(RE\d+|TL-\w+|Archer\s*\w+|Deco\s*\w+)', 1),
+        ("TP-Link Model", r'(RE\d{3,5}|TL-[A-Z]{2}\d+|Archer\s*[A-Z]\d+|Deco\s*[A-Z]\d+)', 1),
         ("TP-Link Script", r'(tpEncrypt|tplink|su/language)', 1),
         
         # ASUS
         ("ASUS", r'ASUS|Asus', None),
+        ("ASUS", r'Main_Login\.asp', None),              # ASUS redirect page
+        ("ASUS", r'AiMesh\s+router', None),              # AiMesh detection page
         ("ASUS Firmware", r'Firmware:\s*([\d.]+)', 1),
-        ("ASUS Router Model", r'RT-[A-Z]?\d+[A-Z]*', 0),
+        ("ASUS Firmware", r'firmver["\s:=]+([\d.]+)', 1), # ASUS nvram
+        ("ASUS Router Model", r'((?:RT|GT|TUF|ROG|ZenWiFi)-[A-Z]{0,3}[0-9]+[A-Z0-9]*)', 1),
         
+        # Synology
+        ("Synology", r'Synology', None),
+        ("Synology", r'webman/index\.cgi', None),            # DSM path
+        ("Synology", r'synoSDSjslib', None),                 # DSM JS lib
+        ("Synology Firmware", r'DSM\s+([\d.]+(?:-\d+)?)', 1), # DSM version e.g. "DSM 7.2.1-69057"
+        ("Synology Model", r'(DS\d{3,4}\+?|RS\d{3,4}\+?|DVA\d{3,4})', 1),
+
+        # QNAP
+        ("QNAP", r'QNAP|QTS|QuTS', None),
+        ("QNAP Model", r'(TS-\d{3,4}[A-Z]*)', 1),
+
         # Netgear
         ("Netgear", r'NETGEAR|Netgear', None),
         ("Netgear Firmware", r'Firmware[^\d]*(V?[\d.]+)', 1),
-        ("Netgear Model", r'(R\d+|EX\d+|XR\d+)', 1),
+        ("Netgear Model", r'(R\d{4,5}|EX\d{4,5}|XR\d{3,4})', 1),
         
         # Linksys
         ("Linksys", r'Linksys|LINKSYS', None),
@@ -190,7 +207,9 @@ class HttpFingerprinter:
         ("Server", r'nginx/?([\d.]+)?', 'nginx'),
         ("Server", r'mini_httpd/?([\d.]+)?', 'mini_httpd'),
         ("Server", r'Thd/?([\d.]+)?', 'tp-link-httpd'),
+        ("Server", r'httpd/2\.0$', 'ASUS'),          # ASUS routers use httpd/2.0
         ("Server", r'httpd', 'generic-httpd'),
+        ("Server", r'Synology', 'Synology'),
         ("X-Powered-By", r'PHP/?([\d.]+)?', 'php'),
         ("WWW-Authenticate", r'Basic realm="([^"]+)"', 'auth-realm'),
     ]
@@ -379,7 +398,11 @@ class HttpFingerprinter:
                 if device_hint and not result.device_type:
                     result.device_type = device_hint
                     result.source = f"header:{header_name}"
-                    result.confidence = 0.3
+                    # Vendor-specific headers get higher confidence than generic
+                    if device_hint in ("ASUS", "Synology", "QNAP"):
+                        result.confidence = 0.5
+                    else:
+                        result.confidence = 0.3
         
         # Check for device type signatures
         for name, pattern, group in self.DEVICE_SIGNATURES:
@@ -390,19 +413,31 @@ class HttpFingerprinter:
                 # Get the first match
                 match = matches[0]
                 
-                # Device type detection
-                if not result.device_type and any(x in name for x in ["TP-Link", "ASUS", "Netgear", "Linksys", "D-Link", "Ubiquiti", "Cisco", "MikroTik"]):
-                    result.device_type = name.split()[0]  # First word is manufacturer
-                    result.source = "body"
-                    result.confidence = 0.5
+                # Device type detection — vendor-specific body matches override
+                # generic header detections (e.g. "Synology" overrides "nginx")
+                _VENDOR_NAMES = ["TP-Link", "ASUS", "Netgear", "Linksys", "D-Link",
+                                 "Ubiquiti", "Cisco", "MikroTik", "Synology", "QNAP"]
+                _GENERIC_HEADERS = {"nginx", "apache", "generic-httpd", "mini_httpd",
+                                    "tp-link-httpd", "php", "auth-realm"}
+                if any(x in name for x in _VENDOR_NAMES):
+                    if not result.device_type or result.device_type.lower() in _GENERIC_HEADERS:
+                        result.device_type = name.split()[0]
+                        result.source = "body"
+                        result.confidence = max(result.confidence, 0.5)
                 
-                # Model detection
+                # Model detection — only accept if model's vendor matches
+                # detected device_type (e.g. don't set TP-Link Model on ASUS)
                 if "Model" in name and group is not None:
-                    if isinstance(match, tuple):
-                        result.model = match[group-1] if group <= len(match) else match[0]
-                    else:
-                        result.model = match
-                    result.confidence = min(result.confidence + 0.1, 0.9)
+                    model_vendor = name.split(" Model")[0]  # e.g. "ASUS Router"
+                    vendor_matches = (not result.device_type or
+                                     model_vendor.startswith(result.device_type) or
+                                     result.device_type.startswith(model_vendor.split()[0]))
+                    if vendor_matches:
+                        if isinstance(match, tuple):
+                            result.model = match[group-1] if group <= len(match) else match[0]
+                        else:
+                            result.model = match
+                        result.confidence = min(result.confidence + 0.1, 0.9)
                 
                 # Firmware version detection
                 if "Firmware" in name and group is not None:

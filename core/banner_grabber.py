@@ -88,7 +88,7 @@ class BannerGrabber:
     SSL_PORTS = {443, 465, 587, 636, 993, 995, 3389, 8443}
     
     # Ports that typically serve HTTP/HTTPS
-    HTTP_PORTS = {80, 443, 8080, 8443, 8000, 8888, 9000, 8081}
+    HTTP_PORTS = {80, 443, 8080, 8443, 8000, 8888, 9000, 8081, 5000, 5001}
     
     def __init__(
         self, 
