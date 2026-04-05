@@ -1,0 +1,23 @@
+{
+  "00:15:5d:e6:72:a8": {
+    "mac": "00:15:5d:e6:72:a8",
+    "vendor": "Microsoft",
+    "model": "",
+    "version": "",
+    "device_type": "",
+    "device_name": "Nas",
+    "confidence": 0.765,
+    "sources": [
+      "mdns",
+      "oui"
+    ],
+    "ips": [],
+    "hostnames": [
+      "Nas"
+    ],
+    "first_seen": "2026-04-05T20:48:07.832613",
+    "last_seen": "2026-04-05T20:48:07.832613",
+    "observation_count": 1,
+    "metadata": {}
+  }
+}

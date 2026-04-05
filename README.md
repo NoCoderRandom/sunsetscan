@@ -4,7 +4,7 @@
 
 [![Version](https://img.shields.io/badge/version-v1.7.0-blue)]
 [![Python 3.9+](https://img.shields.io/badge/python-3.9%2B-blue?logo=python&logoColor=white)](https://www.python.org/downloads/)
-[![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20Linux%20%7C%20macOS-lightgrey?logo=windows)](https://github.com)
+[![Platform](https://img.shields.io/badge/platform-Linux%20%7C%20WSL2-brightgreen?logo=linux)](https://github.com)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 [![Requires: nmap](https://img.shields.io/badge/requires-nmap-orange)](https://nmap.org)
 [![CVE data: OSV.dev](https://img.shields.io/badge/CVE%20data-OSV.dev-blueviolet)](https://osv.dev)
@@ -16,6 +16,179 @@ NetWatch is a local-network security auditing tool for **home network owners and
 
 ---
 
+## Platform Support
+
+| Platform | Support Level | Notes |
+|---|---|---|
+| **Linux** (Debian, Ubuntu, Fedora, Arch, etc.) | Full support | Best experience — all features work natively |
+| **WSL2** (Windows Subsystem for Linux) | Full support | Recommended way to run on Windows machines |
+| **macOS** | Partial | Core scanning works; some features (ARP, passive capture) may require extra setup |
+| **Windows** (native CMD/PowerShell) | Not supported | Missing raw sockets, `os.geteuid()`, `/proc`, `ip route`, and `termios` — use WSL2 instead |
+
+> **Why Linux?** NetWatch relies on raw sockets (ARP scanning, passive packet capture), Linux-specific APIs (`/proc`, `ip route`), and privilege checks (`os.geteuid()`) that are not available on native Windows. WSL2 provides a full Linux kernel and is the recommended path for Windows users.
+
+---
+
+## Installation
+
+### Quick Start (Linux — Debian/Ubuntu/WSL2)
+
+This is the fastest way to get running. Copy and paste the entire block:
+
+```bash
+sudo apt update
+sudo apt install -y nmap git python3 python3-pip python3-venv
+
+git clone https://github.com/NoCoderRandom/netwatch.git
+cd netwatch
+
+python3 -m venv venv
+source venv/bin/activate
+
+pip install -r requirements.txt
+
+python3 netwatch.py --setup
+```
+
+You're ready. Run your first scan:
+
+```bash
+sudo python3 netwatch.py -i
+```
+
+### One-Line Installer (Linux/macOS)
+
+If you prefer an automated installer that handles everything:
+
+```bash
+git clone https://github.com/NoCoderRandom/netwatch.git
+cd netwatch
+chmod +x install.sh
+./install.sh
+```
+
+The installer detects your OS and package manager, installs nmap, creates a virtual environment, installs all Python dependencies, and runs a self-test.
+
+### Linux (RHEL/Fedora/CentOS)
+
+```bash
+sudo dnf install -y nmap git python3 python3-pip
+git clone https://github.com/NoCoderRandom/netwatch.git
+cd netwatch
+python3 -m venv venv
+source venv/bin/activate
+pip install -r requirements.txt
+python3 netwatch.py --setup
+```
+
+### Linux (Arch)
+
+```bash
+sudo pacman -S nmap git python python-pip
+git clone https://github.com/NoCoderRandom/netwatch.git
+cd netwatch
+python -m venv venv
+source venv/bin/activate
+pip install -r requirements.txt
+python netwatch.py --setup
+```
+
+### WSL2 on Windows
+
+If you're on Windows, install WSL2 first, then follow the Linux instructions above inside your WSL2 terminal:
+
+1. Open PowerShell as Administrator and run:
+   ```powershell
+   wsl --install -d Ubuntu
+   ```
+2. Restart your computer when prompted.
+3. Open the **Ubuntu** app from the Start menu.
+4. Follow the [Quick Start (Linux)](#quick-start-linux--debianubuntuwsl2) instructions above.
+
+> **WSL2 networking note:** WSL2 uses a virtual network adapter. NetWatch auto-detects this and falls back to `192.168.1.0/24`. If your home network uses a different subnet, specify it with `--target`:
+> ```bash
+> sudo python3 netwatch.py --target 192.168.0.0/24
+> ```
+
+### macOS
+
+```bash
+brew install nmap
+git clone https://github.com/NoCoderRandom/netwatch.git
+cd netwatch
+python3 -m venv venv
+source venv/bin/activate
+pip install -r requirements.txt
+python3 netwatch.py --setup
+```
+
+> **Note:** ARP scanning and passive packet capture require root and may behave differently on macOS. For best results, use Linux or WSL2.
+
+### Post-Install Setup
+
+After installation, run the setup wizard to download vulnerability and EOL databases:
+
+```bash
+python3 netwatch.py --setup
+```
+
+Optionally download extended detection modules:
+
+```bash
+python3 netwatch.py --download all
+```
+
+### Optional: masscan (faster port discovery)
+
+```bash
+# Debian/Ubuntu
+sudo apt install -y masscan
+
+# Fedora
+sudo dnf install -y masscan
+```
+
+masscan is not required but significantly speeds up port discovery on large networks.
+
+---
+
+## Requirements
+
+| Requirement | Minimum | Notes |
+|---|---|---|
+| **Python** | 3.9+ | 3.12 recommended |
+| **nmap** | Any recent | Must be on system PATH |
+| **OS** | Linux (native or WSL2) | See [Platform Support](#platform-support) |
+| **masscan** | Any | Optional — faster port discovery |
+| **git** | Any | Optional — used for `--setup` and `--update` |
+| **Privileges** | Standard user | Root/sudo needed for FULL, STEALTH, SMB profiles, ARP detection, and passive capture |
+
+---
+
+## Quick Start
+
+```bash
+# Interactive mode (recommended for first-time users)
+sudo python3 netwatch.py -i
+
+# Full security assessment with HTML report
+sudo python3 netwatch.py --full-assessment --target 192.168.1.0/24
+
+# Quick scan of your network
+python3 netwatch.py --target 192.168.1.0/24
+
+# IoT device scan (cameras, routers, smart devices)
+python3 netwatch.py --target 192.168.1.0/24 --profile IOT
+
+# Quick device inventory (no security checks)
+python3 netwatch.py --identify --target 192.168.1.0/24
+
+# Download all data modules for extended detection
+python3 netwatch.py --download all
+```
+
+---
+
 ## Features
 
 ### Network Discovery
@@ -23,6 +196,7 @@ NetWatch is a local-network security auditing tool for **home network owners and
 - Resolves hostnames and detects MAC addresses with vendor/manufacturer lookup
 - Flexible target input: CIDR, wildcard, IP range, comma-separated, or hostname
 - Optional masscan integration for faster port discovery on large networks
+- Hybrid scanning: passive background capture (mDNS/SSDP/DHCP) combined with active scanning
 
 ### Port and Service Scanning
 - Six scan profiles: QUICK, FULL, STEALTH, PING, IOT, SMB
@@ -70,6 +244,7 @@ NetWatch runs 12 security checker modules during a full assessment:
 - Supports 130+ vendor aliases for name normalization
 - Results displayed in terminal table and HTML report device inventory
 - Quick asset inventory mode: `--identify` flag skips security checks
+- Persistent MAC-to-identity mapping across scans
 
 ### Modular Data System
 NetWatch includes 7 downloadable data modules that extend detection capabilities:
@@ -124,102 +299,6 @@ Every device receives a risk score (0-100) based on the severity and count of fi
 - **Old-style menu** — launches when run with no arguments
 - Direct CLI mode — scriptable and automation-friendly
 - Rich colour terminal output with progress bars, spinners, and summary panels
-
----
-
-## Requirements
-
-| Requirement | Minimum | Notes |
-|---|---|---|
-| **Python** | 3.9+ | 3.12 recommended |
-| **nmap** | Any recent | Must be on system PATH |
-| **masscan** | Any | Optional — faster port discovery. `sudo apt install masscan` |
-| **git** | Any | Optional — used for `--setup` and `--update` |
-| **OS** | Windows 10/11, Linux, macOS | Fully native on all three |
-| **Privileges** | Standard user | Root/admin needed for FULL, STEALTH, SMB profiles and ARP detection |
-
----
-
-## Installation
-
-### Linux (Debian / Ubuntu / WSL)
-
-```bash
-sudo apt-get update
-sudo apt-get install -y nmap git python3 python3-pip python3-venv
-
-# Optional: faster port scanning
-sudo apt-get install -y masscan
-
-git clone https://github.com/NoCoderRandom/netwatch.git
-cd netwatch
-
-python3 -m venv venv
-source venv/bin/activate
-
-pip install -r requirements.txt
-
-python3 netwatch.py --setup
-```
-
-### Linux (RHEL / Fedora / CentOS)
-
-```bash
-sudo dnf install -y nmap git python3 python3-pip
-git clone https://github.com/NoCoderRandom/netwatch.git
-cd netwatch
-python3 -m venv venv
-source venv/bin/activate
-pip install -r requirements.txt
-python3 netwatch.py --setup
-```
-
-### Windows 11
-
-1. Download and install nmap from [nmap.org/download.html](https://nmap.org/download.html). Check "Add nmap to PATH".
-2. Clone and install:
-
-```cmd
-git clone https://github.com/NoCoderRandom/netwatch.git
-cd netwatch
-python -m venv venv
-venv\Scripts\activate
-pip install -r requirements.txt
-python netwatch.py --setup
-```
-
-### macOS
-
-```bash
-brew install nmap
-git clone https://github.com/NoCoderRandom/netwatch.git
-cd netwatch
-python3 -m venv venv
-source venv/bin/activate
-pip install -r requirements.txt
-python3 netwatch.py --setup
-```
-
----
-
-## Quick Start
-
-```bash
-# Interactive mode (recommended for first-time users)
-python3 netwatch.py -i
-
-# Full security assessment with HTML report
-python3 netwatch.py --full-assessment --target 192.168.1.0/24
-
-# Quick scan of your network
-python3 netwatch.py --target 192.168.1.0/24
-
-# IoT device scan (cameras, routers, smart devices)
-python3 netwatch.py --target 192.168.1.0/24 --profile IOT
-
-# Download all data modules for extended detection
-python3 netwatch.py --download all
-```
 
 ---
 
@@ -291,10 +370,10 @@ Scans work normally with stale or missing cache — you just may have outdated C
 
 ```bash
 # Step 1: Save baseline when all known devices are present
-python3 netwatch.py --target 192.168.1.0/24 --save-baseline
+sudo python3 netwatch.py --target 192.168.1.0/24 --save-baseline
 
 # Step 2: Future scans automatically compare against baseline
-python3 netwatch.py --target 192.168.1.0/24
+sudo python3 netwatch.py --target 192.168.1.0/24
 ```
 
 | Finding | Severity | Meaning |
@@ -387,6 +466,8 @@ Identification results appear in:
 netwatch/
 ├── netwatch.py                    # Entry point — CLI, scan pipeline, setup wizard
 ├── requirements.txt               # Python dependencies
+├── install.sh                     # Automated installer for Linux/macOS
+├── install.bat                    # Automated installer for Windows (basic)
 ├── README.md                      # This file
 │
 ├── config/
@@ -415,6 +496,14 @@ netwatch/
 │   ├── upnp_checker.py            # SSDP discovery, UPnP risk assessment
 │   ├── mdns_checker.py            # mDNS/Zeroconf device discovery
 │   ├── arp_checker.py             # ARP spoofing detection
+│   ├── device_identifier.py       # 14-source device identification engine
+│   ├── identity_fusion.py         # Multi-source identity fusion and scoring
+│   ├── oui_lookup.py              # IEEE OUI MAC vendor resolution
+│   ├── device_map.py              # Persistent MAC→identity mapping
+│   ├── passive_sniffer.py         # Background mDNS/SSDP/DHCP packet capture
+│   ├── packet_parsers.py          # Protocol-specific packet parsing
+│   ├── instant_scan.py            # ARP sweep + passive capture quick scan
+│   ├── hybrid_scanner.py          # Passive+active scan orchestrator
 │   ├── baseline.py                # Rogue device baseline comparison
 │   ├── scan_history.py            # Scan snapshot persistence and diffing
 │   ├── module_manager.py          # Downloadable data module system
@@ -435,6 +524,7 @@ netwatch/
 │
 └── data/
     ├── default_credentials.json   # Factory-default credentials database
+    ├── device_map.json            # Persistent MAC→identity map
     ├── baseline.json              # Saved device baseline (--save-baseline)
     ├── cache/
     │   ├── cve_cache.json         # CVE data keyed by product:version
@@ -451,13 +541,17 @@ netwatch/
 **nmap not found**
 
 ```bash
-# Linux
-sudo apt-get install nmap
+# Debian/Ubuntu
+sudo apt install nmap
+
+# Fedora
+sudo dnf install nmap
+
+# Arch
+sudo pacman -S nmap
 
 # macOS
 brew install nmap
-
-# Windows — download from nmap.org, ensure "Add to PATH" is checked
 ```
 
 **Permission denied / OS detection not working**
@@ -469,9 +563,9 @@ FULL, STEALTH, and SMB profiles require elevated privileges. Without root, these
 sudo python3 netwatch.py --target 192.168.1.0/24 --profile FULL
 ```
 
-**WSL suggests wrong network (172.x.x.x)**
+**WSL2 suggests wrong network (172.x.x.x)**
 
-On WSL, NetWatch detects the virtual adapter and falls back to `192.168.1.0/24`. If your home network uses a different subnet, specify it with `--target`:
+On WSL2, NetWatch detects the virtual adapter and falls back to `192.168.1.0/24`. If your home network uses a different subnet, specify it with `--target`:
 
 ```bash
 python3 netwatch.py --target 192.168.0.0/24
@@ -520,6 +614,7 @@ MIT License — Copyright 2024 NetWatch Contributors
 - [Rich](https://rich.readthedocs.io) — terminal formatting
 - [Jinja2](https://jinja.palletsprojects.com) — HTML report templating
 - [cryptography](https://cryptography.io) — TLS certificate inspection
+- [scapy](https://scapy.net) — raw packet capture and ARP scanning
 - [danielmiessler/SecLists](https://github.com/danielmiessler/SecLists) — credential and SNMP lists
 - [ihebski/DefaultCreds-cheat-sheet](https://github.com/ihebski/DefaultCreds-cheat-sheet) — vendor credentials
 - [enthec/webappanalyzer](https://github.com/AliasIO/wappalyzer) — web technology detection

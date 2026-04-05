@@ -9,6 +9,12 @@ This package contains the core network scanning functionality including:
 - auth_tester: Default credentials checker
 - input_parser: Parse various IP range formats
 - network_utils: subnet detection and IP helpers
+- passive_sniffer: Background mDNS/SSDP/DHCP packet capture
+- packet_parsers: Protocol-specific packet parsing
+- oui_lookup: IEEE OUI MAC vendor resolution
+- device_map: Persistent MAC→identity mapping
+- identity_fusion: Multi-source identity fusion engine
+- hybrid_scanner: Passive+active scan orchestrator
 """
 
 from core.scanner import NetworkScanner
@@ -18,10 +24,12 @@ from core.nse_scanner import NSEScanner
 from core.auth_tester import AuthTester
 from core.input_parser import parse_target_input, format_target_summary
 from core.network_utils import get_local_subnet, validate_cidr, expand_cidr
+from core.oui_lookup import OUIDatabase, lookup_vendor
+from core.hybrid_scanner import HybridScanner, HybridScanResult
 
 __all__ = [
     "NetworkScanner",
-    "BannerGrabber", 
+    "BannerGrabber",
     "HttpFingerprinter",
     "NSEScanner",
     "AuthTester",
@@ -30,4 +38,8 @@ __all__ = [
     "get_local_subnet",
     "validate_cidr",
     "expand_cidr",
+    "OUIDatabase",
+    "lookup_vendor",
+    "HybridScanner",
+    "HybridScanResult",
 ]
