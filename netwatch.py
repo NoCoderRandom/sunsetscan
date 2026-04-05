@@ -416,7 +416,14 @@ class NetWatch:
                     (i.device_type or "Unknown")
                     for i in self.last_device_identities.values()
                 )
-                parts = [f"{c} {t.lower()}s" for t, c in type_counts.most_common()]
+                def _pluralize(t, c):
+                    tl = t.lower()
+                    if c == 1:
+                        return f"{c} {tl}"
+                    if tl.endswith("s") or tl.endswith("x"):
+                        return f"{c} {tl}es"
+                    return f"{c} {tl}s"
+                parts = [_pluralize(t, c) for t, c in type_counts.most_common()]
                 self.console.print(
                     f"\n[bold]{len(self.last_device_identities)} devices identified[/bold] "
                     f"({', '.join(parts)})"

@@ -110,6 +110,40 @@ class _Evidence:
     confidence: float = 0.0
 
 
+# ---- Hostname patterns -> (vendor, device_type, model_regex_or_None) ----
+
+_HOSTNAME_PATTERNS: List[Tuple[re.Pattern, str, str, Optional[re.Pattern]]] = [
+    # ASUS routers: RT-AX92U, RT-AX88U, GT-AX11000, etc.
+    (re.compile(r'(RT|GT|TUF|ROG|ZenWiFi)-[A-Z0-9]', re.I), "ASUS", "Router",
+     re.compile(r'((?:RT|GT|TUF|ROG|ZenWiFi)-[A-Z0-9]+[A-Z0-9]*)', re.I)),
+    # AiMesh nodes
+    (re.compile(r'AiMesh', re.I), "ASUS", "Router", None),
+    # Synology NAS: DiskStation, Nas, DS920, etc.
+    (re.compile(r'DiskStation|DS\d{3,4}|RS\d{3,4}|FlashStation', re.I), "Synology", "NAS",
+     re.compile(r'(DS\d{3,4}\+?|RS\d{3,4}\+?)', re.I)),
+    # QNAP NAS: TS-453D, etc.
+    (re.compile(r'TS-\d{3,4}|QNAP|NAS-', re.I), "QNAP", "NAS",
+     re.compile(r'(TS-\d{3,4}[A-Z]*)', re.I)),
+    # Ubiquiti/UniFi
+    (re.compile(r'UniFi|UAP|USG|USW|UDM|UCK', re.I), "Ubiquiti", "Network Device",
+     re.compile(r'(UAP-\S+|USG-\S+|USW-\S+|UDM-\S+|UCK-\S+)', re.I)),
+    # MikroTik
+    (re.compile(r'MikroTik|hAP|RB\d{3}', re.I), "MikroTik", "Router",
+     re.compile(r'(hAP\S*|RB\d{3,4}\S*)', re.I)),
+    # Netgear: R7000, EX7000, etc.
+    (re.compile(r'Netgear|R\d{4}|EX\d{4}|XR\d{3}', re.I), "Netgear", "Router",
+     re.compile(r'(R\d{4,5}\S*|EX\d{4}\S*|XR\d{3}\S*)', re.I)),
+    # TP-Link: Archer, Deco, TL-
+    (re.compile(r'Archer|Deco|TL-', re.I), "TP-Link", "Router",
+     re.compile(r'(Archer[- ]\S+|Deco[- ]\S+|TL-\S+)', re.I)),
+    # Hikvision cameras
+    (re.compile(r'Hikvision|DS-2[A-Z]{2}', re.I), "Hikvision", "Camera",
+     re.compile(r'(DS-2[A-Z]{2}\S+)', re.I)),
+    # Generic NAS hint
+    (re.compile(r'^Nas$', re.I), "", "NAS", None),
+]
+
+
 # ---- Port heuristic rules ----
 
 _PORT_DEVICE_HINTS: List[Tuple[set, str, float]] = [
@@ -122,6 +156,7 @@ _PORT_DEVICE_HINTS: List[Tuple[set, str, float]] = [
     ({37777, 37778},       "Camera",            0.6),   # Dahua
     ({1900},               "UPnP Device",       0.2),
     ({5000, 5001},         "NAS",               0.4),
+    ({5000},               "NAS",               0.25),   # Synology DSM (single port)
     ({8291, 8728},         "Router",            0.6),   # MikroTik Winbox + API
     ({8291},               "Router",            0.5),   # MikroTik Winbox
     ({53},                 "DNS Resolver",      0.3),
@@ -238,6 +273,7 @@ _HTTP_SERVER_PATTERNS: List[Tuple[re.Pattern, str, str]] = [
     (re.compile(r'Dahua', re.I),                                "Dahua",       "Camera"),
     (re.compile(r'DNVRS-Webs', re.I),                          "Dahua",       "Camera"),
     (re.compile(r'ASUSRT', re.I),                               "ASUS",        "Router"),
+    (re.compile(r'^httpd/2\.0$', re.I),                         "ASUS",        "Router"),
     (re.compile(r'WatchGuard', re.I),                           "WatchGuard",  "Firewall"),
     (re.compile(r'SonicWALL', re.I),                            "SonicWall",   "Firewall"),
     (re.compile(r'Zyxel', re.I),                                "Zyxel",       "Router"),
@@ -322,6 +358,7 @@ class DeviceIdentifier:
         evidence: List[_Evidence] = []
 
         extractors = [
+            self._extract_from_hostname,
             self._extract_from_mac_oui,
             self._extract_from_nmap_os,
             self._extract_from_http_fingerprint,
@@ -372,6 +409,7 @@ class DeviceIdentifier:
         empty_findings: List[Finding] = []
 
         local_extractors = [
+            self._extract_from_hostname,
             self._extract_from_mac_oui,
             self._extract_from_nmap_os,
             self._extract_from_http_fingerprint,
@@ -400,6 +438,32 @@ class DeviceIdentifier:
         return self._fuse(evidence)
 
     # ---- Evidence Extractors ----
+
+    def _extract_from_hostname(
+        self, ip: str, host_info: HostInfo, findings: List[Finding]
+    ) -> Optional[_Evidence]:
+        """Extract vendor/model/type from DNS hostname."""
+        hostname = host_info.hostname
+        if not hostname:
+            return None
+
+        for pattern, vendor, device_type, model_re in _HOSTNAME_PATTERNS:
+            if pattern.search(hostname):
+                model = ""
+                if model_re:
+                    m = model_re.search(hostname)
+                    if m:
+                        model = m.group(1)
+                conf = 0.6 if vendor else 0.3
+                return _Evidence(
+                    source="hostname",
+                    vendor=self._normalize_vendor(vendor),
+                    model=model,
+                    device_type=device_type,
+                    confidence=conf,
+                )
+
+        return None
 
     def _extract_from_mac_oui(
         self, ip: str, host_info: HostInfo, findings: List[Finding]
@@ -491,10 +555,32 @@ class DeviceIdentifier:
             if hasattr(fp, 'confidence') and fp.confidence:
                 fp_confidence = fp.confidence
 
+            # Skip generic web server types — these are per-port services,
+            # not device identities (e.g. nginx, apache, generic-httpd)
+            _GENERIC_WEB_TYPES = {
+                "nginx", "apache", "generic-httpd", "php", "mini_httpd",
+                "tp-link-httpd", "auth-realm",
+            }
+
             # Extract from structured fingerprint fields
             if device_type or model or version:
-                # Try to extract vendor from device_type field (often "ASUS Router")
-                if device_type:
+                # Map vendor-like device_type values to proper vendor + device_type
+                _FP_VENDOR_MAP = {
+                    "ASUS": ("ASUS", "Router"),
+                    "Synology": ("Synology", "NAS"),
+                    "QNAP": ("QNAP", "NAS"),
+                    "Ubiquiti": ("Ubiquiti", "Network Device"),
+                    "Cisco": ("Cisco", "Network Device"),
+                    "MikroTik": ("MikroTik", "Router"),
+                    "Netgear": ("Netgear", "Router"),
+                    "TP-Link": ("TP-Link", "Router"),
+                    "Linksys": ("Linksys", "Router"),
+                    "D-Link": ("D-Link", "Router"),
+                }
+                if device_type in _FP_VENDOR_MAP:
+                    vendor, device_type = _FP_VENDOR_MAP[device_type]
+                elif device_type:
+                    # Try to extract vendor from device_type field (often "ASUS Router")
                     parts = device_type.split()
                     if len(parts) >= 2:
                         maybe_vendor = self._normalize_vendor(parts[0])
@@ -502,14 +588,19 @@ class DeviceIdentifier:
                             vendor = maybe_vendor
                             device_type = " ".join(parts[1:])
 
-                results.append(_Evidence(
-                    source="http_fingerprint",
-                    vendor=self._normalize_vendor(vendor),
-                    model=model,
-                    version=version,
-                    device_type=device_type,
-                    confidence=max(fp_confidence, 0.5),
-                ))
+                # Don't emit generic web server types as device evidence
+                if device_type.lower() in _GENERIC_WEB_TYPES:
+                    device_type = ""
+
+                if vendor or model or version or device_type:
+                    results.append(_Evidence(
+                        source="http_fingerprint",
+                        vendor=self._normalize_vendor(vendor),
+                        model=model,
+                        version=version,
+                        device_type=device_type,
+                        confidence=max(fp_confidence, 0.5),
+                    ))
 
             # Also check raw_headers for additional hints
             raw_headers = getattr(fp, 'raw_headers', None) or {}
@@ -835,30 +926,39 @@ class DeviceIdentifier:
                             matched_techs.append((db_name, version))
                             break
 
+        # Generic software CPEs that are per-port services, not device identities
+        _GENERIC_SOFTWARE_CPES = {
+            "nginx", "apache", "apache http server", "iis", "lighttpd",
+            "php", "jquery", "bootstrap", "openssl", "wordpress",
+            "react", "vue.js", "angular", "node.js", "express",
+            "tomcat", "gunicorn", "uwsgi", "puma", "caddy",
+        }
+
         # Process matched technologies against the Wappalyzer DB
         for tech_name, detected_version in matched_techs:
             tech_info = (wap_db or {}).get(tech_name)
             if not tech_info:
                 continue
 
-            # Strategy 1: Parse CPE string
+            # Strategy 1: Parse CPE string (skip generic web software)
             cpe_str = tech_info.get("cpe", "")
-            if cpe_str:
+            if cpe_str and tech_name.lower() not in _GENERIC_SOFTWARE_CPES:
                 cpe_ev = self._parse_cpe(cpe_str, detected_version)
                 if cpe_ev:
                     results.append(cpe_ev)
 
-            # Strategy 2: Map categories to device type
-            cats = tech_info.get("cats", [])
-            for cat_id in cats:
-                device_type = _WAPPALYZER_CAT_DEVICE_TYPE.get(cat_id)
-                if device_type:
-                    results.append(_Evidence(
-                        source="wappalyzer_cat",
-                        device_type=device_type,
-                        confidence=0.3,
-                    ))
-                    break  # one device_type per tech is enough
+            # Strategy 2: Map categories to device type (skip generic software)
+            if tech_name.lower() not in _GENERIC_SOFTWARE_CPES:
+                cats = tech_info.get("cats", [])
+                for cat_id in cats:
+                    device_type = _WAPPALYZER_CAT_DEVICE_TYPE.get(cat_id)
+                    if device_type:
+                        results.append(_Evidence(
+                            source="wappalyzer_cat",
+                            device_type=device_type,
+                            confidence=0.3,
+                        ))
+                        break  # one device_type per tech is enough
 
         # Strategy 3: Keyword fallback for known device vendors (original logic)
         if not results:
@@ -980,7 +1080,8 @@ class DeviceIdentifier:
 
             # Specific product patterns
             nmap_svc_patterns = [
-                (re.compile(r'Synology\s+DSM', re.I),   "Synology", "NAS",     ""),
+                (re.compile(r'Synology\s+DSM', re.I),    "Synology", "NAS",     ""),
+                (re.compile(r'samba\s+smbd', re.I),      "",         "NAS",     ""),
                 (re.compile(r'MikroTik\s+(\S+)', re.I),  "MikroTik", "Router",  ""),
                 (re.compile(r'APC\s+(\S+)', re.I),       "APC",      "UPS",     ""),
                 (re.compile(r'iLO\s+(\d)', re.I),        "HPE",      "Server",  ""),
