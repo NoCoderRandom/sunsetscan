@@ -61,6 +61,8 @@ from core.ftp_checker import run_ftp_checks
 from core.ssh_checker import run_ssh_checks
 from core.snmp_checker import run_snmp_checks, get_last_sysdescr, parse_sysdescr, SNMP_PORT
 from core.device_identifier import DeviceIdentifier, DeviceIdentity
+from core.hybrid_scanner import HybridScanner, HybridScanResult
+from core.identity_fusion import FusedIdentity
 from core.smb_checker import run_smb_checks
 from core.mdns_checker import run_mdns_discovery
 from core.arp_checker import run_arp_checks
@@ -258,6 +260,9 @@ class NetWatch:
         self.risk_scorer = RiskScorer()
         self.scan_history = ScanHistory()
         self.device_identifier = DeviceIdentifier()
+        self.hybrid_scanner = HybridScanner(
+            device_identifier=self.device_identifier,
+        )
 
         # Store results for recheck/export
         self.last_scan_result: Optional[ScanResult] = None
@@ -267,6 +272,7 @@ class NetWatch:
         self.auth_results: Dict[str, Any] = {}
         self.last_risk_scores: Dict = {}
         self.last_device_identities: Dict[str, DeviceIdentity] = {}
+        self.last_hybrid_result: Optional[HybridScanResult] = None
         self._scan_lock = threading.Lock()
 
         # CLI arguments
@@ -313,10 +319,12 @@ class NetWatch:
                 elif choice == "6":
                     self._run_full_assessment_from_menu()
                 elif choice == "7":
-                    self.run_custom_target()
+                    self._run_instant_scan_from_menu()
                 elif choice == "8":
-                    self.export_report()
+                    self.run_custom_target()
                 elif choice == "9":
+                    self.export_report()
+                elif choice == "0":
                     self._show_scan_history_menu()
                 elif choice == "m":
                     self._show_modules_menu()
@@ -489,6 +497,15 @@ class NetWatch:
             return
         self.console.print("[bold]Running Full Assessment...[/bold]")
         self.run_full_assessment(target)
+
+    def _run_instant_scan_from_menu(self) -> None:
+        """Run Instant Scan from the interactive menu."""
+        from core.instant_scan import run_instant_scan
+        target = self.menu.prompt_target(default=self.settings.default_target)
+        if not target:
+            return
+        run_instant_scan(target=target)
+        Prompt.ask("\nPress ENTER to return to menu")
 
     def _show_scan_history_menu(self) -> None:
         """Show scan history and diff options."""
@@ -1736,10 +1753,22 @@ class NetWatch:
             self.console.print("[yellow]Proceeding with full assessment...[/yellow]\n")
         
         start_time = datetime.now()
-        
+
         try:
+            # Phase 0: Start passive capture (runs in background during all phases)
+            passive_started = False
+            if os.geteuid() == 0:
+                self.console.print("[bold blue]Phase 0: Starting Passive Capture[/bold blue]")
+                passive_started = self.hybrid_scanner.start_passive()
+                if passive_started:
+                    self.console.print("[green]Passive sniffer running (mDNS, SSDP, DHCP)[/green]\n")
+                else:
+                    self.console.print("[dim]Passive capture unavailable — continuing with active-only[/dim]\n")
+            else:
+                self.console.print("[dim]Passive capture requires root — skipping[/dim]\n")
+
             # Phase 1: Discovery
-            self.console.print("[bold blue]Phase 1/6: Host Discovery[/bold blue]")
+            self.console.print("[bold blue]Phase 1/8: Host Discovery[/bold blue]")
             if os.geteuid() == 0:
                 with ThreadPoolExecutor(max_workers=2) as executor:
                     nmap_future = executor.submit(
@@ -1767,7 +1796,7 @@ class NetWatch:
             self.console.print(f"[green]Discovered {len(discovered_hosts)} active hosts[/green]\n")
             
             # Phase 2: Port Scanning
-            self.console.print("[bold blue]Phase 2/6: Port Scanning[/bold blue]")
+            self.console.print("[bold blue]Phase 2/8: Port Scanning[/bold blue]")
             profile = self.args.profile if hasattr(self.args, 'profile') else "QUICK"
             self.console.print(f"[dim]Scanning {len(discovered_hosts)} hosts in parallel...[/dim]")
             scan_result = self.scanner.scan(target, profile=profile)
@@ -1777,36 +1806,70 @@ class NetWatch:
             self.console.print(f"[green]Port scan complete — {len(scan_result.hosts)} hosts with open ports[/green]\n")
             
             # Phase 3: Banner Grabbing
-            self.console.print("[bold blue]Phase 3/6: Service Banner Grabbing[/bold blue]")
+            self.console.print("[bold blue]Phase 3/8: Service Banner Grabbing[/bold blue]")
             self.grab_banners(scan_result)
             self.console.print("[green]Banner grabbing complete[/green]\n")
             
             # Phase 4: NSE Scripts (if scanner available)
             if self.nse_scanner:
-                self.console.print("[bold blue]Phase 4/6: NSE Enhanced Detection[/bold blue]")
+                self.console.print("[bold blue]Phase 4/8: NSE Enhanced Detection[/bold blue]")
                 self.run_nse_scans(scan_result)
                 self.console.print("[green]NSE scanning complete[/green]\n")
             else:
-                self.console.print("[dim]Phase 4/6: NSE Enhanced Detection (skipped - enable with --nse)[/dim]\n")
+                self.console.print("[dim]Phase 4/8: NSE Enhanced Detection (skipped - enable with --nse)[/dim]\n")
             
             # Phase 5: Default Credentials
             if self.auth_tester and self.auth_tester.enabled:
-                self.console.print("[bold blue]Phase 5/6: Default Credential Testing[/bold blue]")
+                self.console.print("[bold blue]Phase 5/8: Default Credential Testing[/bold blue]")
                 self.console.print("[yellow]WARNING: Only testing devices you own![/yellow]")
                 self.run_auth_tests(scan_result)
                 self.console.print("[green]Credential testing complete[/green]\n")
             else:
-                self.console.print("[dim]Phase 5/6: Default Credential Testing (skipped - enable with --check-defaults)[/dim]\n")
+                self.console.print("[dim]Phase 5/8: Default Credential Testing (skipped - enable with --check-defaults)[/dim]\n")
             
             # Phase 6: EOL Check
-            self.console.print("[bold blue]Phase 6/7: EOL Status Check[/bold blue]")
+            self.console.print("[bold blue]Phase 6/8: EOL Status Check[/bold blue]")
             self.check_eol_status(scan_result)
             self.console.print("[green]EOL checking complete[/green]\n")
 
             # Phase 7: Security Checks (SSL/TLS, SSH, DNS, UPnP, CVE, JA3S)
-            self.console.print("[bold blue]Phase 7/7: Security Analysis[/bold blue]")
+            self.console.print("[bold blue]Phase 7/8: Security Analysis[/bold blue]")
             self.run_security_checks(scan_result)
             self.console.print("[green]Security analysis complete[/green]\n")
+
+            # Phase 8: Hybrid Identity Fusion (passive + active + OUI + history)
+            self.console.print("[bold blue]Phase 8/8: Hybrid Identity Fusion[/bold blue]")
+            try:
+                hybrid_result = self.hybrid_scanner.stop_and_fuse(
+                    scan_result=scan_result,
+                    active_identities=self.last_device_identities,
+                )
+                self.last_hybrid_result = hybrid_result
+
+                passive_info = (
+                    f"{hybrid_result.passive_packet_count} packets captured, "
+                    f"{hybrid_result.passive_parsed_count} parsed"
+                ) if passive_started else "passive capture was not active"
+                self.console.print(
+                    f"  [cyan]Passive: {passive_info}[/cyan]"
+                )
+                self.console.print(
+                    f"  [cyan]Fused: {len(hybrid_result.fused_identities)} device identities[/cyan]"
+                )
+                if hybrid_result.new_devices:
+                    self.console.print(
+                        f"  [yellow]New devices: {len(hybrid_result.new_devices)} "
+                        f"first-time observations[/yellow]"
+                    )
+                if hybrid_result.missing_devices:
+                    self.console.print(
+                        f"  [yellow]Missing devices: {len(hybrid_result.missing_devices)} "
+                        f"previously known, not seen this scan[/yellow]"
+                    )
+                self.console.print("[green]Identity fusion complete[/green]\n")
+            except Exception as e:
+                logger.debug(f"Hybrid fusion error: {e}")
+                self.console.print(f"[dim]Hybrid fusion skipped: {e}[/dim]\n")
 
             # Show results
             self.display.show_scan_info(scan_result)
@@ -1825,8 +1888,28 @@ class NetWatch:
                 f"[dim]{counts['INFO']} Info[/dim]"
             )
 
-            # Device identification summary
-            if self.last_device_identities:
+            # Device identification summary (fused if available, else active-only)
+            if self.last_hybrid_result and self.last_hybrid_result.fused_identities:
+                from collections import Counter
+                fused = self.last_hybrid_result.fused_identities
+                type_counts = Counter(
+                    (i.device_type or "Unknown")
+                    for i in fused.values()
+                )
+                parts = [f"{c} {t}" for t, c in type_counts.most_common()]
+                self.console.print(
+                    f"[bold]Devices identified (fused):[/bold] "
+                    f"{len(fused)} devices "
+                    f"({', '.join(parts)})"
+                )
+                source_counts = Counter()
+                for i in fused.values():
+                    source_counts.update(i.sources)
+                src_parts = [f"{s}: {c}" for s, c in source_counts.most_common(6)]
+                self.console.print(
+                    f"[dim]  Sources: {', '.join(src_parts)}[/dim]"
+                )
+            elif self.last_device_identities:
                 from collections import Counter
                 type_counts = Counter(
                     (i.device_type or "Unknown")
@@ -1922,6 +2005,8 @@ examples:
   %(prog)s --target 192.168.1.0/24 --check-defaults Test default passwords
   %(prog)s --target 192.168.1.0/24 --identify       Quick device inventory
   %(prog)s --target 192.168.1.0/24 --save-baseline  Save device baseline
+  %(prog)s --instant                                 Instant scan (ARP only, no ports)
+  %(prog)s --instant --target 192.168.1.0/24         Instant scan on specific subnet
   %(prog)s --modules                                List data modules
   %(prog)s --download all                           Download all modules
   %(prog)s --history                                View past scans
@@ -1991,6 +2076,12 @@ examples:
         '--update-cache',
         action='store_true',
         help='Manually refresh CVE and EOL caches (run weekly for best results)'
+    )
+
+    parser.add_argument(
+        '--instant',
+        action='store_true',
+        help='Instant Scan: ultra-fast ARP + passive discovery, no port scanning (root)'
     )
 
     parser.add_argument(
@@ -2616,6 +2707,11 @@ def main() -> int:
         from ui.interactive_controller import InteractiveController
         controller = InteractiveController()
         return controller.run()
+
+    # Check for instant scan mode
+    if args.instant:
+        from core.instant_scan import run_instant_scan
+        return run_instant_scan(target=args.target)
 
     # Check for identify-only mode
     if args.identify:
