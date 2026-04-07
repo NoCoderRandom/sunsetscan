@@ -70,13 +70,13 @@ cd netwatch
 #### 3. Manual install (full control, four commands)
 
 ```bash
-sudo apt install -y nmap masscan git python3 python3-venv python3-pip libpcap-dev build-essential
+sudo apt install -y nmap masscan git python3 python3-venv python3-pip libpcap-dev build-essential avahi-utils
 git clone https://github.com/NoCoderRandom/netwatch.git && cd netwatch
 python3 -m venv venv && ./venv/bin/pip install -r requirements.txt
 ./netwatch --version
 ```
 
-(Substitute your distro's package manager for `apt` — `dnf`, `pacman`, `zypper`, or `brew`.)
+(Substitute your distro's package manager for `apt` — `dnf`, `pacman`, `zypper`, or `brew`. The avahi package is `avahi-tools` on Fedora/RHEL, `avahi` on Arch, `avahi-utils` on openSUSE, and not needed on macOS.)
 
 ### After installing — first run
 
@@ -109,7 +109,7 @@ error: externally-managed-environment
 × This environment is externally managed
 ```
 
-Two of NetWatch's dependencies (`pysnmp` v6 in particular) need newer versions than the apt repositories ship, so a pure-apt install isn't possible. The installer's solution is the standard one: install system tools (nmap, masscan, libpcap) via apt, and put NetWatch's Python dependencies in a project-local `./venv` directory. Nothing system-wide is touched, so PEP 668 doesn't apply, and uninstalling NetWatch is just `rm -rf ~/netwatch`.
+Two of NetWatch's dependencies (`pysnmp` v6 in particular) need newer versions than the apt repositories ship, so a pure-apt install isn't possible. The installer's solution is the standard one: install system tools (nmap, masscan, libpcap, avahi-utils) via apt, and put NetWatch's Python dependencies in a project-local `./venv` directory. Nothing system-wide is touched, so PEP 668 doesn't apply, and uninstalling NetWatch is just `rm -rf ~/netwatch`.
 
 ### Optional: keep NetWatch running in the background
 
@@ -157,6 +157,7 @@ Restart, open **Ubuntu** from the Start menu, then follow the standard install a
 | **nmap** | Any recent | Must be on system PATH |
 | **OS** | Linux (native or WSL2) | See [Platform Support](#platform-support) |
 | **masscan** | Any | Optional — faster port discovery |
+| **avahi-utils** | Any | Optional — provides `avahi-browse`, used for reliable mDNS discovery of Apple / Bonjour / Sleep-Proxy devices. Falls back to python `zeroconf` if absent. |
 | **git** | Any | Optional — used for `--setup` and `--update` |
 | **Privileges** | Standard user | Root/sudo needed for FULL, STEALTH, SMB profiles, ARP detection, and passive capture |
 

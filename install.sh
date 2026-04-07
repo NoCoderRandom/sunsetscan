@@ -2,8 +2,8 @@
 #
 # NetWatch installer
 #
-# Installs system tools (nmap, masscan, git, python venv) via the OS package
-# manager, then creates a project-local Python virtual environment in ./venv
+# Installs system tools (nmap, masscan, avahi-utils, git, python venv) via
+# the OS package manager, then creates a project-local Python virtual env in ./venv
 # and installs Python dependencies inside it. Avoids PEP 668 issues entirely
 # by never touching system Python packages.
 #
@@ -148,28 +148,49 @@ ok "Support level: $TIER"
 step "2/6  Installing system packages"
 
 install_system_packages() {
+    # Package notes:
+    #   nmap, masscan — active scanning
+    #   git, python3* — repo + venv
+    #   libpcap, build-essential — needed by scapy for raw-socket capture
+    #   avahi-utils / avahi-tools — provides 'avahi-browse', used by
+    #       core/active_mdns.py to piggyback on the system mDNS cache
+    #       on Linux hosts running avahi-daemon (standard on Pi OS,
+    #       Debian, Ubuntu). Without it NetWatch falls back to the
+    #       Python zeroconf library, which misses Bonjour Sleep Proxy
+    #       forwarded records (e.g. sleeping Apple TVs).
     case "$PKG_MGR" in
         apt)
             $SUDO apt-get update -qq
             $SUDO DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
                 nmap masscan git \
                 python3 python3-venv python3-pip python3-dev \
-                libpcap-dev build-essential
+                libpcap-dev build-essential \
+                avahi-utils
             ;;
         dnf)
-            $SUDO dnf install -y nmap masscan git python3 python3-pip python3-devel libpcap-devel gcc
+            $SUDO dnf install -y \
+                nmap masscan git python3 python3-pip python3-devel libpcap-devel gcc \
+                avahi-tools
             ;;
         yum)
             $SUDO yum install -y epel-release || true
-            $SUDO yum install -y nmap masscan git python3 python3-pip python3-devel libpcap-devel gcc
+            $SUDO yum install -y \
+                nmap masscan git python3 python3-pip python3-devel libpcap-devel gcc \
+                avahi-tools
             ;;
         pacman)
-            $SUDO pacman -Sy --noconfirm --needed nmap masscan git python python-pip libpcap base-devel
+            $SUDO pacman -Sy --noconfirm --needed \
+                nmap masscan git python python-pip libpcap base-devel \
+                avahi
             ;;
         zypper)
-            $SUDO zypper install -y nmap masscan git python3 python3-pip python3-devel libpcap-devel gcc
+            $SUDO zypper install -y \
+                nmap masscan git python3 python3-pip python3-devel libpcap-devel gcc \
+                avahi-utils
             ;;
         brew)
+            # macOS ships its own mDNSResponder — no avahi needed. NetWatch
+            # falls back to the Python zeroconf library on Darwin.
             brew install nmap masscan git python3
             ;;
         *)
@@ -182,7 +203,8 @@ if [ "$SKIP_SYSTEM" -eq 1 ]; then
     warn "Skipping system package install (--no-system)"
 elif [ -z "$PKG_MGR" ]; then
     warn "No package manager detected. Make sure these are installed manually:"
-    warn "  nmap, masscan, git, python3 (>=3.9), python3-venv, libpcap dev headers"
+    warn "  nmap, masscan, git, python3 (>=3.9), python3-venv, libpcap dev headers,"
+    warn "  avahi-utils (Linux only, for 'avahi-browse' — improves mDNS discovery)"
 else
     if install_system_packages; then
         ok "System packages installed/verified"
@@ -212,6 +234,11 @@ if command -v masscan &>/dev/null; then
     ok "masscan $MASSCAN_VER"
 else
     warn "masscan not installed (optional — slower port discovery without it)"
+fi
+if command -v avahi-browse &>/dev/null; then
+    ok "avahi-browse available (preferred mDNS path)"
+else
+    warn "avahi-browse not installed (optional — falls back to python zeroconf)"
 fi
 
 # ----------------------------------------------------------------------------
