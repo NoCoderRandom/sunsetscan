@@ -1889,6 +1889,31 @@ class NetWatch:
                 )
                 self.last_hybrid_result = hybrid_result
 
+                # Upgrade self.last_device_identities with the fused result so
+                # downstream consumers (HTML exporter, EOL checks, risk scorer,
+                # topology card rendering) all see the richer identity. Without
+                # this, the report keeps rendering the pre-fusion vendor from
+                # the active scan alone — e.g. an Apple TV labelled "Cisco"
+                # because OUI fired but the mDNS/RAOP evidence only landed in
+                # the fused identity.
+                from core.device_identifier import DeviceIdentity
+                for mac, fused_id in hybrid_result.fused_identities.items():
+                    if not fused_id.ip:
+                        continue
+                    existing = self.last_device_identities.get(fused_id.ip)
+                    merged = DeviceIdentity(
+                        vendor=fused_id.vendor or (existing.vendor if existing else ""),
+                        model=fused_id.model or (existing.model if existing else ""),
+                        version=fused_id.version or (existing.version if existing else ""),
+                        device_type=fused_id.device_type or (existing.device_type if existing else ""),
+                        confidence=max(
+                            fused_id.confidence,
+                            existing.confidence if existing else 0.0,
+                        ),
+                        sources=list(fused_id.sources),
+                    )
+                    self.last_device_identities[fused_id.ip] = merged
+
                 passive_info = (
                     f"{hybrid_result.passive_packet_count} packets captured, "
                     f"{hybrid_result.passive_parsed_count} parsed"
