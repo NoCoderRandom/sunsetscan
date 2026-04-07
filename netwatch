@@ -1,0 +1,38 @@
+#!/usr/bin/env bash
+#
+# NetWatch launcher.
+#
+# Resolves the project root from its own location, then runs netwatch.py
+# inside the project's virtual environment. Works whether invoked as
+# "./netwatch", "sudo ./netwatch", or via a symlink in /usr/local/bin.
+#
+# If the venv does not exist yet, prints a clear pointer to install.sh
+# instead of failing with a cryptic Python error.
+
+set -e
+
+# Resolve symlinks to the real script location so /usr/local/bin/netwatch
+# (which is typically a symlink) still finds the venv next to the source.
+SOURCE="${BASH_SOURCE[0]}"
+while [ -L "$SOURCE" ]; do
+    DIR="$( cd -P "$( dirname "$SOURCE" )" >/dev/null 2>&1 && pwd )"
+    SOURCE="$( readlink "$SOURCE" )"
+    [[ "$SOURCE" != /* ]] && SOURCE="$DIR/$SOURCE"
+done
+SCRIPT_DIR="$( cd -P "$( dirname "$SOURCE" )" >/dev/null 2>&1 && pwd )"
+
+VENV_PY="$SCRIPT_DIR/venv/bin/python3"
+
+if [ ! -x "$VENV_PY" ]; then
+    echo "NetWatch: Python virtual environment not found at $SCRIPT_DIR/venv" >&2
+    echo "          Run the installer first:" >&2
+    echo "              cd $SCRIPT_DIR && ./install.sh" >&2
+    exit 1
+fi
+
+if [ ! -f "$SCRIPT_DIR/netwatch.py" ]; then
+    echo "NetWatch: netwatch.py not found in $SCRIPT_DIR" >&2
+    exit 1
+fi
+
+exec "$VENV_PY" "$SCRIPT_DIR/netwatch.py" "$@"

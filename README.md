@@ -31,124 +31,121 @@ NetWatch is a local-network security auditing tool for **home network owners and
 
 ## Installation
 
-### Quick Start (Linux — Debian/Ubuntu/WSL2)
+NetWatch ships with an installer that takes care of system tools (`nmap`, `masscan`, `git`, `python3-venv`), creates a project-local Python virtual environment, and installs all Python dependencies inside it. **You will never be asked to `pip install` anything as root** — that's important on modern Debian/Pi OS, see [Why a venv?](#why-a-venv) below.
 
-This is the fastest way to get running. Copy and paste the entire block:
+### Tier-1 platforms (fully tested)
+
+Debian, Ubuntu, Raspberry Pi OS (Bookworm and newer), Linux Mint, Pop!_OS.
+
+### Tier-2 platforms (best-effort, same script)
+
+Fedora, RHEL, CentOS, Rocky, Alma, Arch, Manjaro, openSUSE, macOS.
+
+### Three ways to install — pick one
+
+#### 1. One-line bootstrap (recommended for new users)
+
+Clones the repo into `~/netwatch` and runs the installer:
 
 ```bash
-sudo apt update
-sudo apt install -y nmap git python3 python3-pip python3-venv
-
-git clone https://github.com/NoCoderRandom/netwatch.git
-cd netwatch
-
-python3 -m venv venv
-source venv/bin/activate
-
-pip install -r requirements.txt
-
-python3 netwatch.py --setup
+curl -fsSL https://raw.githubusercontent.com/NoCoderRandom/netwatch/main/bootstrap.sh | bash
 ```
 
-You're ready. Run your first scan:
+Want it somewhere else? Set `INSTALL_DIR`:
 
 ```bash
-sudo python3 netwatch.py -i
+INSTALL_DIR=/opt/netwatch curl -fsSL https://raw.githubusercontent.com/NoCoderRandom/netwatch/main/bootstrap.sh | bash
 ```
 
-### One-Line Installer (Linux/macOS)
+> **A note on `curl | bash`**: it's convenient but it does mean running a script you haven't read. If you'd rather inspect first, use option 2 or 3.
 
-If you prefer an automated installer that handles everything:
+#### 2. Clone and install
 
 ```bash
 git clone https://github.com/NoCoderRandom/netwatch.git
 cd netwatch
-chmod +x install.sh
 ./install.sh
 ```
 
-The installer detects your OS and package manager, installs nmap, creates a virtual environment, installs all Python dependencies, and runs a self-test.
-
-### Linux (RHEL/Fedora/CentOS)
+#### 3. Manual install (full control, four commands)
 
 ```bash
-sudo dnf install -y nmap git python3 python3-pip
-git clone https://github.com/NoCoderRandom/netwatch.git
-cd netwatch
-python3 -m venv venv
-source venv/bin/activate
-pip install -r requirements.txt
-python3 netwatch.py --setup
+sudo apt install -y nmap masscan git python3 python3-venv python3-pip libpcap-dev build-essential
+git clone https://github.com/NoCoderRandom/netwatch.git && cd netwatch
+python3 -m venv venv && ./venv/bin/pip install -r requirements.txt
+./netwatch --version
 ```
 
-### Linux (Arch)
+(Substitute your distro's package manager for `apt` — `dnf`, `pacman`, `zypper`, or `brew`.)
+
+### After installing — first run
 
 ```bash
-sudo pacman -S nmap git python python-pip
-git clone https://github.com/NoCoderRandom/netwatch.git
-cd netwatch
-python -m venv venv
-source venv/bin/activate
-pip install -r requirements.txt
-python netwatch.py --setup
+sudo ./netwatch --setup            # download EOL/CVE/credential databases (once)
+sudo ./netwatch --instant          # ARP-only inventory of your local subnet
+sudo ./netwatch --full-assessment --target 192.168.1.0/24
+```
+
+The `./netwatch` launcher auto-activates the venv — you don't need to `source venv/bin/activate` ever. It also works correctly under `sudo`.
+
+### Installer flags
+
+| Flag | Effect |
+|---|---|
+| (no flags) | Default install: system packages + venv + Python deps + self-test |
+| `--force` | Delete and rebuild the venv from scratch (use after upgrading Python) |
+| `--symlink` | Also install `/usr/local/bin/netwatch` so you can run `netwatch` from anywhere |
+| `--no-system` | Skip the apt/dnf/etc step (use if your system tools are already installed) |
+| `--help` | Show all options |
+
+Re-running `./install.sh` is safe and idempotent — it detects existing components and reuses them.
+
+### Why a venv?
+
+Modern Debian-based distributions (Debian Bookworm, Raspberry Pi OS Bookworm, Ubuntu 23.04+) ship with [PEP 668](https://peps.python.org/pep-0668/) enforcement. This makes `pip install` **fail** when run as root against the system Python:
+
+```
+error: externally-managed-environment
+× This environment is externally managed
+```
+
+Two of NetWatch's dependencies (`pysnmp` v6 in particular) need newer versions than the apt repositories ship, so a pure-apt install isn't possible. The installer's solution is the standard one: install system tools (nmap, masscan, libpcap) via apt, and put NetWatch's Python dependencies in a project-local `./venv` directory. Nothing system-wide is touched, so PEP 668 doesn't apply, and uninstalling NetWatch is just `rm -rf ~/netwatch`.
+
+### Optional: keep NetWatch running in the background
+
+A full assessment of a /24 subnet on a Raspberry Pi can take 10–30 minutes. Use `tmux` or `screen` so the scan survives an SSH disconnect:
+
+```bash
+sudo apt install -y tmux
+tmux new -s netwatch
+sudo ./netwatch --full-assessment --target 192.168.1.0/24
+# Ctrl+B then D to detach. "tmux attach -t netwatch" to come back later.
+```
+
+### Updating NetWatch
+
+```bash
+cd ~/netwatch
+git pull
+./install.sh                # idempotent — picks up any new dependencies
+```
+
+### Uninstalling
+
+```bash
+rm -rf ~/netwatch
+sudo rm -f /usr/local/bin/netwatch    # only if you used --symlink
 ```
 
 ### WSL2 on Windows
 
-If you're on Windows, install WSL2 first, then follow the Linux instructions above inside your WSL2 terminal:
+Windows is not directly supported (NetWatch needs raw sockets, `/proc`, and `os.geteuid`), but WSL2 works fine:
 
-1. Open PowerShell as Administrator and run:
-   ```powershell
-   wsl --install -d Ubuntu
-   ```
-2. Restart your computer when prompted.
-3. Open the **Ubuntu** app from the Start menu.
-4. Follow the [Quick Start (Linux)](#quick-start-linux--debianubuntuwsl2) instructions above.
-
-> **WSL2 networking note:** WSL2 uses a virtual network adapter. NetWatch auto-detects this and falls back to `192.168.1.0/24`. If your home network uses a different subnet, specify it with `--target`:
-> ```bash
-> sudo python3 netwatch.py --target 192.168.0.0/24
-> ```
-
-### macOS
-
-```bash
-brew install nmap
-git clone https://github.com/NoCoderRandom/netwatch.git
-cd netwatch
-python3 -m venv venv
-source venv/bin/activate
-pip install -r requirements.txt
-python3 netwatch.py --setup
+```powershell
+wsl --install -d Ubuntu     # in PowerShell, as Administrator
 ```
 
-> **Note:** ARP scanning and passive packet capture require root and may behave differently on macOS. For best results, use Linux or WSL2.
-
-### Post-Install Setup
-
-After installation, run the setup wizard to download vulnerability and EOL databases:
-
-```bash
-python3 netwatch.py --setup
-```
-
-Optionally download extended detection modules:
-
-```bash
-python3 netwatch.py --download all
-```
-
-### Optional: masscan (faster port discovery)
-
-```bash
-# Debian/Ubuntu
-sudo apt install -y masscan
-
-# Fedora
-sudo dnf install -y masscan
-```
-
-masscan is not required but significantly speeds up port discovery on large networks.
+Restart, open **Ubuntu** from the Start menu, then follow the standard install above. WSL2 uses a virtual network adapter — pass your real subnet with `--target` if auto-detection picks the wrong one.
 
 ---
 

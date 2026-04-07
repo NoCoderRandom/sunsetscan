@@ -1,0 +1,20 @@
+# Force LF line endings on all source/script files regardless of the user's
+# git autocrlf setting. Without this, a Windows checkout would write CRLF
+# into shell scripts and Python files, breaking the shebang line and
+# producing the cryptic "env: 'python3\r': No such file or directory" error.
+*.sh    text eol=lf
+*.py    text eol=lf
+*.j2    text eol=lf
+*.yml   text eol=lf
+*.yaml  text eol=lf
+*.json  text eol=lf
+*.md    text eol=lf
+*.txt   text eol=lf
+netwatch text eol=lf
+
+# Treat HTML reports / images as binary so git doesn't try to "fix" them.
+*.html  binary
+*.png   binary
+*.jpg   binary
+*.gif   binary
+*.ico   binary
