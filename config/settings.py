@@ -16,8 +16,8 @@ Example:
     timeout = settings.banner_timeout
 """
 
-from dataclasses import dataclass
-from typing import Dict, List
+from dataclasses import dataclass, field
+from typing import Dict, List, Tuple
 
 
 @dataclass(frozen=True)
@@ -60,6 +60,13 @@ class Settings:
     scan_worker_threads: int = 8
     history_retention_days: int = 90
     auto_save_history: bool = True
+    # Safe mode: applied automatically on low-power hosts (Pi, Pi-hole, Wi-Fi).
+    # When True, port_scanner caps masscan rate, scanner.py strips -O/-A,
+    # and excluded_hosts is honored on every nmap/masscan invocation.
+    safe_mode: bool = False
+    # IPs to never include in any scan (typically gateway + own IP, set when
+    # NetWatch detects it is running on the LAN's DNS resolver / gateway).
+    excluded_hosts: Tuple[str, ...] = ()
     
     def __post_init__(self):
         # Dataclass is frozen, so we can't modify directly

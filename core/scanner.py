@@ -178,9 +178,12 @@ class NetworkScanner:
             raise ValueError(f"Unknown scan profile: {profile}. "
                            f"Valid profiles: {list(SCAN_PROFILES.keys())}")
         
+        # Apply safe-mode downgrades + host exclusions
+        scan_args = self._apply_safety(scan_args)
+
         logger.info(f"Starting {profile} scan on {target}")
         self._update_progress(f"Starting {profile} scan on {target}", 0.0)
-        
+
         try:
             # Perform scan using python-nmap
             self.nm.scan(hosts=target, arguments=scan_args)
@@ -224,6 +227,28 @@ class NetworkScanner:
         
         return result
     
+    def _apply_safety(self, args: str) -> str:
+        """Apply safe-mode downgrades and exclusions to an nmap argument string.
+
+        - In safe mode: strip -O / --osscan-guess, replace -A with -sV -sC,
+          downgrade -T4/-T5 to -T3 (delegated to host_capability.downgrade_nmap_args).
+        - Always: append --exclude <ips> if settings.excluded_hosts is set.
+
+        This is the single chokepoint that every scan() call passes through,
+        so the orchestrator's parallel per-host nmap invocations inherit these
+        protections automatically.
+        """
+        from core.host_capability import downgrade_nmap_args
+
+        out = args
+        if getattr(self.settings, "safe_mode", False):
+            out = downgrade_nmap_args(out)
+
+        excluded = getattr(self.settings, "excluded_hosts", ())
+        if excluded and "--exclude" not in out:
+            out = f"{out} --exclude {','.join(excluded)}"
+        return out
+
     @staticmethod
     def _strip_root_flags(args: str) -> str:
         """Remove nmap flags that require root privileges.

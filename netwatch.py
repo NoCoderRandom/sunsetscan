@@ -50,6 +50,7 @@ from core.http_fingerprinter import HttpFingerprinter
 from core.nse_scanner import NSEScanner
 from core.auth_tester import AuthTester, AuthConfidence
 from core.network_utils import get_local_subnet, validate_cidr
+from core.host_capability import detect_host_profile, safe_mode_overrides
 from core.findings import FindingRegistry, Finding, Severity
 from core.cache_manager import UnifiedCacheManager
 from core.cve_checker import CVEChecker, CVECacheBuilder
@@ -234,12 +235,28 @@ class NetWatch:
     
     def __init__(self, args: argparse.Namespace):
         """Initialize NetWatch application.
-        
+
         Args:
             args: Command line arguments
         """
-        self.settings = Settings()
+        # ---- Host capability detection: decide if safe mode is needed ----
+        # Detection runs before Settings is built so the Settings instance can
+        # be constructed with the correct overrides for low-power hosts.
+        self.host_profile = detect_host_profile()
+        force_safe = bool(getattr(args, "safe_mode", False))
+        disable_safe = bool(getattr(args, "no_safe_mode", False))
+        use_safe_mode = (force_safe or self.host_profile.recommend_safe_mode) and not disable_safe
+
+        if use_safe_mode:
+            overrides = safe_mode_overrides(self.host_profile)
+            self.settings = Settings(**overrides)
+        else:
+            self.settings = Settings()
+
         self.console = Console(color_system=None if args.no_color else "auto")
+
+        # Show the user what we detected and what (if anything) we throttled.
+        self._announce_host_profile(use_safe_mode)
         self.display = Display(settings=self.settings, console=self.console, use_color=not args.no_color)
         self.menu = Menu(settings=self.settings, console=self.console)
         
@@ -283,7 +300,31 @@ class NetWatch:
         
         # Check privileges
         self.has_privileges = check_privileges()
-    
+
+    def _announce_host_profile(self, safe_mode_active: bool) -> None:
+        """Print the detected host profile and any throttling that was applied."""
+        hp = self.host_profile
+        self.console.print(f"[dim]Host: {hp.describe()}[/dim]")
+        if safe_mode_active:
+            reasons = ", ".join(hp.reasons) if hp.reasons else "user override"
+            self.console.print(
+                f"[yellow]Safe mode enabled[/yellow] ([dim]{reasons}[/dim])"
+            )
+            self.console.print(
+                f"  [dim]masscan capped, nmap_parallel_hosts="
+                f"{self.settings.nmap_parallel_hosts}, "
+                f"workers={self.settings.scan_worker_threads}, "
+                f"-O fingerprinting disabled[/dim]"
+            )
+            if self.settings.excluded_hosts:
+                self.console.print(
+                    f"  [dim]excluding from all scans: "
+                    f"{', '.join(self.settings.excluded_hosts)}[/dim]"
+                )
+            self.console.print(
+                "  [dim]override with --no-safe-mode (not recommended on this host)[/dim]"
+            )
+
     def run(self) -> int:
         """Run the main application loop.
         
@@ -499,12 +540,14 @@ class NetWatch:
         self.run_full_assessment(target)
 
     def _run_instant_scan_from_menu(self) -> None:
-        """Run Instant Scan from the interactive menu."""
+        """Run Instant Scan from the interactive menu.
+
+        No target prompt: Instant Scan is ARP-based and therefore L2-only,
+        so the only meaningful target is the local subnet. The scan function
+        auto-detects it and prints which subnet it picked.
+        """
         from core.instant_scan import run_instant_scan
-        target = self.menu.prompt_target(default=self.settings.default_target)
-        if not target:
-            return
-        run_instant_scan(target=target)
+        run_instant_scan(target=None)
         Prompt.ask("\nPress ENTER to return to menu")
 
     def _show_scan_history_menu(self) -> None:
@@ -2005,8 +2048,7 @@ examples:
   %(prog)s --target 192.168.1.0/24 --check-defaults Test default passwords
   %(prog)s --target 192.168.1.0/24 --identify       Quick device inventory
   %(prog)s --target 192.168.1.0/24 --save-baseline  Save device baseline
-  %(prog)s --instant                                 Instant scan (ARP only, no ports)
-  %(prog)s --instant --target 192.168.1.0/24         Instant scan on specific subnet
+  %(prog)s --instant                                 Instant scan of the local subnet (auto-detected)
   %(prog)s --modules                                List data modules
   %(prog)s --download all                           Download all modules
   %(prog)s --history                                View past scans
@@ -2081,7 +2123,9 @@ examples:
     parser.add_argument(
         '--instant',
         action='store_true',
-        help='Instant Scan: ultra-fast ARP + passive discovery, no port scanning (root)'
+        help='Instant Scan: ultra-fast ARP + passive discovery on the local '
+             'subnet. Auto-detects the network — ignores --target since ARP '
+             'is L2-only and cannot cross routers. Requires root.'
     )
 
     parser.add_argument(
@@ -2165,6 +2209,20 @@ examples:
         metavar='MODULE',
         default=None,
         help='Download a data module (e.g. credentials-full, snmp-community, or "all")'
+    )
+
+    parser.add_argument(
+        '--safe-mode',
+        action='store_true',
+        help='Force gentler scanning: lower masscan rate, serial nmap, no -O '
+             'fingerprinting, exclude gateway+self. Auto-enabled on Raspberry '
+             'Pi, hosts running Pi-hole, and Wi-Fi egress.'
+    )
+    parser.add_argument(
+        '--no-safe-mode',
+        action='store_true',
+        help='Disable auto safe-mode. Not recommended when running on a Pi or '
+             'on the same machine as Pi-hole.'
     )
 
     return parser

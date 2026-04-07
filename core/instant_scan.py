@@ -25,7 +25,7 @@ from rich.live import Live
 from rich.table import Table
 from rich.text import Text
 
-from core.network_utils import get_local_subnet
+from core.network_utils import get_local_subnet, is_local_subnet
 from core.oui_lookup import lookup_vendor
 from core.passive_sniffer import PassiveSniffer
 from core.packet_parsers import ParsedPacket
@@ -152,23 +152,49 @@ def _build_table(devices: list) -> Table:
 def run_instant_scan(target: Optional[str] = None) -> int:
     """Run an ultra-fast Instant Scan and print results live.
 
+    Instant Scan is L2-only (ARP + passive sniff). Because ARP broadcasts
+    cannot cross routers, the scan can only ever cover the local subnet.
+    The ``target`` parameter is therefore advisory:
+
+      - ``None`` (the normal case)  → auto-detect the local subnet.
+      - A target on the local subnet → used as-is.
+      - A target on a different subnet → warn the user and fall back to
+        the auto-detected local subnet, since scanning it via ARP is
+        physically impossible.
+
     Args:
-        target: Network in CIDR notation (e.g. "192.168.1.0/24").
-                If None, auto-detects the local subnet.
+        target: Optional CIDR. Ignored if it does not match the local L2.
 
     Returns:
         Exit code (0 = success).
     """
     console = Console()
 
-    # ---- Determine target ----
+    # ---- Determine target (always end up on the local subnet) ----
+    auto_detected = False
+
+    if target and is_local_subnet(target) is False:
+        # Explicitly off-subnet — warn and fall back. (None = undetermined,
+        # so we leave the user-supplied target alone to avoid spurious noise.)
+        console.print(
+            f"[yellow]Warning:[/yellow] {target} is not on this host's local "
+            f"subnet. ARP cannot cross routers, so Instant Scan will use the "
+            f"auto-detected local network instead."
+        )
+        target = None  # Force auto-detect path below
+
     if not target:
         target = get_local_subnet()
+        auto_detected = True
         if not target:
-            console.print("[red]Could not detect local subnet. Specify a target with --target.[/red]")
+            console.print(
+                "[red]Could not detect local subnet. "
+                "Check that this host has an active network interface.[/red]"
+            )
             return 1
 
-    console.print(f"\n[bold cyan]Instant Scan[/bold cyan]  [dim]target: {target}[/dim]")
+    source = "auto-detected" if auto_detected else "user-supplied"
+    console.print(f"\n[bold cyan]Instant Scan[/bold cyan]  [dim]target: {target} ({source})[/dim]")
     console.print("[dim]ARP sweep + passive sniff — no port scanning[/dim]\n")
 
     # ---- Start passive sniffer (mDNS / SSDP / DHCP) ----
@@ -183,7 +209,7 @@ def run_instant_scan(target: Optional[str] = None) -> int:
 
     if not arp_table:
         console.print("[yellow]No hosts responded to ARP sweep.[/yellow]")
-        console.print("[dim]Make sure you are running as root/sudo and on the right subnet.[/dim]")
+        console.print("[dim]Make sure you are running as root/sudo.[/dim]")
         sniffer.stop()
         return 1
 
