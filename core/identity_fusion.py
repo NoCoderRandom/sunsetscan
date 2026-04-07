@@ -32,7 +32,7 @@ from typing import Dict, List, Optional
 
 from core.device_identifier import DeviceIdentity
 from core.device_map import DeviceMap, DeviceRecord
-from core.oui_lookup import lookup_vendor
+from core.oui_lookup import is_randomized_mac, lookup_vendor
 from core.packet_parsers import ParsedPacket
 
 logger = logging.getLogger(__name__)
@@ -205,12 +205,19 @@ class IdentityFusionEngine:
                     result.metadata[f"{pkt.protocol}_{key}"] = val
 
         # --- Source 3: OUI vendor lookup ---
+        # Skip entirely for randomized (locally-administered) MACs — the OUI
+        # byte is RNG-generated and will produce a confident-but-wrong label.
         if mac:
-            oui_vendor = lookup_vendor(mac)
-            if oui_vendor:
-                candidates['vendor'].append((oui_vendor, _SOURCE_WEIGHTS['oui']))
-                if 'oui' not in result.sources:
-                    result.sources.append('oui')
+            if is_randomized_mac(mac):
+                result.metadata['mac_randomized'] = 'true'
+                if 'oui:randomized' not in result.sources:
+                    result.sources.append('oui:randomized')
+            else:
+                oui_vendor = lookup_vendor(mac)
+                if oui_vendor:
+                    candidates['vendor'].append((oui_vendor, _SOURCE_WEIGHTS['oui']))
+                    if 'oui' not in result.sources:
+                        result.sources.append('oui')
 
         # --- Source 4: Persistent device map (history) ---
         if self._device_map:

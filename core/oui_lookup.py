@@ -46,6 +46,32 @@ def _normalize_mac_prefix(mac: str) -> str:
     return f"{prefix[0:2]}:{prefix[2:4]}:{prefix[4:6]}"
 
 
+def is_randomized_mac(mac: str) -> bool:
+    """Return True if the MAC address has the locally-administered bit set.
+
+    The second-least-significant bit of the first octet (mask 0x02) is the
+    U/L bit: 0 = globally unique (IEEE-assigned), 1 = locally administered.
+    Modern Apple, Android, and Windows devices default to randomized private
+    MACs on Wi-Fi, which means OUI lookup is meaningless — the vendor byte
+    is whatever the RNG produced, not the real manufacturer.
+
+    Args:
+        mac: MAC address in any common format.
+
+    Returns:
+        True if the MAC is locally administered (likely randomized), False
+        for globally unique IEEE-assigned MACs, or False on parse error.
+    """
+    clean = re.sub(r'[:\-.]', '', mac.upper().strip())
+    if len(clean) < 2:
+        return False
+    try:
+        first_octet = int(clean[0:2], 16)
+    except ValueError:
+        return False
+    return bool(first_octet & 0x02)
+
+
 class OUIDatabase:
     """IEEE OUI database for MAC vendor resolution.
 
@@ -108,12 +134,19 @@ class OUIDatabase:
     def lookup(self, mac: str) -> str:
         """Look up the vendor name for a MAC address.
 
+        Returns "" for randomized (locally-administered) MACs, since the
+        vendor byte is meaningless in that case and would otherwise produce
+        a confident-but-wrong label (e.g. "Cisco" for an Apple TV on Wi-Fi).
+
         Args:
             mac: MAC address in any common format.
 
         Returns:
-            Vendor name string, or empty string if not found.
+            Vendor name string, or empty string if not found / randomized.
         """
+        if is_randomized_mac(mac):
+            return ""
+
         if self._db is None:
             self._db = self._load()
 

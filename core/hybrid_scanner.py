@@ -28,6 +28,7 @@ import logging
 from dataclasses import dataclass, field
 from typing import Callable, Dict, List, Optional
 
+from core.active_mdns import query_active_mdns
 from core.device_identifier import DeviceIdentifier, DeviceIdentity
 from core.device_map import DeviceMap, DeviceRecord
 from core.identity_fusion import FusedIdentity, IdentityFusionEngine
@@ -52,6 +53,7 @@ class HybridScanResult:
         missing_devices:  Previously known devices not seen this scan.
         passive_packet_count: Total raw packets captured.
         passive_parsed_count: Successfully parsed packet count.
+        active_mdns_count: Number of devices that responded to active mDNS query.
     """
     fused_identities: Dict[str, FusedIdentity] = field(default_factory=dict)
     passive_packets: List[ParsedPacket] = field(default_factory=list)
@@ -61,6 +63,7 @@ class HybridScanResult:
     missing_devices: List[DeviceRecord] = field(default_factory=list)
     passive_packet_count: int = 0
     passive_parsed_count: int = 0
+    active_mdns_count: int = 0
 
 
 class HybridScanner:
@@ -174,7 +177,6 @@ class HybridScanner:
         # Step 4: Parse captured packets
         self._progress("Parsing captured packets...", 55)
         parsed_packets = self._sniffer.parse_all()
-        result.passive_packets = parsed_packets
         result.passive_packet_count = self._sniffer.packet_count
         result.passive_parsed_count = len(parsed_packets)
 
@@ -182,6 +184,21 @@ class HybridScanner:
             f"Passive capture: {result.passive_packet_count} raw, "
             f"{result.passive_parsed_count} parsed"
         )
+
+        # Step 4b: Active mDNS query — deterministic, doesn't depend on the
+        # passive capture window catching a re-announce. Critical for Apple
+        # devices on Wi-Fi with randomized MACs whose OUI lookup lies.
+        self._progress("Querying mDNS services actively...", 58)
+        try:
+            active_mdns_packets = query_active_mdns()
+        except Exception as e:
+            logger.debug(f"Active mDNS query failed: {e}")
+            active_mdns_packets = []
+        result.active_mdns_count = len(active_mdns_packets)
+        logger.info(f"Active mDNS: {len(active_mdns_packets)} device(s) responded")
+
+        parsed_packets = parsed_packets + active_mdns_packets
+        result.passive_packets = parsed_packets
 
         # Build MAC → IP map from scan results
         self._progress("Building device map...", 60)
@@ -196,6 +213,15 @@ class HybridScanner:
                 mac = pkt.src_mac.lower()
                 if mac not in mac_ip_map:
                     mac_ip_map[mac] = pkt.src_ip
+
+        # Active mDNS packets arrive keyed by IP only. Backfill src_mac
+        # from mac_ip_map so they participate in MAC-keyed fusion.
+        ip_to_mac = {ip: mac for mac, ip in mac_ip_map.items()}
+        for pkt in active_mdns_packets:
+            if not pkt.src_mac and pkt.src_ip:
+                mac = ip_to_mac.get(pkt.src_ip, "")
+                if mac:
+                    pkt.src_mac = mac
 
         result.mac_ip_map = mac_ip_map
 

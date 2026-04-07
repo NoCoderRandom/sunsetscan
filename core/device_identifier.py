@@ -166,6 +166,10 @@ _PORT_DEVICE_HINTS: List[Tuple[set, str, float]] = [
     ({445, 135},           "Windows Device",    0.3),
     ({548},                "Apple/NAS",         0.3),   # AFP
     ({5353, 548},          "Apple Device",      0.35),
+    ({7000},               "Media Device",      0.55),  # AirPlay 2 (Apple TV / HomePod)
+    ({7000, 5000},         "Media Device",      0.65),  # AirPlay 2 + classic AirPlay
+    ({3689, 5000},         "Media Device",      0.6),   # DAAP + AirPlay → Apple TV
+    ({3689},               "Media Device",      0.4),   # DAAP (iTunes / Apple TV share)
     ({7547},               "ISP Router",        0.5),   # TR-069
     ({5060},               "VoIP Phone",        0.4),   # SIP
     ({4500, 500},          "VPN Gateway",       0.4),   # IPsec
@@ -1056,6 +1060,28 @@ class DeviceIdentifier:
                         confidence=conf,
                     )
                     best_conf = conf
+
+        # Apple-specific upgrade: the AirPlay/DAAP port combos below are
+        # Apple-exclusive enough that we promote them to Apple TV with vendor.
+        # Apple devices with randomized MACs get mislabeled by OUI (e.g.
+        # "Cisco"), so this port signature is often the only reliable hint.
+        apple_tv_signatures = [
+            ({7000, 5000},         0.7),   # AirPlay 2 + classic AirPlay
+            ({3689, 5000},         0.65),  # DAAP + AirPlay
+            ({7000, 49152, 49153}, 0.6),   # AirPlay 2 + UPnP event ports
+            ({7000},               0.5),   # AirPlay 2 alone
+        ]
+        for required_ports, conf in apple_tv_signatures:
+            if required_ports.issubset(open_ports) and conf > best_conf:
+                best = _Evidence(
+                    source="port_heuristics",
+                    vendor="Apple",
+                    model="Apple TV",
+                    device_type="Media Device",
+                    confidence=conf,
+                )
+                best_conf = conf
+                break  # first (strongest) signature wins
 
         return best
 
