@@ -194,6 +194,8 @@ class IdentityFusionEngine:
                     candidates['model'].append((pkt.model, src_weight))
                 if pkt.device_type:
                     candidates['device_type'].append((pkt.device_type, src_weight))
+                if pkt.version:
+                    candidates['version'].append((pkt.version, src_weight))
                 if pkt.os_hint:
                     candidates['os_hint'].append((pkt.os_hint, src_weight))
 

@@ -53,7 +53,10 @@ from __future__ import annotations
 
 import ipaddress
 import logging
-from typing import List, Optional
+import shlex
+import shutil
+import subprocess
+from typing import Dict, List, Optional
 
 from core.packet_parsers import (
     ParsedPacket,
@@ -176,23 +179,169 @@ def _decode_txt_properties(properties: dict) -> List[str]:
     return out
 
 
+def _finalize_apple_identity(pkt: ParsedPacket, service_clean: str) -> None:
+    """Apply Apple model translation + vendor stamping to a ParsedPacket.
+
+    Checks for Apple ``model=`` / ``rpMd=`` TXT values, translates them to
+    marketing names, and stamps ``vendor="Apple"`` whenever the service
+    type is Apple-exclusive. Used by both the avahi-browse path and the
+    zeroconf fallback so the identification logic stays in one place.
+    """
+    raw_model = (
+        pkt.raw_fields.get("txt_rpmd", "")
+        or pkt.raw_fields.get("txt_model", "")
+        or pkt.model
+    )
+    mapped = _apple_model_to_pretty(raw_model)
+    if mapped:
+        pretty, dtype = mapped
+        pkt.model = pretty
+        if not pkt.device_type:
+            pkt.device_type = dtype
+        if not pkt.vendor:
+            pkt.vendor = "Apple"
+    elif _service_is_apple(service_clean) and not pkt.vendor:
+        # Apple-only service type → vendor is Apple even without a model
+        # TXT record (e.g. devices on older tvOS that only publish hints
+        # under the Remote Pairing protocol).
+        pkt.vendor = "Apple"
+        if not pkt.device_type:
+            pkt.device_type = _mdns_service_to_device_type([service_clean])
+
+    if not pkt.device_type and pkt.services:
+        pkt.device_type = _mdns_service_to_device_type(pkt.services)
+
+
+def _query_via_avahi(timeout: float) -> List[ParsedPacket]:
+    """Query mDNS via the system ``avahi-browse`` utility.
+
+    When ``avahi-daemon`` is running (standard on Raspberry Pi OS, Debian,
+    Ubuntu, most Linux desktops) it owns UDP 5353 and maintains a complete
+    mDNS cache that is already populated by the time NetWatch starts. This
+    path is far more reliable than the python ``zeroconf`` library on such
+    hosts because:
+
+      - avahi's cache already contains every recently-announced record, so
+        there is no window to miss.
+      - There is no SO_REUSEPORT race with the avahi daemon.
+      - avahi handles Bonjour Sleep Proxy forwarding transparently, so
+        sleeping AppleTVs etc. still show up.
+
+    Uses ``avahi-browse -artp --terminate --no-db-lookup`` to dump and
+    resolve every service type in one parsable pass, then parses the
+    semicolon-delimited output into ``ParsedPacket`` objects.
+
+    Returns an empty list if avahi-browse is not installed or errors out.
+    """
+    if not shutil.which("avahi-browse"):
+        return []
+
+    try:
+        proc = subprocess.run(
+            ["avahi-browse", "-a", "-r", "-t", "-p", "--no-db-lookup"],
+            capture_output=True,
+            text=True,
+            timeout=max(timeout, 5.0),
+        )
+    except subprocess.TimeoutExpired:
+        logger.debug("avahi-browse timed out")
+        return []
+    except Exception as e:
+        logger.debug(f"avahi-browse failed: {e}")
+        return []
+
+    if proc.returncode != 0 and not proc.stdout:
+        logger.debug(f"avahi-browse exited {proc.returncode}: {proc.stderr.strip()}")
+        return []
+
+    packets_by_ip: Dict[str, ParsedPacket] = {}
+
+    for line in proc.stdout.splitlines():
+        # Resolved record lines start with '='. New/removed announcements
+        # use '+'/'-' and don't include TXT/port data, so skip them.
+        if not line.startswith("="):
+            continue
+
+        # Parsable format: =;iface;proto;name;type;domain;hostname;addr;port;txt
+        parts = line.split(";")
+        if len(parts) < 9:
+            continue
+
+        proto = parts[2]
+        if proto != "IPv4":
+            # IPv6 records just duplicate v4 ones on dual-stack devices.
+            continue
+
+        friendly_name = parts[3]
+        service_type = parts[4]  # e.g. "_companion-link._tcp"
+        hostname_raw = parts[6]
+        ip = parts[7]
+        txt_field = parts[9] if len(parts) > 9 else ""
+
+        if not ip:
+            continue
+
+        pkt = packets_by_ip.get(ip)
+        if pkt is None:
+            pkt = ParsedPacket(protocol="mdns", src_ip=ip)
+            packets_by_ip[ip] = pkt
+
+        service_clean = service_type.rstrip(".")
+        if service_clean and service_clean not in pkt.services:
+            pkt.services.append(service_clean)
+
+        # Prefer the resolved hostname (e.g. "Sovrum.local") over the raw
+        # service instance name. Strip trailing dots and ".local" suffix.
+        hostname = (hostname_raw or "").rstrip(".")
+        if hostname.endswith(".local"):
+            hostname = hostname[:-len(".local")]
+        if hostname and (not pkt.hostname or len(hostname) > len(pkt.hostname)):
+            pkt.hostname = hostname
+        elif friendly_name and not pkt.hostname:
+            pkt.hostname = friendly_name
+
+        # TXT field format: "key1=val1" "key2=val2" "key3=val3" ...
+        if txt_field:
+            try:
+                for kv in shlex.split(txt_field):
+                    _process_mdns_txt(kv, pkt)
+            except ValueError:
+                # Malformed quoting — fall back to space split.
+                for kv in txt_field.split():
+                    _process_mdns_txt(kv.strip('"'), pkt)
+
+        _finalize_apple_identity(pkt, service_clean)
+
+    return list(packets_by_ip.values())
+
+
 def query_active_mdns(timeout: float = DEFAULT_QUERY_TIMEOUT) -> List[ParsedPacket]:
     """Actively query mDNS for device metadata and return ParsedPacket list.
 
-    Uses the ``zeroconf`` library (installed via requirements.txt) to
-    multicast PTR queries for every service type in ``_ACTIVE_SERVICE_TYPES``
-    and collect responses. Each unique (IP, service) pair becomes one
-    ``ParsedPacket`` tagged with ``protocol="mdns"`` so the identity fusion
-    engine weights it identically to a passive capture.
+    Two-path strategy:
+
+      1. ``avahi-browse`` (preferred) — uses the system mDNS cache. On any
+         Linux host running ``avahi-daemon`` this is the only path that
+         sees records from devices behind Bonjour Sleep Proxy (sleeping
+         AppleTVs, Time Capsules, etc.) and avoids the SO_REUSEPORT race
+         between our zeroconf instance and avahi.
+      2. ``zeroconf`` library (fallback) — used on macOS and any Linux
+         host where avahi isn't installed. Sends its own multicast PTR
+         queries for every service type in ``_ACTIVE_SERVICE_TYPES``.
 
     Args:
         timeout: Discovery window in seconds. 4 s is enough to let all
                  devices on a typical home/SMB LAN reply.
 
     Returns:
-        List of ParsedPacket (may be empty if zeroconf is unavailable or
-        no devices are reachable).
+        List of ParsedPacket (may be empty if neither path is usable).
     """
+    # Preferred: piggyback on avahi-daemon's cache.
+    avahi_results = _query_via_avahi(timeout)
+    if avahi_results:
+        logger.info(f"Active mDNS (avahi): {len(avahi_results)} device(s)")
+        return avahi_results
+
     try:
         from zeroconf import ServiceBrowser, ServiceListener, Zeroconf
     except ImportError:
@@ -244,27 +393,7 @@ def query_active_mdns(timeout: float = DEFAULT_QUERY_TIMEOUT) -> List[ParsedPack
                 for txt_kv in _decode_txt_properties(info.properties):
                     _process_mdns_txt(txt_kv, pkt)
 
-                # Apple model → pretty name translation + vendor stamping
-                raw_model = pkt.raw_fields.get("txt_model", "") or pkt.model
-                mapped = _apple_model_to_pretty(raw_model)
-                if mapped:
-                    pretty, dtype = mapped
-                    pkt.model = pretty
-                    if not pkt.device_type:
-                        pkt.device_type = dtype
-                    if not pkt.vendor:
-                        pkt.vendor = "Apple"
-                elif _service_is_apple(service_clean) and not pkt.vendor:
-                    # Apple-only service type → vendor is Apple even without
-                    # a model TXT record (e.g. devices on older tvOS).
-                    pkt.vendor = "Apple"
-                    if not pkt.device_type:
-                        pkt.device_type = _mdns_service_to_device_type([service_clean])
-
-                # Final fallback: derive device_type from service list
-                if not pkt.device_type and pkt.services:
-                    pkt.device_type = _mdns_service_to_device_type(pkt.services)
-
+                _finalize_apple_identity(pkt, service_clean)
                 pkt.raw_fields[f"service_{service_clean}"] = name
 
         def update_service(self, zc, type_, name):

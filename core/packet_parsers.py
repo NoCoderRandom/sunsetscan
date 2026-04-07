@@ -40,6 +40,7 @@ class ParsedPacket:
         device_type: Device type / category
         vendor:      Manufacturer / vendor name
         model:       Device model name
+        version:     Firmware / protocol version string (e.g. rpVr=715.2)
         os_hint:     Operating system hint
         services:    List of discovered service types
         raw_fields:  Additional raw fields for debugging
@@ -51,6 +52,7 @@ class ParsedPacket:
     device_type: str = ""
     vendor: str = ""
     model: str = ""
+    version: str = ""
     os_hint: str = ""
     services: List[str] = field(default_factory=list)
     raw_fields: Dict[str, str] = field(default_factory=dict)
@@ -248,12 +250,19 @@ def _process_mdns_txt(txt: str, result: ParsedPacket) -> None:
     if key in ('fn', 'name', 'friendly_name', 'n'):
         if not result.hostname or len(value) > len(result.hostname):
             result.hostname = value
-    elif key in ('md', 'model', 'mdl', 'ty'):
+    elif key in ('md', 'model', 'mdl', 'ty', 'rpmd'):
+        # 'rpmd' is the Apple Remote Pairing model field used by
+        # _companion-link._tcp — e.g. rpMd=AppleTV6,2. Must be recognised
+        # alongside the standard Bonjour model keys.
         result.model = value
     elif key in ('manufacturer', 'mfg', 'usb_mfg'):
         result.vendor = value
     elif key == 'os':
         result.os_hint = value
+    elif key in ('rpvr',):
+        # Apple Remote Pairing version string (e.g. rpVr=715.2)
+        if not result.version:
+            result.version = value
     elif key in ('am', 'adminurl'):
         result.raw_fields['admin_url'] = value
 
