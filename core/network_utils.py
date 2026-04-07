@@ -128,6 +128,48 @@ def get_local_subnet() -> Optional[str]:
         return "192.168.1.0/24"
 
 
+def is_local_subnet(target: str) -> Optional[bool]:
+    """Return True if ``target`` is on the same L2 segment as the local host.
+
+    Used by Instant Scan to verify that an explicitly-supplied target is
+    actually reachable via ARP. Layer-2 protocols like ARP are broadcast-only
+    and cannot cross routers, so any non-local target is meaningless for an
+    ARP-based sweep.
+
+    Comparison is done at the network level: the local IP must fall inside
+    the target's network. Single-IP targets are considered local if they
+    share the same /24 with the local IP (best-effort, since we don't always
+    know the real netmask).
+
+    Args:
+        target: CIDR (e.g. "192.168.1.0/24") or single IP.
+
+    Returns:
+        True  — target is on the local subnet.
+        False — target is provably on a different subnet.
+        None  — undetermined (local IP could not be detected, or parse error).
+                Callers should treat None as "skip the check" rather than as
+                a negative result, to avoid spurious warnings on hosts where
+                local IP detection legitimately fails (e.g. WSL).
+    """
+    local_ip = get_local_ip()
+    if not local_ip:
+        return None
+    try:
+        if "/" in target:
+            net = ipaddress.ip_network(target, strict=False)
+            return ipaddress.ip_address(local_ip) in net
+        # Single IP — validate first, then compare /24 prefixes (best-effort
+        # since we don't always know the target's real netmask).
+        ipaddress.ip_address(target)
+        local_prefix = ".".join(local_ip.split(".")[:3])
+        target_prefix = ".".join(target.split(".")[:3])
+        return local_prefix == target_prefix
+    except (ValueError, ipaddress.AddressValueError) as e:
+        logger.debug(f"is_local_subnet({target}) parse error: {e}")
+        return None
+
+
 def validate_cidr(cidr: str) -> Tuple[bool, Optional[str]]:
     """Validate a CIDR notation string.
     

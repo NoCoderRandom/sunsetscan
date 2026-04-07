@@ -40,6 +40,7 @@ from datetime import datetime
 from typing import Callable, Dict, List, Optional, Tuple
 
 from config.settings import Settings, SCAN_PROFILES, MASSCAN_RATES
+from core.host_capability import effective_masscan_rate
 from core.scanner import NetworkScanner, ScanResult
 
 logger = logging.getLogger(__name__)
@@ -79,6 +80,7 @@ def _run_masscan(
     ports: str = "1-65535",
     timeout: int = 300,
     progress_callback: Optional[Callable] = None,
+    excluded_hosts: Tuple[str, ...] = (),
 ) -> Dict[str, List[int]]:
     """Run masscan and return discovered open ports per host.
 
@@ -102,6 +104,10 @@ def _run_masscan(
         "-oX", "-",      # XML to stdout
         "--wait", "3",   # wait 3 s after last packet before exiting
     ]
+    if excluded_hosts:
+        # masscan accepts comma-separated --exclude. Used in safe mode to keep
+        # the gateway and the scanner host itself out of the sweep.
+        cmd.extend(["--exclude", ",".join(excluded_hosts)])
     logger.info(f"masscan: {' '.join(cmd)}")
     if progress_callback:
         progress_callback("masscan port discovery...", 5)
@@ -279,6 +285,11 @@ class PortScanOrchestrator:
     def _scan_masscan_nmap(self, target: str, profile: str) -> ScanResult:
         """Run masscan discovery then nmap service detection on found ports."""
         rate = MASSCAN_RATES.get(profile, MASSCAN_RATES.get("FULL", 1000))
+        rate = effective_masscan_rate(
+            profile, rate,
+            safe_mode=self._settings.safe_mode,
+            is_wireless=getattr(self._settings, "is_wireless", False),
+        )
         rate = min(rate, _MASSCAN_MAX_RATE)
 
         # Use profile-specific ports for masscan if the profile defines them
@@ -287,6 +298,7 @@ class PortScanOrchestrator:
         discovered = _run_masscan(
             target, rate, ports=masscan_ports,
             progress_callback=self._nmap._progress_callback,
+            excluded_hosts=self._settings.excluded_hosts,
         )
 
         if not discovered:
@@ -319,6 +331,11 @@ class PortScanOrchestrator:
         or to plain nmap if masscan finds nothing.
         """
         rate = MASSCAN_RATES.get(profile, MASSCAN_RATES.get("FULL", 2000))
+        rate = effective_masscan_rate(
+            profile, rate,
+            safe_mode=self._settings.safe_mode,
+            is_wireless=getattr(self._settings, "is_wireless", False),
+        )
         rate = min(rate, _MASSCAN_MAX_RATE)
 
         # Use profile-specific ports for masscan if the profile defines them
@@ -327,7 +344,14 @@ class PortScanOrchestrator:
         discovered = _run_masscan(
             target, rate, ports=masscan_ports,
             progress_callback=self._nmap._progress_callback,
+            excluded_hosts=self._settings.excluded_hosts,
         )
+
+        # In safe mode, drop any host that is on the exclusion list (paranoia
+        # against masscan ignoring --exclude under odd CIDR shapes).
+        if self._settings.excluded_hosts:
+            for ex in self._settings.excluded_hosts:
+                discovered.pop(ex, None)
 
         if not discovered:
             logger.info("masscan found no open ports — falling back to nmap")
