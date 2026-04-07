@@ -250,11 +250,25 @@ def _process_mdns_txt(txt: str, result: ParsedPacket) -> None:
     if key in ('fn', 'name', 'friendly_name', 'n'):
         if not result.hostname or len(value) > len(result.hostname):
             result.hostname = value
-    elif key in ('md', 'model', 'mdl', 'ty', 'rpmd'):
-        # 'rpmd' is the Apple Remote Pairing model field used by
-        # _companion-link._tcp — e.g. rpMd=AppleTV6,2. Must be recognised
-        # alongside the standard Bonjour model keys.
-        result.model = value
+    elif key in ('model', 'mdl', 'ty', 'rpmd', 'am'):
+        # Authoritative model keys:
+        #   'model' / 'mdl' / 'ty' - generic Bonjour TXT model field
+        #   'rpmd'                 - Apple Remote Pairing (_companion-link)
+        #   'am'                   - Apple AirTunes (_raop), value like 'AppleTV6,2'
+        # Overwrite whenever the incoming value looks like a real model and
+        # the existing one is either empty or garbage (e.g. '0,1,2' from a
+        # previously-parsed 'md' TXT field on the same device).
+        if _looks_like_model(value) and (
+            not result.model or not _looks_like_model(result.model)
+        ):
+            result.model = value
+    elif key == 'md':
+        # Ambiguous: real device model in most Bonjour services, but for
+        # AirTunes (_raop) 'md' is an audio metadata descriptor like
+        # '0,1,2'. Only accept it if the value looks like a real model
+        # and we have nothing better yet.
+        if _looks_like_model(value) and not result.model:
+            result.model = value
     elif key in ('manufacturer', 'mfg', 'usb_mfg'):
         result.vendor = value
     elif key == 'os':
@@ -263,8 +277,22 @@ def _process_mdns_txt(txt: str, result: ParsedPacket) -> None:
         # Apple Remote Pairing version string (e.g. rpVr=715.2)
         if not result.version:
             result.version = value
-    elif key in ('am', 'adminurl'):
+    elif key == 'adminurl':
         result.raw_fields['admin_url'] = value
+
+
+def _looks_like_model(value: str) -> bool:
+    """Reject TXT values that clearly aren't device model identifiers.
+
+    Filters out things like ``0,1,2`` (AirTunes audio metadata flags),
+    empty strings, and pure-numeric-csv values. A real model identifier
+    always contains at least one letter (AppleTV14,1, DS920+, RT-AX92U).
+    """
+    if not value:
+        return False
+    if not any(ch.isalpha() for ch in value):
+        return False
+    return True
 
 
 _MDNS_SERVICE_DEVICE_MAP = {
