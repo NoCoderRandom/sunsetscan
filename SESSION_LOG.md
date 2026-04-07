@@ -240,3 +240,183 @@ Both 192.168.1.0/24 and 192.168.50.0/24 tested with PING, QUICK, FULL, STEALTH, 
 
 ### Version
 All changes on top of v1.7.0 (commit 3d67efd). Ready to commit.
+
+---
+
+## Session — 2026-04-05: Hybrid Network Intelligence Scanner
+
+### What was done
+
+Built a complete **hybrid passive+active scanning pipeline** that combines
+background packet sniffing with NetWatch's existing active scanners, OUI
+vendor lookup, and persistent device history into a single fused identity
+per device.
+
+### New files created
+
+| File | Purpose |
+|------|---------|
+| `core/oui_lookup.py` | Standalone IEEE OUI database loader (32K+ entries from nmap's mac-prefixes file). Exports `OUIDatabase` class and `lookup_vendor(mac)` convenience function. |
+| `core/packet_parsers.py` | Protocol-specific packet parsers for mDNS (TXT/SRV/PTR records → names, models, services), SSDP/UPnP (SERVER header, NT type → vendor, device type), and DHCP (option 12 hostname, option 60 OS hint, option 55 fingerprint). Returns `ParsedPacket` dataclass. |
+| `core/passive_sniffer.py` | Background scapy packet capture on UDP 5353 (mDNS), 1900 (SSDP), 67/68 (DHCP). Thread-safe storage with configurable max packets. `start()`/`stop()`/`parse_all()` API. Requires root + scapy. |
+| `core/device_map.py` | Persistent JSON-backed MAC→identity database at `data/device_map.json`. Tracks first_seen, last_seen, observation_count. Accumulates IPs/hostnames. Confidence boosted by consistent re-observations. Detects new and missing devices. |
+| `core/identity_fusion.py` | Multi-source weighted voting engine. Combines active scan (weight 1.0), mDNS (0.85), SSDP (0.75), DHCP (0.7), history (0.6), OUI (0.4). Resolves field conflicts, computes composite confidence with diversity and specificity bonuses. |
+| `core/hybrid_scanner.py` | Main orchestrator: `start_passive()` → active scans → `stop_and_fuse()`. Returns `HybridScanResult` with fused identities, new/missing device lists, passive packet stats. |
+
+### Files modified
+
+| File | Change |
+|------|--------|
+| `netwatch.py` | Added imports for HybridScanner, FusedIdentity. Added `self.hybrid_scanner` and `self.last_hybrid_result` to `__init__`. Added Phase 0 (start passive capture) and Phase 8 (stop + fuse) to `run_full_assessment()`. Updated all phase numbers from /7 to /8. Added fused identity summary with source breakdown to output. |
+| `core/__init__.py` | Added module docstrings and exports for all 6 new modules. |
+
+### Pipeline flow
+
+```
+Phase 0: start_passive() ────────────────────────┐
+  │                                                │ (background capture)
+  ├── Phase 1/8: Host Discovery (ping + ARP)       │
+  ├── Phase 2/8: Port Scanning                     │
+  ├── Phase 3/8: Banner Grabbing                   │
+  ├── Phase 4/8: NSE Scripts                       │
+  ├── Phase 5/8: Credential Testing                │
+  ├── Phase 6/8: EOL Check                         │
+  ├── Phase 7/8: Security Analysis                 │
+  │                                                │
+Phase 8: stop_and_fuse() ◄────────────────────────┘
+  ├── Parse captured mDNS/SSDP/DHCP packets
+  ├── Fuse: active + passive + OUI + history
+  ├── Update persistent device_map.json
+  └── Report with fused identities
+```
+
+### Identity fusion source weights
+
+| Source | Weight | What it provides |
+|--------|--------|------------------|
+| Active scan | 1.0 × confidence | vendor, model, version, device_type (from 15 extractors) |
+| mDNS | 0.85 | hostname, services, model (TXT records) |
+| SSDP/UPnP | 0.75 | vendor, device_type, OS hint (SERVER header) |
+| DHCP | 0.70 | hostname, OS (option 60), fingerprint (option 55) |
+| History | 0.60 | all fields from prior scans (boosted with observations) |
+| OUI | 0.40 | vendor only (MAC prefix) |
+
+### Tests completed (non-root)
+
+- OUI lookup: 32,577 entries, Apple/Synology/RaspberryPi/Ubiquiti all resolve ✓
+- Packet parsers: Synology SSDP, ASUS IGD, Roku, Windows DHCP, Android DHCP, HP printer mDNS ✓
+- Device map: save/load/reload, confidence boost on re-observation, new/missing detection ✓
+- Identity fusion: full fusion (6 sources → NAS Synology DS920+ conf=1.0), passive-only (DHCP+mDNS → Mobile Device conf=0.865), conflict resolution (SSDP wins over weaker active) ✓
+- All modules parse (ast.parse) and import cleanly ✓
+
+### Needs root testing
+
+Passive sniffer requires root for raw socket capture. Next session should:
+1. Run with `sudo` to test live passive capture on 192.168.50.0/24 and 192.168.1.0/24
+2. Run full `--full-assessment` with hybrid pipeline enabled
+3. Verify device_map.json persistence across runs
+4. Verify fused identities appear in HTML report
+
+---
+
+## Session — 2026-04-07: Safe Mode for Low-Power Hosts + Instant-Scan Auto-Detect
+
+### Problem
+Running `sudo ./netwatch.py --full-assessment` on a Raspberry Pi 5 that also
+hosted Pi-hole killed the entire LAN — the laptop lost DNS too. Root causes:
+1. masscan at default rate exhausted the Pi's `nf_conntrack` table
+2. Parallel nmap workers + masscan starved Pi-hole's CPU → DNS timeouts
+3. `-O`/`-A` OS fingerprinting against the gateway tipped the router over
+
+Separately, instant scan still prompted for a target even though ARP only
+works on the local L2 segment — the only sensible target is the local subnet.
+
+### New module
+`core/host_capability.py` — single source of truth for "is this host weak?"
+- `detect_host_profile()` reads `/proc/device-tree/model`, `/proc/cpuinfo`,
+  `/proc/meminfo`, `/etc/pihole`, `/proc/*/comm`, and `/sys/class/net/*/wireless`
+- `HostProfile` dataclass: `is_raspberry_pi`, `cpu_count`, `total_ram_mb`,
+  `pihole_active`, `egress_iface`, `egress_is_wifi`
+- `safe_mode_overrides(profile)` → dict of Settings field overrides
+- `effective_masscan_rate(profile, profile_name, requested)` clamps to caps
+- `downgrade_nmap_args(args, profile)` strips `-O`/`-A`/aggressive timing in safe mode
+- Caps: `SAFE_MASSCAN_RATE_CAPS[FULL] = 300`, `WIFI_MASSCAN_RATE_CAPS[FULL] = 150`
+
+### Files modified
+
+| File | Change |
+|------|--------|
+| `config/settings.py` | Added `safe_mode: bool = False` and `excluded_hosts: Tuple[str, ...] = ()` to frozen Settings dataclass. |
+| `core/port_scanner.py` | `_run_masscan` accepts `excluded_hosts` (passed as `--exclude`). Both scan paths route the rate through `effective_masscan_rate()`. |
+| `core/scanner.py` | Added `_apply_safety()` chokepoint — strips `-O`/`-A` in safe mode and appends `--exclude` for excluded hosts. |
+| `core/network_utils.py` | New `is_local_subnet()` returning tri-state `Optional[bool]` (True/False/None for unknown). Validates input via `ipaddress.ip_address()` so bogus targets return None instead of False. |
+| `core/instant_scan.py` | Always resolves the local subnet first; warns and falls back if a non-local target is supplied. |
+| `netwatch.py` | Calls `detect_host_profile()` in `__init__`, builds Settings with overrides, prints `_announce_host_profile()` banner. New CLI flags `--safe-mode` / `--no-safe-mode`. Instant-scan menu item now skips the target prompt. Updated `--instant` help text. |
+
+### Verified on the Pi
+User confirmed live output showing:
+> Raspberry Pi 5 Model B Rev 1.0, 4 cores, 8062 MB RAM, Pi-hole active,
+> egress wlan0 (Wi-Fi) — safe mode auto-enabled, gateway 192.168.50.1 and
+> self 192.168.50.212 excluded.
+
+### Commit
+`74b2117` — "feat: safe mode for low-power hosts and instant-scan auto-detect"
+
+---
+
+## Session — 2026-04-07: PEP 668-Safe Installer + Bootstrap One-Liner + CRLF Protection
+
+### Problem
+Installation on Pi OS / Debian Bookworm failed with PEP 668
+"externally-managed-environment" errors. User had to mix `apt install` and
+`pip install` manually. Separately, after a `git pull` on the Pi the script
+failed with `env: 'python3\r': No such file or directory` because earlier
+checkouts had picked up CRLF line endings.
+
+### What was built
+
+**`install.sh`** (rewritten, ~290 lines)
+- 6-step flow: detect OS → install system pkgs → create venv → pip install →
+  configure launcher → self-test
+- Multi-distro: apt, dnf, yum, pacman, zypper, brew (Tier 1 / Tier 2 matrix)
+- All Python deps installed inside `./venv` — never touches system Python
+- Sudo wrapper that's empty when running as root (containers OK)
+- TTY-aware coloring so `curl|bash` logs stay readable
+- Idempotent — reuses existing venv unless `--force`
+- Flags: `--force`, `--symlink`, `--no-system`, `--help`
+- Import sanity check covers all 12 modules NetWatch actually loads
+
+**`netwatch`** (new launcher script, replaces ad-hoc invocation)
+- `readlink` loop resolves symlinks so `/usr/local/bin/netwatch` works
+- Always execs `$SCRIPT_DIR/venv/bin/python3 netwatch.py "$@"`
+- Prints a clear pointer to `install.sh` if the venv is missing
+
+**`bootstrap.sh`** (new, for `curl|bash` install)
+- Clones (or fast-forward pulls) the repo, then `exec bash install.sh "$@"`
+- Honors `INSTALL_DIR` / `BRANCH` / `REPO` env vars
+- One-liner:
+  `curl -fsSL https://raw.githubusercontent.com/NoCoderRandom/netwatch/main/bootstrap.sh | bash`
+
+**`.gitattributes`** (new)
+- Forces LF on `*.sh`, `*.py`, `*.j2`, `*.yml`, `*.json`, `*.md`, `*.txt`,
+  and the `netwatch` launcher
+- Marks `*.html`, `*.png`, `*.jpg`, `*.gif`, `*.ico` as binary
+- Permanently prevents the `python3\r` shebang failure
+
+**`README.md`** — Installation section rewritten with three documented paths:
+1. `curl|bash` bootstrap (fastest)
+2. `git clone` + `./install.sh` (recommended)
+3. Manual 4-command fallback
+Plus Tier 1/Tier 2 distro matrix, installer flag table, "Why a venv?" PEP 668
+explainer, tmux/screen tips, update + uninstall instructions, WSL2 notes.
+
+### End-to-end test
+Fresh install in `/tmp/nwtest` with `./install.sh --no-system`:
+- Created venv, pip-installed pysnmp 7.1.22, scapy 2.7.0, cryptography 46.0.6,
+  paramiko 4.0.0, impacket 0.13.0, etc.
+- Import sanity check: all 12 modules ✓
+- Self-test: `netwatch 1.7.0` ✓
+- Launcher works directly and via `/tmp` symlink (readlink loop verified) ✓
+
+### Commit
+`c2d212d` — "feat: PEP 668-safe installer with venv, bootstrap one-liner, and CRLF protection"
