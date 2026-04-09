@@ -328,32 +328,6 @@ class CacheManager:
             'default_ttl_hours': self.ttl_hours,
         }
     
-    def cleanup_expired(self) -> int:
-        """Remove all expired cache entries.
-        
-        Returns:
-            Number of expired entries removed
-        """
-        count = 0
-        try:
-            for cache_file in self.cache_dir.glob("*.json"):
-                try:
-                    with open(cache_file, 'r', encoding='utf-8') as f:
-                        entry_dict = json.load(f)
-                    entry = CacheEntry(**entry_dict)
-                    
-                    if entry.is_expired():
-                        cache_file.unlink()
-                        count += 1
-                        logger.debug(f"Cleaned up expired cache: {entry.product}")
-                except Exception as e:
-                    logger.debug(f"Error checking {cache_file}: {e}")
-            
-            logger.info(f"Cleaned up {count} expired cache entries")
-            return count
-        except Exception as e:
-            logger.error(f"Failed to cleanup cache: {e}")
-            return count
 
     # -----------------------------------------------------------------
     # Monolithic-cache migration (one-shot)

@@ -39,7 +39,6 @@ class UpdateManager:
         mgr = UpdateManager()
         mgr.check_version()          # print latest GitHub release
         mgr.update_tool()            # git pull + pip install
-        mgr.update_cache()           # refresh EOL + CVE caches
         mgr.show_cache_status()      # print cache ages
     """
 
