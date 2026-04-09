@@ -1,0 +1,13 @@
+{
+  "canonical": "ubuntu",
+  "cisco": "cisco-ios-xe",
+  "juniper": "junos",
+  "microsoft": "windows-server",
+  "mikrotik": "mikrotik",
+  "netgate": "pfsense",
+  "proxmox": "proxmox-ve",
+  "qnap": "qnap-qts",
+  "red hat": "rhel",
+  "synology": "synology-dsm",
+  "vmware": "vmware-esxi"
+}

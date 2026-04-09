@@ -1,0 +1,10 @@
+[
+  {
+    "pattern": "OpenSSH[_\\s]([\\d.p]+)",
+    "product": "openssh"
+  },
+  {
+    "pattern": "dropbear[_\\s]([\\d.]+)",
+    "product": "dropbear"
+  }
+]

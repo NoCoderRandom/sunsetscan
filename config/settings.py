@@ -64,6 +64,12 @@ class Settings:
     # When True, port_scanner caps masscan rate, scanner.py strips -O/-A,
     # and excluded_hosts is honored on every nmap/masscan invocation.
     safe_mode: bool = False
+    # When True, skip heavy probes (full TLS handshake + JA3 + cert parse)
+    # during the security-check phase.  Set automatically by safe mode.
+    skip_heavy_probes: bool = False
+    # Multiplier applied to per-probe timeouts during security checks.
+    # Safe mode sets this to 0.5 to halve all probe timeouts.
+    probe_timeout_factor: float = 1.0
     # IPs to never include in any scan (typically gateway + own IP, set when
     # NetWatch detects it is running on the LAN's DNS resolver / gateway).
     excluded_hosts: Tuple[str, ...] = ()
@@ -199,7 +205,6 @@ DEFAULT_EXPORT_DIR = "."
 
 # New cache file paths (used by core/cache_manager.py)
 CVE_CACHE_FILENAME = "cve_cache.json"
-EOL_CACHE_FILENAME = "eol_cache.json"
 CACHE_META_FILENAME = "cache_meta.json"
 BASELINE_FILENAME = "baseline.json"
 
