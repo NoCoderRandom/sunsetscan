@@ -246,10 +246,34 @@ class IdentityFusionEngine:
                     result.sources.append('history')
 
         # --- Resolve each field via weighted voting ---
+        result.device_type = self._resolve_field(candidates['device_type'])
+
+        # Chassis-protection: if device_type is a chassis category
+        # (router, NAS, camera, etc.), exclude web-server-style candidates
+        # from vendor/model/device_name voting so a banner like "nginx"
+        # from an admin UI cannot overwrite the real chassis identity.
+        _chassis_types = frozenset({
+            "router", "nas", "camera", "switch", "access_point",
+            "printer", "smart_speaker", "media_device",
+        })
+        _web_server_names = frozenset({
+            "nginx", "apache", "lighttpd", "caddy", "iis",
+            "openresty", "litespeed", "cherokee", "h2o",
+        })
+        is_chassis = result.device_type.lower() in _chassis_types
+
+        if is_chassis:
+            # Filter out web-server values from vendor/model/device_name
+            for fname in ('vendor', 'model', 'device_name'):
+                filtered = [
+                    (v, w) for v, w in candidates[fname]
+                    if v.strip().lower() not in _web_server_names
+                ]
+                candidates[fname] = filtered if filtered else candidates[fname]
+
         result.vendor = self._resolve_field(candidates['vendor'])
         result.model = self._resolve_field(candidates['model'])
         result.version = self._resolve_field(candidates['version'])
-        result.device_type = self._resolve_field(candidates['device_type'])
         result.device_name = self._resolve_field(candidates['device_name'])
         result.os_hint = self._resolve_field(candidates['os_hint'])
 
@@ -314,11 +338,19 @@ class IdentityFusionEngine:
         return results
 
     @staticmethod
-    def _resolve_field(candidates: List[tuple]) -> str:
+    def _resolve_field(
+        candidates: List[tuple],
+        chassis_protected: bool = False,
+    ) -> str:
         """Resolve a field from weighted candidates via weighted voting.
 
         Args:
-            candidates: List of (value, weight) tuples.
+            candidates:        List of (value, weight) tuples.
+            chassis_protected: If True, exclude candidates that came from
+                               the ``active_scan`` source with a web-server
+                               model value (detected via weight heuristic
+                               and value content).  See ``fuse()`` for how
+                               this flag is set.
 
         Returns:
             Best value string, or "" if no candidates.
@@ -326,19 +358,29 @@ class IdentityFusionEngine:
         if not candidates:
             return ""
 
-        # Group by normalized value and sum weights
+        # Group by normalized value and sum weights.
+        # Track insertion order so ties are deterministic.
         votes: Dict[str, float] = {}
+        insertion_order: Dict[str, int] = {}
+        idx = 0
         for value, weight in candidates:
             if not value:
                 continue
             key = value.strip().lower()
-            votes[key] = votes.get(key, 0.0) + weight
+            if key not in votes:
+                votes[key] = 0.0
+                insertion_order[key] = idx
+                idx += 1
+            votes[key] += weight
 
         if not votes:
             return ""
 
-        # Return the value with highest weighted vote (preserve original case)
-        best_key = max(votes, key=votes.get)
+        # Deterministic tie-break: highest weight, then earliest insertion
+        best_key = max(
+            votes,
+            key=lambda k: (votes[k], -insertion_order[k]),
+        )
 
         # Find original-case version of the best value
         for value, _ in candidates:

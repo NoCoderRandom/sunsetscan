@@ -243,6 +243,7 @@ class NetworkScanner:
         out = args
         if getattr(self.settings, "safe_mode", False):
             out = downgrade_nmap_args(out)
+            logger.info("Safe mode: nmap args downgraded to: %s", out)
 
         excluded = getattr(self.settings, "excluded_hosts", ())
         if excluded and "--exclude" not in out:

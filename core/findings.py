@@ -229,15 +229,52 @@ class FindingRegistry:
         self._findings.clear()
 
     def deduplicate(self) -> None:
-        """Remove findings with duplicate (host, port, title) combinations."""
+        """Remove findings that describe the same underlying issue.
+
+        Keying on (host, port, title) missed duplicates with different
+        human titles for the same fact.  The new key is:
+
+            (host, port, category, dedup_token)
+
+        where *dedup_token* is:
+        - the first CVE ID, if the finding has one  (catches same CVE
+          found on multiple ports — port is already in the key);
+        - else the normalised product name + major version extracted from
+          the EOL tags/evidence (catches the two-title firmware-EOL bug);
+        - else the title as a last-resort fallback (preserves existing
+          behaviour for every other finding type).
+        """
         seen = set()
         unique: List[Finding] = []
         for f in self._findings:
-            key = (f.host, f.port, f.title)
+            token = self._dedup_token(f)
+            key = (f.host, f.port, f.category, token)
             if key not in seen:
                 seen.add(key)
                 unique.append(f)
         self._findings = unique
+
+    @staticmethod
+    def _dedup_token(f: "Finding") -> str:
+        """Compute a deduplication token for a finding."""
+        # 1) CVE-based: use the first CVE ID
+        if f.cve_ids:
+            return f.cve_ids[0]
+
+        # 2) EOL product-based: normalise "product major_version"
+        if "eol" in [t.lower() for t in f.tags]:
+            # Extract product from evidence like "Product: openssh 8.9p1"
+            for piece in (f.evidence, f.title):
+                if ":" in piece:
+                    after = piece.split(":", 1)[1].strip()
+                    parts = after.split()
+                    if parts:
+                        product = parts[0].lower()
+                        major = parts[1].split(".")[0] if len(parts) > 1 else ""
+                        return f"eol:{product}:{major}"
+
+        # 3) Fallback: title
+        return f.title
 
     def __len__(self) -> int:
         return len(self._findings)

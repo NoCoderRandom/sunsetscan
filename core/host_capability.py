@@ -234,6 +234,10 @@ def safe_mode_overrides(profile: HostProfile) -> Dict[str, object]:
         "nmap_parallel_hosts": 1,
         "scan_worker_threads": 2,
         "excluded_hosts": profile.excluded_hosts(),
+        # Skip heavy TLS probes (JA3S, full cert parse) to reduce CPU/network load.
+        "skip_heavy_probes": True,
+        # Halve per-probe timeouts so slow hosts don't stall the scan.
+        "probe_timeout_factor": 0.5,
     }
     return overrides
 

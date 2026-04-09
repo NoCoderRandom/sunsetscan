@@ -74,23 +74,12 @@ from eol.product_map import get_product_slug, NOT_TRACKED_PRODUCTS
 from ui.menu import Menu
 from ui.display import Display
 from ui.export import ReportExporter
+from core.data_loader import load_data
 
 
 # Maps device-identity vendor names to endoflife.date product slugs.
 # Supplements get_product_slug() for cases where vendor alone identifies the product.
-_IDENTITY_EOL_MAP = {
-    "synology": "synology-dsm",
-    "qnap": "qnap-qts",
-    "mikrotik": "mikrotik",
-    "netgate": "pfsense",
-    "proxmox": "proxmox-ve",
-    "vmware": "vmware-esxi",
-    "cisco": "cisco-ios-xe",
-    "juniper": "junos",
-    "canonical": "ubuntu",
-    "red hat": "rhel",
-    "microsoft": "windows-server",
-}
+_IDENTITY_EOL_MAP = load_data("identity_eol_map.json")
 
 
 def setup_logging(verbose: bool = False) -> None:
@@ -1165,16 +1154,12 @@ class NetWatch:
 
     # Patterns to extract SSH daemon product + version from banners
     _SSH_CVE_PATTERNS = [
-        (re.compile(r'OpenSSH[_\s]([\d.p]+)', re.I), "openssh"),
-        (re.compile(r'dropbear[_\s]([\d.]+)', re.I), "dropbear"),
+        (re.compile(e["pattern"], re.I), e["product"])
+        for e in load_data("ssh_cve_patterns.json")
     ]
 
     # Map Ubuntu SSH package revision prefix to Ubuntu release version
-    _UBUNTU_SSH_RELEASE_MAP = {
-        "4ubuntu": "20.04",
-        "7ubuntu": "22.04",
-        "9ubuntu": "24.04",
-    }
+    _UBUNTU_SSH_RELEASE_MAP = load_data("ubuntu_ssh_release_map.json")
 
     def _run_cve_checks(self, ip: str, host_info) -> List[Finding]:
         """Run CVE lookup for each detected service version on a host."""
@@ -1625,25 +1610,6 @@ class NetWatch:
                     ))
         return findings
 
-    def recheck_eol(self) -> None:
-        """Recheck EOL status using last scan results."""
-        if not self.last_scan_result:
-            self.display.show_error("No previous scan results available")
-            return
-        
-        self.console.print("[cyan]Refreshing EOL data...[/cyan]")
-        
-        # Clear cache to force fresh API calls
-        self.cache.cleanup_expired()
-        
-        # Recheck EOL status
-        self.check_eol_status(self.last_scan_result)
-        
-        # Show updated results
-        self.display.show_results_table(self.last_scan_result, self.last_eol_data)
-        stats = self.calculate_stats(self.last_scan_result, self.last_eol_data)
-        self.display.show_summary(stats)
-    
     def export_report(self) -> None:
         """Export last scan results to file."""
         if not self.last_scan_result:

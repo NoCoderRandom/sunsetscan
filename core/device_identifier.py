@@ -110,6 +110,19 @@ class _Evidence:
     confidence: float = 0.0
 
 
+# Device types that represent chassis identity and must not be overwritten
+# by per-port web-server banners (e.g. nginx, Apache on a router admin UI).
+CHASSIS_DEVICE_TYPES = frozenset({
+    "router", "nas", "camera", "switch", "access_point",
+    "printer", "smart_speaker", "media_device",
+})
+
+# Evidence sources that represent per-port web-server banners.
+_WEB_BANNER_SOURCES = frozenset({
+    "http_server_header", "wappalyzer",
+})
+
+
 # ---- Hostname patterns -> (vendor, device_type, model_regex_or_None) ----
 
 _HOSTNAME_PATTERNS: List[Tuple[re.Pattern, str, str, Optional[re.Pattern]]] = [
@@ -1360,6 +1373,45 @@ class DeviceIdentifier:
                 result[field_name] = winner_val
                 field_confidences[field_name] = winner_conf
                 contributing_sources.update(sources_per_value.get(winner_norm, []))
+
+        # Chassis-protection: if device_type is a chassis type (router, NAS,
+        # etc.), re-resolve vendor/model excluding web-server banner sources
+        # so that e.g. "nginx" from an admin UI doesn't overwrite the router
+        # identity.
+        chassis_type = result.get("device_type", "").lower()
+        if chassis_type in CHASSIS_DEVICE_TYPES:
+            for fname in ("vendor", "model"):
+                # Re-collect votes excluding web-banner evidence
+                votes_clean: Dict[str, float] = {}
+                for ev in evidence:
+                    if ev.source in _WEB_BANNER_SOURCES:
+                        continue
+                    val = getattr(ev, fname, "").strip()
+                    if not val:
+                        continue
+                    norm = val.lower()
+                    if fname == "vendor":
+                        norm = self._normalize_vendor(val).lower()
+                        val = self._normalize_vendor(val)
+                    votes_clean[norm] = votes_clean.get(norm, 0) + ev.confidence
+
+                if votes_clean:
+                    winner_norm = max(votes_clean, key=lambda k: votes_clean[k])
+                    # Find original-case value
+                    for ev in evidence:
+                        if ev.source in _WEB_BANNER_SOURCES:
+                            continue
+                        val = getattr(ev, fname, "").strip()
+                        if not val:
+                            continue
+                        norm = val.lower()
+                        if fname == "vendor":
+                            norm = self._normalize_vendor(val).lower()
+                            val = self._normalize_vendor(val)
+                        if norm == winner_norm:
+                            result[fname] = val
+                            field_confidences[fname] = min(votes_clean[winner_norm], 1.0)
+                            break
 
         # Post-fusion: validate/boost vendor from model-vendor index
         model_val = result.get("model", "")
