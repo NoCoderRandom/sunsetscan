@@ -2514,7 +2514,12 @@ def run_setup_wizard(db_size: str = "normal") -> int:
     console.print("\n" + "=" * 60)
     console.print("[bold green]Setup complete.[/bold green]")
     status = cache.get_cache_status()
-    console.print(f"  EOL data:       {status['eol_cache_entries']} products cached")
+    try:
+        from eol.cache import CacheManager as _EOLCacheStatus
+        eol_stats = _EOLCacheStatus().get_stats()
+        console.print(f"  EOL data:       {eol_stats['total_entries']} products cached")
+    except Exception:
+        console.print("  EOL data:       (unavailable)")
     console.print(f"  CVE data:       {status['cve_cache_entries']} product:version pairs cached")
 
     # Show module summary
