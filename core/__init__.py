@@ -17,29 +17,15 @@ This package contains the core network scanning functionality including:
 - hybrid_scanner: Passive+active scan orchestrator
 """
 
-from core.scanner import NetworkScanner
-from core.banner_grabber import BannerGrabber
-from core.http_fingerprinter import HttpFingerprinter
-from core.nse_scanner import NSEScanner
-from core.auth_tester import AuthTester
-from core.input_parser import parse_target_input, format_target_summary
-from core.network_utils import get_local_subnet, validate_cidr, expand_cidr
-from core.oui_lookup import OUIDatabase, lookup_vendor
-from core.hybrid_scanner import HybridScanner, HybridScanResult
+from core.findings import FindingRegistry
+from core.device_identifier import DeviceIdentifier
+from core.identity_fusion import IdentityFusionEngine
+from core.host_capability import detect_host_profile, safe_mode_overrides
 
 __all__ = [
-    "NetworkScanner",
-    "BannerGrabber",
-    "HttpFingerprinter",
-    "NSEScanner",
-    "AuthTester",
-    "parse_target_input",
-    "format_target_summary",
-    "get_local_subnet",
-    "validate_cidr",
-    "expand_cidr",
-    "OUIDatabase",
-    "lookup_vendor",
-    "HybridScanner",
-    "HybridScanResult",
+    "FindingRegistry",
+    "DeviceIdentifier",
+    "IdentityFusionEngine",
+    "detect_host_profile",
+    "safe_mode_overrides",
 ]

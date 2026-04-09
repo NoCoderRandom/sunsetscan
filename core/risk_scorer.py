@@ -142,14 +142,3 @@ class RiskScorer:
         # Sort by score descending
         return dict(sorted(results.items(), key=lambda x: x[1].score, reverse=True))
 
-    def network_summary(self, risks: Dict[str, DeviceRisk]) -> dict:
-        """Return aggregate stats for the whole network."""
-        if not risks:
-            return {"avg_score": 0, "max_score": 0, "high_risk_count": 0, "total_devices": 0}
-        scores = [r.score for r in risks.values()]
-        return {
-            "avg_score": round(sum(scores) / len(scores)),
-            "max_score": max(scores),
-            "high_risk_count": sum(1 for s in scores if s >= 50),
-            "total_devices": len(scores),
-        }

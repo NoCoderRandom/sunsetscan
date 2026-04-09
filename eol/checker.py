@@ -431,13 +431,3 @@ class EOLChecker:
         """
         return self.fetch_product_data(product)
     
-    def refresh_cache(self, product: str) -> bool:
-        """Delete cached data for a product so it will be re-fetched on next --setup.
-
-        Args:
-            product: Product slug
-
-        Returns:
-            True if cache entry was deleted
-        """
-        return self.cache.delete(product)
