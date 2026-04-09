@@ -38,15 +38,12 @@ logger = logging.getLogger(__name__)
 sys.path.insert(0, str(Path(__file__).parent))
 
 from rich.console import Console
-from rich.progress import Progress
 from rich.prompt import Prompt, Confirm
-from rich.table import Table
 
-from config.settings import Settings, SCAN_DESCRIPTIONS
-from core.scanner import NetworkScanner, ScanResult
+from config.settings import Settings
+from core.scanner import ScanResult
 from core.port_scanner import PortScanOrchestrator
 from core.banner_grabber import BannerGrabber
-from core.http_fingerprinter import HttpFingerprinter
 from core.nse_scanner import NSEScanner
 from core.auth_tester import AuthTester, AuthConfidence
 from core.network_utils import get_local_subnet, validate_cidr
@@ -63,7 +60,6 @@ from core.ssh_checker import run_ssh_checks
 from core.snmp_checker import run_snmp_checks, get_last_sysdescr, parse_sysdescr, SNMP_PORT
 from core.device_identifier import DeviceIdentifier, DeviceIdentity
 from core.hybrid_scanner import HybridScanner, HybridScanResult
-from core.identity_fusion import FusedIdentity
 from core.smb_checker import run_smb_checks
 from core.mdns_checker import run_mdns_discovery
 from core.arp_checker import run_arp_checks
@@ -142,7 +138,7 @@ def check_scan_readiness() -> List[str]:
     # 2. EOL cache populated (product-slug JSON files in data/cache/)
     cache_dir = Path(__file__).parent / "data" / "cache"
     non_eol_names = {
-        "cache_meta.json", "modules.json", "cve_cache.json", "eol_cache.json",
+        "cache_meta.json", "cve_cache_meta.json", "modules.json", "cve_cache.json", "eol_cache.json",
         "credentials_mini.json", "credentials_full.json",
         "wappalyzer_mini.json", "wappalyzer_tech.json",
         "ja3_signatures.json", "snmp_communities.json",
@@ -210,7 +206,7 @@ def _print_readiness_warnings(warnings: List[str]) -> None:
 
 def signal_handler(signum, frame):
     """Handle interrupt signals gracefully."""
-    print("\n\n[yellow]Scan cancelled.[/yellow]")
+    print("\n\nScan cancelled.")
     sys.exit(0)
 
 
@@ -244,6 +240,7 @@ class NetWatch:
         # be constructed with the correct overrides for low-power hosts.
         self.host_profile = detect_host_profile()
         force_safe = bool(getattr(args, "safe_mode", False))
+        force_safe = force_safe or bool(os.environ.get("NETWATCH_FORCE_SAFE_MODE"))
         disable_safe = bool(getattr(args, "no_safe_mode", False))
         use_safe_mode = (force_safe or self.host_profile.recommend_safe_mode) and not disable_safe
 
@@ -402,10 +399,7 @@ class NetWatch:
         
         # Validate target
         is_valid, error = validate_cidr(target)
-        if not is_valid:
-            # Try as single IP or hostname
-            target = target  # Keep as-is for nmap to handle
-        
+
         return self.perform_scan(target, profile)
 
     def run_identify_only(self, target: str, profile: str) -> int:
@@ -985,14 +979,14 @@ class NetWatch:
     def _check_single_host(self, ip: str, host_info, scan_result: ScanResult) -> List[Finding]:
         """Run all per-host security checks for a single host; return findings.
 
-        Designed to be called from a ThreadPoolExecutor. All writes to shared
-        instance state (last_eol_data) are protected by self._scan_lock.
+        Designed to be called from the shared ThreadPoolExecutor in
+        run_security_checks(). All writes to shared instance state
+        (last_eol_data) are protected by self._scan_lock.
         Findings are returned as a list; the caller adds them to the registry.
 
-        Internally runs 8 independent checkers in parallel using a nested
-        ThreadPoolExecutor. Two chain-dependent EOL pipelines (JA3S→EOL,
-        SNMP→EOL) execute immediately after their predecessor completes
-        via as_completed() callbacks.
+        Probes run sequentially per host to avoid thread explosion (H-4).
+        Cross-host parallelism is provided by the caller's executor, so
+        total concurrency = scan_worker_threads (honored in safe mode).
         """
         if host_info.state != "up":
             return []
@@ -1000,47 +994,50 @@ class NetWatch:
         open_ports = [p.port for p in host_info.ports.values() if p.state == "open"]
         all_findings: List[Finding] = []
 
-        # ---- Submit all independent checkers in parallel ----
-        with ThreadPoolExecutor(max_workers=8) as executor:
-            future_tags = {
-                executor.submit(_check_insecure_protocols, ip, open_ports): "protocols",
-                executor.submit(
-                    run_ssl_checks, ip, open_ports,
-                    timeout=self.settings.ssl_check_timeout,
-                ): "ssl",
-                executor.submit(
-                    run_web_checks, ip, open_ports,
-                    timeout=self.settings.web_check_timeout,
-                ): "web",
-                executor.submit(
-                    run_ftp_checks, ip, open_ports,
-                    timeout=self.settings.banner_timeout,
-                ): "ftp",
-                executor.submit(run_ssh_checks, ip, open_ports): "ssh",
-                executor.submit(run_smb_checks, ip, open_ports): "smb",
-                executor.submit(run_snmp_checks, ip, open_ports): "snmp",
-                executor.submit(self._run_cve_checks, ip, host_info): "cve",
-            }
+        # Compute effective timeouts — halved in safe mode (M-6).
+        timeout_factor = getattr(self.settings, "probe_timeout_factor", 1.0)
+        ssl_timeout = self.settings.ssl_check_timeout * timeout_factor
+        web_timeout = self.settings.web_check_timeout * timeout_factor
+        banner_timeout = self.settings.banner_timeout * timeout_factor
 
-            for future in as_completed(future_tags):
-                tag = future_tags[future]
-                try:
-                    checker_findings = future.result()
-                    if checker_findings:
-                        all_findings.extend(checker_findings)
+        skip_heavy = getattr(self.settings, "skip_heavy_probes", False)
 
-                    # Chain-dependent steps run immediately after predecessor
-                    if tag == "ssl":
-                        ja3s_findings = self._run_ja3s_eol_pipeline(ip, open_ports)
-                        if ja3s_findings:
-                            all_findings.extend(ja3s_findings)
-                    elif tag == "snmp":
-                        snmp_eol_findings = self._run_snmp_eol_pipeline(ip)
-                        if snmp_eol_findings:
-                            all_findings.extend(snmp_eol_findings)
+        # ---- Run checkers sequentially per host (no inner pool) ----
+        checkers = [
+            ("protocols", lambda: _check_insecure_protocols(ip, open_ports)),
+            ("web", lambda: run_web_checks(ip, open_ports, timeout=web_timeout)),
+            ("ftp", lambda: run_ftp_checks(ip, open_ports, timeout=banner_timeout)),
+            ("ssh", lambda: run_ssh_checks(ip, open_ports)),
+            ("smb", lambda: run_smb_checks(ip, open_ports)),
+            ("snmp", lambda: run_snmp_checks(ip, open_ports)),
+            ("cve", lambda: self._run_cve_checks(ip, host_info)),
+        ]
 
-                except Exception as e:
-                    logger.error(f"Checker '{tag}' failed for {ip}: {e}")
+        # SSL/TLS + JA3S is the heaviest probe — skip in safe mode.
+        if not skip_heavy:
+            checkers.insert(1, (
+                "ssl",
+                lambda: run_ssl_checks(ip, open_ports, timeout=ssl_timeout),
+            ))
+
+        for tag, checker_fn in checkers:
+            try:
+                checker_findings = checker_fn()
+                if checker_findings:
+                    all_findings.extend(checker_findings)
+
+                # Chain-dependent EOL pipelines
+                if tag == "ssl":
+                    ja3s_findings = self._run_ja3s_eol_pipeline(ip, open_ports)
+                    if ja3s_findings:
+                        all_findings.extend(ja3s_findings)
+                elif tag == "snmp":
+                    snmp_eol_findings = self._run_snmp_eol_pipeline(ip)
+                    if snmp_eol_findings:
+                        all_findings.extend(snmp_eol_findings)
+
+            except Exception as e:
+                logger.error(f"Checker '{tag}' failed for {ip}: {e}")
 
         return all_findings
 
@@ -1163,56 +1160,7 @@ class NetWatch:
                 f"→ {eol_status.level.value}"
             )
 
-            # Generate findings for firmware EOL
-            if eol_status.level == EOLStatusLevel.CRITICAL:
-                findings.append(Finding(
-                    severity=Severity.HIGH,
-                    title=f"Firmware end-of-life: {identity.vendor} {identity.version}",
-                    host=ip,
-                    port=0,
-                    category="End-of-Life Firmware",
-                    description=eol_status.message,
-                    explanation=(
-                        f"{identity.vendor} {identity.version} has reached End-of-Life. "
-                        "The vendor no longer releases security patches for this version."
-                    ),
-                    recommendation=(
-                        f"Upgrade {identity.vendor} {identity.model or 'device'} firmware "
-                        f"to the latest supported version "
-                        f"({eol_status.latest_version or 'check vendor site'})."
-                    ),
-                    evidence=(
-                        f"Device: {identity.summary()} | "
-                        f"Product: {eol_status.product} {eol_status.version}"
-                    ),
-                    tags=["eol", "firmware", slug],
-                ))
-            elif eol_status.level == EOLStatusLevel.WARNING:
-                findings.append(Finding(
-                    severity=Severity.MEDIUM,
-                    title=(
-                        f"Firmware EOL approaching: {identity.vendor} {identity.version} "
-                        f"({eol_status.days_remaining} days)"
-                    ),
-                    host=ip,
-                    port=0,
-                    category="End-of-Life Firmware",
-                    description=eol_status.message,
-                    explanation=(
-                        f"{identity.vendor} {identity.version} reaches End-of-Life "
-                        f"in {eol_status.days_remaining} days."
-                    ),
-                    recommendation=(
-                        f"Plan firmware upgrade for {identity.vendor} "
-                        f"{identity.model or 'device'} before EOL."
-                    ),
-                    evidence=(
-                        f"Device: {identity.summary()} | "
-                        f"Product: {eol_status.product} {eol_status.version}"
-                    ),
-                    tags=["eol", "firmware", slug],
-                ))
-
+        # Findings are emitted solely by _eol_to_findings() to avoid duplicates.
         return findings
 
     # Patterns to extract SSH daemon product + version from banners
@@ -1321,9 +1269,29 @@ class NetWatch:
         """
         self.finding_registry.clear()
 
+        # --- Safe mode announcement (once per scan) ---
+        if self.settings.safe_mode:
+            reasons = ", ".join(self.host_profile.reasons) if self.host_profile.reasons else "forced via env/flag"
+            logger.info(
+                "Safe mode active (reasons: %s). "
+                "Capping worker threads to %d, skipping heavy TLS probes.",
+                reasons, self.settings.scan_worker_threads,
+            )
+            self.console.print(
+                f"[yellow]Safe mode active[/yellow] ({reasons}). "
+                f"Workers capped to {self.settings.scan_worker_threads}, "
+                f"heavy TLS probes skipped."
+            )
+
         # --- Print cache warnings (non-blocking) ---
         for warning in self.unified_cache.stale_warnings():
             self.console.print(f"[yellow]WARNING: {warning}[/yellow]")
+        if not self.cache.is_eol_cache_current():
+            eol_age = self.cache.get_eol_cache_age_days()
+            if eol_age is None:
+                self.console.print("[yellow]WARNING: EOL data has never been downloaded. Run: python netwatch.py --setup[/yellow]")
+            else:
+                self.console.print(f"[yellow]WARNING: EOL data is {eol_age} days old. Run: python netwatch.py --update-cache[/yellow]")
 
         with self.display.create_progress() as progress:
             task = progress.add_task("[cyan]Running security checks...", total=None)
@@ -1492,18 +1460,35 @@ class NetWatch:
         scan_result: ScanResult,
         eol_data: Dict,
     ) -> list:
-        """Convert EOLStatus objects to Finding objects."""
+        """Convert EOLStatus objects to Finding objects.
+
+        This is the **single** emission point for all EOL findings (both
+        per-port service EOL and firmware-level EOL from the identity
+        pipeline stored under port 0).
+        """
         findings = []
         for ip, host_eol in eol_data.items():
             for port_num, eol_status in host_eol.items():
                 host = scan_result.hosts.get(ip)
                 port_info = host.ports.get(port_num) if host else None
-                service = port_info.service if port_info else "unknown"
-                version = port_info.version if port_info else ""
+
+                # For firmware-level EOL (port 0), enrich with device identity
+                is_firmware = port_num == 0
+                identity = self.last_device_identities.get(ip) if is_firmware else None
+
+                if is_firmware and identity:
+                    label = f"{identity.vendor} {identity.model}" if identity.model else identity.vendor
+                    category = "End-of-Life Firmware"
+                else:
+                    label = eol_status.product
+                    category = "End-of-Life Software"
 
                 if eol_status.level == EOLStatusLevel.CRITICAL:
                     sev = Severity.HIGH  # EOL = HIGH (not immediate exploit)
-                    title = f"End-of-Life software: {eol_status.product} {eol_status.version}"
+                    if is_firmware and identity:
+                        title = f"{label} firmware end-of-life"
+                    else:
+                        title = f"End-of-Life software: {eol_status.product} {eol_status.version}"
                     explanation = (
                         f"{eol_status.product} {eol_status.version} reached End-of-Life "
                         f"on {eol_status.eol_date.strftime('%Y-%m-%d') if eol_status.eol_date else 'an unknown date'}. "
@@ -1518,10 +1503,16 @@ class NetWatch:
                     )
                 elif eol_status.level == EOLStatusLevel.WARNING:
                     sev = Severity.MEDIUM
-                    title = (
-                        f"EOL approaching: {eol_status.product} {eol_status.version} "
-                        f"({eol_status.days_remaining} days)"
-                    )
+                    if is_firmware and identity:
+                        title = (
+                            f"{label} firmware EOL approaching "
+                            f"({eol_status.days_remaining} days)"
+                        )
+                    else:
+                        title = (
+                            f"EOL approaching: {eol_status.product} {eol_status.version} "
+                            f"({eol_status.days_remaining} days)"
+                        )
                     explanation = (
                         f"{eol_status.product} {eol_status.version} reaches End-of-Life "
                         f"in {eol_status.days_remaining} days. After that date, security "
@@ -1535,18 +1526,22 @@ class NetWatch:
                 else:
                     continue  # OK or UNKNOWN — not a finding
 
+                evidence = f"Product: {eol_status.product} {eol_status.version}"
+                if is_firmware and identity:
+                    evidence = f"Device: {identity.summary()} | {evidence}"
+
                 findings.append(Finding(
                     severity=sev,
                     title=title,
                     host=ip,
                     port=port_num,
-                    protocol=port_info.protocol if port_info else "tcp",
-                    category="End-of-Life Software",
+                    protocol=port_info.protocol if port_info else "",
+                    category=category,
                     description=eol_status.message,
                     explanation=explanation,
                     recommendation=recommendation,
-                    evidence=f"Product: {eol_status.product} {eol_status.version}",
-                    tags=["eol", eol_status.product.lower()],
+                    evidence=evidence,
+                    tags=["eol", "firmware" if is_firmware else eol_status.product.lower()],
                 ))
         return findings
 
@@ -1764,10 +1759,10 @@ class NetWatch:
         targets = parse_target_input(target)
         estimated_hosts = 0
         for t in targets:
-            if '*.' in t or '/16' in t or '/8' in t:
+            if '/16' in t or '/8' in t:
                 estimated_hosts = 65000
                 break
-            elif '/24' in t or '*.' in t:
+            elif '/24' in t:
                 estimated_hosts += 254
             elif '-' in t:
                 estimated_hosts += 100
@@ -2427,6 +2422,7 @@ def run_setup_wizard(db_size: str = "normal") -> int:
     try:
         import requests as req_lib
         from eol.product_map import NOT_TRACKED_PRODUCTS
+        from eol.cache import CacheManager as EOLCacheManager
 
         # Load product list from JSON file based on --db flag
         list_file = Path(__file__).parent / "data" / "cache" / f"product_list_{db_size}.json"
@@ -2439,6 +2435,7 @@ def run_setup_wizard(db_size: str = "normal") -> int:
             from eol.product_map import PRODUCT_MAP
             products = list(set(v for v in PRODUCT_MAP.values() if v not in NOT_TRACKED_PRODUCTS))
 
+        eol_cache = EOLCacheManager()
         session = req_lib.Session()
         session.headers.update({"User-Agent": "NetWatch/1.2.0"})
         eol_ok = 0
@@ -2456,7 +2453,7 @@ def run_setup_wizard(db_size: str = "normal") -> int:
                     url = f"https://endoflife.date/api/{product}.json"
                     resp = session.get(url, timeout=15)
                     if resp.status_code == 200:
-                        cache.set_eol(product, resp.json())
+                        eol_cache.set(product, resp.json())
                         eol_ok += 1
                     else:
                         eol_fail += 1
@@ -2464,7 +2461,7 @@ def run_setup_wizard(db_size: str = "normal") -> int:
                     eol_fail += 1
                 progress.advance(task)
 
-        cache.mark_eol_updated()
+        eol_cache.mark_eol_updated()
         console.print(f"  [green]✓[/green] EOL data: {eol_ok} products cached, {eol_fail} not found")
     except ImportError:
         console.print("  [yellow]![/yellow] requests not installed — skip EOL download")
@@ -2576,14 +2573,16 @@ def run_update_cache() -> int:
     """Refresh CVE and EOL caches if they are stale."""
     from rich.console import Console
     from rich.progress import Progress, SpinnerColumn, BarColumn, TextColumn
+    from eol.cache import CacheManager as EOLCacheManager
 
     console = Console()
     console.print("\n[bold blue]NetWatch Cache Update[/bold blue]")
     console.print("=" * 50)
 
-    cache = UnifiedCacheManager()
+    cve_cache = UnifiedCacheManager()
+    eol_cache = EOLCacheManager()
 
-    if not cache.check_online():
+    if not cve_cache.check_online():
         console.print("[yellow]No internet connection. Cannot update caches.[/yellow]")
         console.print("Cached data will be used for scans (may be outdated).")
         return 1
@@ -2592,8 +2591,8 @@ def run_update_cache() -> int:
     cve_updated = False
 
     # ---- EOL cache ----
-    if cache.is_eol_cache_current():
-        age = cache.get_eol_cache_age_days()
+    if eol_cache.is_eol_cache_current():
+        age = eol_cache.get_eol_cache_age_days()
         console.print(f"[green]EOL cache is current ({age} days old). Skipping.[/green]")
     else:
         console.print("[cyan]Refreshing EOL data...[/cyan]")
@@ -2611,34 +2610,33 @@ def run_update_cache() -> int:
                     try:
                         resp = session.get(f"https://endoflife.date/api/{product}.json", timeout=15)
                         if resp.status_code == 200:
-                            cache.set_eol(product, resp.json())
+                            eol_cache.set(product, resp.json())
                             eol_ok += 1
                     except Exception:
                         pass
                     progress.advance(task)
 
-            cache.mark_eol_updated()
+            eol_cache.mark_eol_updated()
             console.print(f"  [green]✓[/green] EOL: {eol_ok} products refreshed")
             eol_updated = True
         except Exception as e:
             console.print(f"  [yellow]![/yellow] EOL update failed: {e}")
 
     # ---- CVE cache ----
-    if cache.is_cve_cache_current():
-        age = cache.get_cve_cache_age_days()
+    if cve_cache.is_cve_cache_current():
+        age = cve_cache.get_cve_cache_age_days()
         console.print(f"[green]CVE cache is current ({age} days old). Skipping.[/green]")
     else:
         console.print("[cyan]Refreshing CVE data...[/cyan]")
         try:
-            # Collect all product:version pairs currently in cache and re-query them
             existing_pairs = []
-            for key in cache.cve_data.keys():
+            for key in cve_cache.cve_data.keys():
                 if ":" in key:
                     product, version = key.split(":", 1)
                     existing_pairs.append((product, version))
 
             if existing_pairs:
-                builder = CVECacheBuilder(cache)
+                builder = CVECacheBuilder(cve_cache)
                 with Progress(SpinnerColumn(), TextColumn("[cyan]{task.description}"), BarColumn()) as progress:
                     task = progress.add_task("CVE data", total=len(existing_pairs))
 
@@ -2666,9 +2664,11 @@ def run_update_cache() -> int:
         console.print(f"  [yellow]![/yellow] Module refresh error: {e}")
 
     console.print("\n[green]All modules up to date.[/green]")
-    status = cache.get_cache_status()
-    console.print(f"  EOL:  {status['eol_cache_entries']} products | age: {status['eol_cache_age_days']} days")
-    console.print(f"  CVE:  {status['cve_cache_entries']} pairs    | age: {status['cve_cache_age_days']} days")
+    cve_status = cve_cache.get_cache_status()
+    eol_entries = eol_cache.eol_product_count()
+    eol_age = eol_cache.get_eol_cache_age_days()
+    console.print(f"  EOL:  {eol_entries} products | age: {eol_age} days")
+    console.print(f"  CVE:  {cve_status['cve_cache_entries']} pairs    | age: {cve_status['cve_cache_age_days']} days")
     return 0
 
 
@@ -2676,9 +2676,12 @@ def show_cache_status() -> int:
     """Print cache status and exit."""
     from rich.console import Console
     from rich.table import Table
+    from eol.cache import CacheManager as EOLCacheManager
+
     console = Console()
-    cache = UnifiedCacheManager()
-    status = cache.get_cache_status()
+    cve_cache = UnifiedCacheManager()
+    eol_cache = EOLCacheManager()
+    cve_status = cve_cache.get_cache_status()
 
     table = Table(title="NetWatch Cache Status", show_header=True)
     table.add_column("Dataset", style="bold")
@@ -2691,18 +2694,18 @@ def show_cache_status() -> int:
 
     table.add_row(
         "EOL Data",
-        str(status["eol_cache_entries"]),
-        str(status["eol_cache_age_days"] or "never"),
-        status_str(status["eol_cache_current"]),
+        str(eol_cache.eol_product_count()),
+        str(eol_cache.get_eol_cache_age_days() or "never"),
+        status_str(eol_cache.is_eol_cache_current()),
     )
     table.add_row(
         "CVE Data",
-        str(status["cve_cache_entries"]),
-        str(status["cve_cache_age_days"] or "never"),
-        status_str(status["cve_cache_current"]),
+        str(cve_status["cve_cache_entries"]),
+        str(cve_status["cve_cache_age_days"] or "never"),
+        status_str(cve_status["cve_cache_current"]),
     )
     console.print(table)
-    console.print(f"Cache directory: {status['cache_dir']}")
+    console.print(f"Cache directory: {cve_status['cache_dir']}")
     return 0
 
 

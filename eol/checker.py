@@ -24,7 +24,7 @@ Example:
 import logging
 import re
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import datetime
 from enum import Enum
 from typing import Dict, List, Optional, Any
 
@@ -369,9 +369,6 @@ class EOLChecker:
         Returns:
             EOLStatus for detected product
         """
-        from eol.product_map import normalize_software_name
-        import re
-        
         if not banner:
             return EOLStatus(
                 product="unknown",
@@ -414,25 +411,12 @@ class EOLChecker:
         if not text:
             return None
         
-        # Common version patterns
-        patterns = [
-            # Ubuntu-style: 20.04.5
-            r'(?:version\s+)?(\d+\.\d+(?:\.\d+)?)',
-            # Major.minor.patch
-            r'(\d+)\.(\d+)\.(\d+)',
-            # Major.minor
-            r'(\d+)\.(\d+)',
-            # Version X.Y
-            r'[Vv]ersion\s*[:\s]\s*(\S+)',
-        ]
-        
-        for pattern in patterns:
-            match = re.search(pattern, text)
-            if match:
-                version = match.group(1)
-                # Validate it looks like a version
-                if any(c.isdigit() for c in version):
-                    return version
+        # Greedy pattern: matches "2.4.41", "1.18.0", "8.2p1"-style
+        # tokens as well as "version 20.04.5" prefixed forms.  The first
+        # capture group always contains the full dotted version.
+        match = re.search(r'(?:version\s+)?(\d+\.\d+(?:\.\d+)?)', text)
+        if match:
+            return match.group(1)
         
         return None
     
