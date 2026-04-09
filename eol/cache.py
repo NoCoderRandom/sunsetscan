@@ -24,7 +24,6 @@ Example:
 
 import json
 import logging
-import os
 from dataclasses import dataclass, asdict
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -33,6 +32,9 @@ from typing import Any, Dict, Optional
 from config.settings import Settings, CACHE_DIR
 
 logger = logging.getLogger(__name__)
+
+# EOL cache TTL — matches the value previously in core/cache_manager.py
+EOL_TTL_DAYS = 30
 
 
 @dataclass
@@ -106,10 +108,14 @@ class CacheManager:
         self.settings = settings or Settings()
         self.cache_dir = Path(cache_dir or CACHE_DIR)
         self.ttl_hours = ttl_hours or self.settings.cache_ttl_hours
-        
+        self._meta_path = self.cache_dir / "cache_meta.json"
+
         # Ensure cache directory exists
         self._ensure_cache_dir()
-        
+
+        # One-shot migration: explode monolithic eol_cache.json into per-product files
+        self._migrate_monolithic_cache()
+
         logger.debug(f"CacheManager initialized (dir={self.cache_dir}, "
                     f"ttl={self.ttl_hours}h)")
     
@@ -295,7 +301,7 @@ class CacheManager:
         
         return cached
     
-    def get_stats(self) -> Dict[str, any]:
+    def get_stats(self) -> Dict[str, Any]:
         """Get cache statistics.
         
         Returns:
@@ -348,3 +354,111 @@ class CacheManager:
         except Exception as e:
             logger.error(f"Failed to cleanup cache: {e}")
             return count
+
+    # -----------------------------------------------------------------
+    # Monolithic-cache migration (one-shot)
+    # -----------------------------------------------------------------
+
+    def _migrate_monolithic_cache(self) -> None:
+        """Explode monolithic eol_cache.json into per-product files.
+
+        If data/cache/eol_cache.json exists and any of its products are
+        missing individual cache files, write them out and rename the old
+        file to eol_cache.json.migrated so this runs only once.
+        """
+        blob_path = self.cache_dir / "eol_cache.json"
+        if not blob_path.exists():
+            return
+
+        try:
+            with open(blob_path, "r", encoding="utf-8") as f:
+                blob = json.load(f)
+        except (json.JSONDecodeError, OSError) as e:
+            logger.warning(f"Could not read monolithic eol_cache.json for migration: {e}")
+            return
+
+        if not isinstance(blob, dict) or not blob:
+            return
+
+        migrated = 0
+        for product, entry in blob.items():
+            if self._get_cache_path(product).exists():
+                continue
+            # The monolithic cache stores {"cached_at": ..., "data": ...}
+            payload = entry.get("data") if isinstance(entry, dict) and "data" in entry else entry
+            if payload:
+                self.set(product, payload)
+                migrated += 1
+
+        if migrated:
+            logger.info(
+                f"Migrated {migrated} products from monolithic eol_cache.json "
+                "into per-product cache files"
+            )
+
+        # Rename so migration doesn't re-run
+        migrated_path = blob_path.with_suffix(".json.migrated")
+        try:
+            blob_path.rename(migrated_path)
+            logger.info(f"Renamed eol_cache.json -> {migrated_path.name}")
+        except OSError as e:
+            logger.warning(f"Could not rename eol_cache.json after migration: {e}")
+
+    # -----------------------------------------------------------------
+    # EOL meta — freshness tracking (owns cache_meta.json)
+    # -----------------------------------------------------------------
+
+    def _load_meta(self) -> dict:
+        try:
+            if self._meta_path.exists():
+                with open(self._meta_path, "r", encoding="utf-8") as f:
+                    return json.load(f)
+        except (json.JSONDecodeError, OSError):
+            pass
+        return {}
+
+    def _save_meta(self, meta: dict) -> None:
+        try:
+            with open(self._meta_path, "w", encoding="utf-8") as f:
+                json.dump(meta, f, indent=2)
+        except OSError as e:
+            logger.error(f"Failed to write EOL meta: {e}")
+
+    def mark_eol_updated(self) -> None:
+        """Record that the EOL cache was just refreshed."""
+        meta = self._load_meta()
+        meta["eol_last_updated"] = datetime.now().isoformat()
+        self._save_meta(meta)
+
+    def is_eol_cache_current(self) -> bool:
+        """Return True if EOL cache was updated within EOL_TTL_DAYS."""
+        meta = self._load_meta()
+        last = meta.get("eol_last_updated")
+        if not last:
+            return False
+        try:
+            updated = datetime.fromisoformat(last)
+            return (datetime.now() - updated).days < EOL_TTL_DAYS
+        except (ValueError, TypeError):
+            return False
+
+    def get_eol_cache_age_days(self) -> Optional[int]:
+        """Return age of EOL cache in days, or None if never updated."""
+        meta = self._load_meta()
+        last = meta.get("eol_last_updated")
+        if not last:
+            return None
+        try:
+            return (datetime.now() - datetime.fromisoformat(last)).days
+        except (ValueError, TypeError):
+            return None
+
+    def eol_product_count(self) -> int:
+        """Count per-product cache files (excluding non-EOL caches)."""
+        excluded = {"cve_cache.json", "cache_meta.json", "cve_cache_meta.json",
+                     "wappalyzer_tech.json", "ja3_signatures.json"}
+        count = 0
+        for f in self.cache_dir.glob("*.json"):
+            if f.name not in excluded:
+                count += 1
+        return count

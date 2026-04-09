@@ -115,18 +115,6 @@ class UpdateManager:
     # Intelligence cache updates
     # ------------------------------------------------------------------
 
-    def update_cache(self, quiet: bool = False) -> None:
-        """Refresh EOL, CVE, Wappalyzer, and JA3 intelligence caches."""
-        if not quiet:
-            print("Refreshing intelligence caches...")
-        self._update_eol_cache(quiet=quiet)
-        self._update_cve_cache(quiet=quiet)
-        self._update_wappalyzer_cache(quiet=quiet)
-        self._update_ja3_cache(quiet=quiet)
-        self._save_meta()
-        if not quiet:
-            print("Cache refresh complete.")
-
     def _update_eol_cache(self, quiet: bool = False) -> None:
         """Re-fetch EOL data for all mapped products."""
         if not quiet:
@@ -156,7 +144,7 @@ class UpdateManager:
                         fail += 1
                 except Exception:
                     fail += 1
-            self._meta["eol_last_updated"] = datetime.now(timezone.utc).isoformat()
+            cache.mark_eol_updated()
             if not quiet:
                 print(f"    EOL cache: {ok} products updated, {fail} skipped.")
         except Exception as e:
@@ -186,7 +174,7 @@ class UpdateManager:
             else:
                 if not quiet:
                     print("    No existing CVE cache entries. Run --setup first.")
-            self._meta["cve_osv_last_updated"] = datetime.now(timezone.utc).isoformat()
+            um.mark_cve_updated()
         except Exception as e:
             logger.error(f"CVE cache update failed: {e}")
             if not quiet:
@@ -206,7 +194,7 @@ class UpdateManager:
             session = requests.Session()
             session.headers.update({"User-Agent": "NetWatch/1.2.0"})
             merged: dict = {}
-            files = [f"{c}.json" for c in "_abcdefghijklmnopqrstuvwxyz"]
+            files = [f"{c}.json" for c in "abcdefghijklmnopqrstuvwxyz"]
             for fname in files:
                 try:
                     r = session.get(base_url + fname, timeout=15)
@@ -312,8 +300,19 @@ class UpdateManager:
             except Exception:
                 return "—"
 
+        # EOL cache: read meta from cache_meta.json (owned by eol.cache.CacheManager)
+        eol_meta_path = _CACHE_DIR / "cache_meta.json"
+        eol_last = None
+        try:
+            if eol_meta_path.exists():
+                import json as _json
+                with open(eol_meta_path, "r", encoding="utf-8") as _f:
+                    eol_last = _json.load(_f).get("eol_last_updated")
+        except Exception:
+            pass
+
         entries = [
-            ("EOL cache",          _CACHE_DIR / "eol_cache.json",     self._meta.get("eol_last_updated")),
+            ("EOL cache (per-product)", _CACHE_DIR,                        eol_last),
             ("CVE cache",          _CACHE_DIR / "cve_cache.json",      self._meta.get("cve_osv_last_updated")),
             ("Wappalyzer",         _CACHE_DIR / "wappalyzer_tech.json",self._meta.get("wappalyzer_last_updated")),
             ("JA3 signatures",     _CACHE_DIR / "ja3_signatures.json", self._meta.get("ja3_last_updated")),
