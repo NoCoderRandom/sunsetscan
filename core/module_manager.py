@@ -2,7 +2,8 @@
 NetWatch Module Manager.
 
 Central controller for downloadable data modules. Each module represents
-a dataset sourced from a maintained public external repository.
+a dataset sourced from a maintained public repository or first-party NetWatch
+artifact.
 
 CODE = logic only
 DATA = downloaded from trusted public sources
@@ -15,6 +16,7 @@ Modules:
     ja3-signatures       TLS fingerprint database (from salesforce/ja3)
     snmp-community       Extended SNMP community strings (from SecLists)
     camera-credentials   IP camera default credentials (from many-passwords)
+    hardware-eol         Hardware lifecycle database (from NetWatch GitHub)
 
 CLI:
     python3 netwatch.py --modules          List all modules with status
@@ -23,6 +25,7 @@ CLI:
 """
 
 import csv
+import gzip
 import io
 import json
 import logging
@@ -116,6 +119,16 @@ MODULE_REGISTRY: Dict[str, Dict[str, Any]] = {
         "size_estimate": "4MB",
         "default": True,
         "parser": "_parse_mac_oui",
+    },
+    "hardware-eol": {
+        "description": "Network hardware lifecycle/EOL database",
+        "source": "NoCoderRandom/netwatch",
+        "url": "https://raw.githubusercontent.com/NoCoderRandom/netwatch/main/data/hardware_eol/netwatch_hardware_eol.json.gz",
+        "local_path": "data/cache/hardware_eol/netwatch_hardware_eol.json",
+        "size_estimate": "11MB download / 95MB installed",
+        "default": True,
+        "parser": "_parse_hardware_eol",
+        "binary": True,
     },
 }
 
@@ -359,6 +372,37 @@ def _parse_mac_oui(raw_text: str) -> Dict:
     return oui_map
 
 
+def _parse_hardware_eol(raw_data) -> Dict:
+    """Parse the compressed NetWatch hardware EOL database artifact."""
+    try:
+        if isinstance(raw_data, bytes):
+            raw_text = gzip.decompress(raw_data).decode("utf-8")
+        else:
+            raw_text = raw_data
+        data = json.loads(raw_text)
+    except Exception as e:
+        logger.warning(f"hardware-eol parse error: {e}")
+        return {}
+
+    required = ("metadata", "summary", "indexes", "records", "model_summaries")
+    if not all(key in data for key in required):
+        logger.warning("hardware-eol parse error: missing required database sections")
+        return {}
+    return data
+
+
+def _entry_count(parsed: Any, module_name: str = "") -> int:
+    """Return a human-useful entry count for module metadata/output."""
+    if module_name == "hardware-eol" and isinstance(parsed, dict):
+        summary = parsed.get("summary") or {}
+        count = summary.get("total_records")
+        if isinstance(count, int):
+            return count
+    if isinstance(parsed, (list, dict)):
+        return len(parsed)
+    return 0
+
+
 # Map parser names to functions
 _PARSERS = {
     "_parse_credentials_mini": _parse_credentials_mini,
@@ -369,6 +413,7 @@ _PARSERS = {
     "_parse_snmp_communities": _parse_snmp_communities,
     "_parse_camera_credentials": _parse_camera_credentials,
     "_parse_mac_oui": _parse_mac_oui,
+    "_parse_hardware_eol": _parse_hardware_eol,
 }
 
 
@@ -523,7 +568,8 @@ class ModuleManager:
                         print(f"  Download failed: HTTP {resp.status_code}")
                     return False
                 parser = _PARSERS[info["parser"]]
-                parsed = parser(resp.text)
+                raw_data = resp.content if info.get("binary") else resp.text
+                parsed = parser(raw_data)
 
             if not parsed:
                 if not quiet:
@@ -534,7 +580,8 @@ class ModuleManager:
             target = _PROJECT_ROOT / info["local_path"]
             target.parent.mkdir(parents=True, exist_ok=True)
             with open(target, "w", encoding="utf-8") as f:
-                json.dump(parsed, f, indent=2 if isinstance(parsed, list) else None)
+                indent = 2 if isinstance(parsed, list) else None
+                json.dump(parsed, f, indent=indent)
 
             # Update metadata
             self._meta[module_name] = {
@@ -543,12 +590,12 @@ class ModuleManager:
                 "installed_at": datetime.now().isoformat(),
                 "source": info["source"],
                 "local_path": info["local_path"],
-                "entries": len(parsed) if isinstance(parsed, (list, dict)) else 0,
+                "entries": _entry_count(parsed, module_name),
             }
             self._save_meta()
 
             if not quiet:
-                count = len(parsed) if isinstance(parsed, (list, dict)) else 0
+                count = _entry_count(parsed, module_name)
                 size_kb = target.stat().st_size // 1024
                 print(f"  Installed: {module_name} ({count} entries, {size_kb} KB)")
 

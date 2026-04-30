@@ -228,8 +228,11 @@ NetWatch runs 12 security checker modules during a full assessment:
 ### Vulnerability Intelligence
 - **CVE correlation** — maps detected service versions to known CVEs using OSV.dev
 - **EOL checking** — 150+ products checked against endoflife.date
+- **Hardware lifecycle checking** — downloadable NetWatch hardware EOL database
+  flags routers, switches, NAS, cameras, printers, and access points that no
+  longer receive security updates
 - **JA3S TLS fingerprinting** — identifies server software from TLS handshake signatures
-- Fully offline during scans — no external API calls are made during scanning. endoflife.date and OSV.dev are only contacted by `--setup` and `--update-cache`. Scans work without any internet connection as long as caches are populated.
+- Fully offline during scans — no external API calls are made during scanning. endoflife.date, OSV.dev, and GitHub module sources are only contacted by `--setup`, `--update-cache`, and `--download`. Scans work without any internet connection as long as caches are populated.
 - Weekly CVE refresh, monthly EOL refresh — controlled by you
 
 ### Device Identification
@@ -245,7 +248,7 @@ NetWatch runs 12 security checker modules during a full assessment:
 - Persistent MAC-to-identity mapping across scans
 
 ### Modular Data System
-NetWatch includes 7 downloadable data modules that extend detection capabilities:
+NetWatch includes 9 downloadable data modules that extend detection capabilities:
 
 | Module | Source | What it adds |
 |---|---|---|
@@ -256,6 +259,8 @@ NetWatch includes 7 downloadable data modules that extend detection capabilities
 | `ja3-signatures` | salesforce/ja3 | TLS fingerprint database |
 | `snmp-community` | danielmiessler/SecLists | Extended SNMP community strings |
 | `camera-credentials` | many-passwords/many-passwords | IP camera/DVR/NVR default passwords |
+| `mac-oui` | IEEE Standards Association | MAC prefix vendor database (default) |
+| `hardware-eol` | NoCoderRandom/netwatch | Hardware lifecycle/EOL database (default) |
 
 ```bash
 netwatch --modules                # Show module status
@@ -352,7 +357,8 @@ NetWatch never calls external APIs during a scan. All data is read from local ca
 | File | Contents | Refresh interval |
 |---|---|---|
 | `data/cache/cve_cache.json` | CVE data keyed by product:version | Every 7 days |
-| `data/cache/eol_cache.json` | EOL dates for 150+ products | Every 30 days |
+| `data/cache/*.json` | EOL dates for 150+ products, stored per product | Every 30 days |
+| `data/cache/hardware_eol/netwatch_hardware_eol.json` | Hardware lifecycle/EOL database | Every 30 days |
 | `data/cache/cache_meta.json` | Timestamps of last updates | Automatic |
 
 ```bash
@@ -503,6 +509,7 @@ netwatch/
 │   ├── instant_scan.py            # ARP sweep + passive capture quick scan
 │   ├── hybrid_scanner.py          # Passive+active scan orchestrator
 │   ├── baseline.py                # Rogue device baseline comparison
+│   ├── hardware_eol.py            # Downloaded hardware lifecycle database lookup
 │   ├── scan_history.py            # Scan snapshot persistence and diffing
 │   ├── module_manager.py          # Downloadable data module system
 │   └── update_manager.py          # Version check and self-update
@@ -526,7 +533,8 @@ netwatch/
     ├── baseline.json              # Saved device baseline (--save-baseline)
     ├── cache/
     │   ├── cve_cache.json         # CVE data keyed by product:version
-    │   ├── eol_cache.json         # EOL data keyed by product slug
+    │   ├── <product>.json         # EOL data keyed by product slug
+    │   ├── hardware_eol/          # Downloaded hardware lifecycle database
     │   └── cache_meta.json        # Cache update timestamps
     ├── history/                   # Gzip scan snapshots (auto-saved)
     └── modules/                   # Downloaded data modules

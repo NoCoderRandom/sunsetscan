@@ -257,12 +257,21 @@ class FindingRegistry:
     @staticmethod
     def _dedup_token(f: "Finding") -> str:
         """Compute a deduplication token for a finding."""
+        tags_lower = [t.lower() for t in f.tags]
+
         # 1) CVE-based: use the first CVE ID
         if f.cve_ids:
             return f.cve_ids[0]
 
-        # 2) EOL product-based: normalise "product major_version"
-        if "eol" in [t.lower() for t in f.tags]:
+        # 2) Hardware lifecycle: use the database record/summary id.
+        if "hardware-eol" in tags_lower:
+            for tag in tags_lower:
+                if tag.startswith("hardware-id:"):
+                    return tag
+            return f"hardware-eol:{f.title.lower()}"
+
+        # 3) EOL product-based: normalise "product major_version"
+        if "eol" in tags_lower:
             # Extract product from evidence like "Product: openssh 8.9p1"
             for piece in (f.evidence, f.title):
                 if ":" in piece:
@@ -273,7 +282,7 @@ class FindingRegistry:
                         major = parts[1].split(".")[0] if len(parts) > 1 else ""
                         return f"eol:{product}:{major}"
 
-        # 3) Fallback: title
+        # 4) Fallback: title
         return f.title
 
     def __len__(self) -> int:

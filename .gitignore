@@ -17,6 +17,11 @@ data/baseline.json
 data/arp_baseline.json
 reports/
 
+# Hardware EOL source artifact: keep the compressed downloadable module in git,
+# but do not commit expanded generated JSON databases.
+data/hardware_eol/*.json
+!data/hardware_eol/netwatch_hardware_eol_summary.json
+
 # NetWatch backups
 netwatch_backup_*/
 
