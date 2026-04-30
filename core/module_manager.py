@@ -632,7 +632,7 @@ class ModuleManager:
         return merged
 
     def download_all(self, quiet: bool = False) -> int:
-        """Download all optional (non-default) modules.
+        """Download all missing modules.
 
         Returns:
             Number of successfully downloaded modules.
