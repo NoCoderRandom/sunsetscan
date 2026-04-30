@@ -48,7 +48,7 @@ from core.nse_scanner import NSEScanner
 from core.auth_tester import AuthTester, AuthConfidence
 from core.network_utils import get_local_subnet, validate_cidr
 from core.host_capability import detect_host_profile, safe_mode_overrides
-from core.findings import FindingRegistry, Finding, Severity
+from core.findings import FindingRegistry, Finding, Severity, Confidence
 from core.cache_manager import UnifiedCacheManager
 from core.cve_checker import CVEChecker, CVECacheBuilder
 from core.ssl_checker import run_ssl_checks, get_last_ja3s_match
@@ -64,6 +64,7 @@ from core.smb_checker import run_smb_checks
 from core.mdns_checker import run_mdns_discovery
 from core.arp_checker import run_arp_checks
 from core.baseline import BaselineManager
+from core.hardware_eol import HardwareEOLDatabase, HardwareEOLMatch
 from core.risk_scorer import RiskScorer
 from core.scan_history import ScanHistory
 from core.update_manager import UpdateManager
@@ -84,7 +85,7 @@ _IDENTITY_EOL_MAP = load_data("identity_eol_map.json")
 
 def setup_logging(verbose: bool = False) -> None:
     """Configure logging for the application.
-    
+
     Args:
         verbose: Enable debug logging if True
     """
@@ -98,7 +99,7 @@ def setup_logging(verbose: bool = False) -> None:
 
 def check_privileges() -> bool:
     """Check if running with root/admin privileges.
-    
+
     Returns:
         True if running with elevated privileges
     """
@@ -131,7 +132,7 @@ def check_scan_readiness() -> List[str]:
         "credentials_mini.json", "credentials_full.json",
         "wappalyzer_mini.json", "wappalyzer_tech.json",
         "ja3_signatures.json", "snmp_communities.json",
-        "camera_credentials.json",
+        "camera_credentials.json", "mac_oui.json",
     }
     has_eol_cache = False
     if cache_dir.is_dir():
@@ -150,13 +151,15 @@ def check_scan_readiness() -> List[str]:
     # 4. Default modules installed
     try:
         mm = ModuleManager()
-        missing = []
-        if not mm.is_installed("credentials-mini"):
-            missing.append("credentials-mini")
-        if not mm.is_installed("wappalyzer-mini"):
-            missing.append("wappalyzer-mini")
+        missing = [
+            name for name, info in MODULE_REGISTRY.items()
+            if info.get("default") and not mm.is_installed(name)
+        ]
         if missing:
-            warnings.append("Default modules not installed — run: python3 netwatch.py --setup")
+            warnings.append(
+                "Default modules not installed "
+                f"({', '.join(missing)}) — run: python3 netwatch.py --setup"
+            )
     except Exception:
         warnings.append("Default modules not installed — run: python3 netwatch.py --setup")
 
@@ -201,10 +204,10 @@ def signal_handler(signum, frame):
 
 class NetWatch:
     """Main NetWatch application controller.
-    
+
     Coordinates all components: scanning, banner grabbing, EOL checking,
     and user interface.
-    
+
     Attributes:
         settings: Application configuration
         console: Rich console for output
@@ -217,7 +220,7 @@ class NetWatch:
         last_scan_result: Most recent scan results
         last_eol_data: Most recent EOL check results
     """
-    
+
     def __init__(self, args: argparse.Namespace):
         """Initialize NetWatch application.
 
@@ -245,7 +248,7 @@ class NetWatch:
         self._announce_host_profile(use_safe_mode)
         self.display = Display(settings=self.settings, console=self.console, use_color=not args.no_color)
         self.menu = Menu(settings=self.settings, console=self.console)
-        
+
         # Initialize components
         self.scanner = PortScanOrchestrator(settings=self.settings)
         self.banner_grabber = BannerGrabber(settings=self.settings)
@@ -253,6 +256,7 @@ class NetWatch:
         self.auth_tester = AuthTester(settings=self.settings, enabled=args.check_defaults)
         self.cache = CacheManager(settings=self.settings)
         self.eol_checker = EOLChecker(cache=self.cache, settings=self.settings)
+        self.hardware_eol = HardwareEOLDatabase()
         self.exporter = ReportExporter(settings=self.settings)
 
         # New security modules
@@ -280,10 +284,10 @@ class NetWatch:
 
         # CLI arguments
         self.args = args
-        
+
         # Setup signal handlers
         signal.signal(signal.SIGINT, signal_handler)
-        
+
         # Check privileges
         self.has_privileges = check_privileges()
 
@@ -313,21 +317,21 @@ class NetWatch:
 
     def run(self) -> int:
         """Run the main application loop.
-        
+
         Returns:
             Exit code (0 for success)
         """
         # Direct target scan mode
         if self.args.target:
             return self.direct_scan(self.args.target, self.args.profile or "QUICK")
-        
+
         # Show banner
         self.display.show_banner()
-        
+
         # Check privileges
         if not self.has_privileges:
             self.display.show_warning("Running without root/admin privileges - some features may be limited")
-        
+
         # Main menu loop
         while True:
             try:
@@ -368,24 +372,24 @@ class NetWatch:
             except Exception as e:
                 logging.error(f"Error in main loop: {e}", exc_info=True)
                 self.display.show_error(str(e))
-        
+
         return 0
-    
+
     def direct_scan(self, target: str, profile: str) -> int:
         """Run a direct scan without menu.
-        
+
         Args:
             target: Target to scan
             profile: Scan profile to use
-            
+
         Returns:
             Exit code
         """
         self.display.show_banner()
-        
+
         if not self.has_privileges:
             self.display.show_warning("Running without root/admin privileges")
-        
+
         # Validate target
         is_valid, error = validate_cidr(target)
 
@@ -477,35 +481,35 @@ class NetWatch:
         target = self.get_target()
         if not target:
             return
-        
+
         if self.menu.confirm_scan("QUICK", target):
             self.perform_scan(target, "QUICK")
-    
+
     def run_full_scan(self) -> None:
         """Run a full comprehensive scan."""
         if not self.has_privileges:
             self.display.show_warning("Full scan works best with root/admin privileges")
-        
+
         target = self.get_target()
         if not target:
             return
-        
+
         if self.menu.confirm_scan("FULL", target):
             self.perform_scan(target, "FULL")
-    
+
     def run_stealth_scan(self) -> None:
         """Run a stealth SYN scan."""
         if not self.has_privileges:
             self.display.show_error("Stealth scan requires root/admin privileges")
             return
-        
+
         target = self.get_target()
         if not target:
             return
-        
+
         if self.menu.confirm_scan("STEALTH", target):
             self.perform_scan(target, "STEALTH")
-    
+
     def _run_profile_scan(self, profile: str) -> None:
         """Run a scan with the given profile."""
         target = self.get_target()
@@ -601,23 +605,23 @@ class NetWatch:
 
         if self.menu.confirm_scan(profile, target):
             self.perform_scan(target, profile)
-    
+
     def get_target(self) -> str:
         """Get scan target, using local subnet as default.
-        
+
         Returns:
             Target string or empty string if cancelled
         """
         default_target = get_local_subnet() or self.settings.default_target
         return self.menu.prompt_target(default_target)
-    
+
     def perform_scan(self, target: str, profile: str) -> int:
         """Execute network scan and EOL checks.
-        
+
         Args:
             target: Target to scan
             profile: Scan profile to use
-            
+
         Returns:
             Exit code
         """
@@ -625,40 +629,40 @@ class NetWatch:
             # Set up progress callback
             with self.display.create_progress() as progress:
                 scan_task = progress.add_task(f"[cyan]Scanning {target}...", total=100)
-                
+
                 def update_progress(msg: str, pct: float):
                     progress.update(scan_task, description=f"[cyan]{msg}", completed=pct)
-                
+
                 self.scanner.set_progress_callback(update_progress)
-                
+
                 # Perform scan
                 self.console.print(f"\n[bold blue]Starting {profile} scan on {target}...[/bold blue]")
                 scan_result = self.scanner.scan(target, profile)
-                
+
                 progress.update(scan_task, completed=100)
-            
+
             # Store result
             self.last_scan_result = scan_result
             self.last_target = target
-            
+
             # Show basic results
             self.display.show_scan_info(scan_result)
-            
+
             if not scan_result.hosts:
                 self.console.print("[yellow]No hosts found.[/yellow]")
                 return 0
-            
+
             # Grab banners for services with versions
             self.grab_banners(scan_result)
-            
+
             # Run NSE scans if enabled
             if self.nse_scanner:
                 self.run_nse_scans(scan_result)
-            
+
             # Check for default credentials if enabled
             if self.auth_tester and self.auth_tester.enabled:
                 self.run_auth_tests(scan_result)
-            
+
             # Check EOL status
             self.check_eol_status(scan_result)
 
@@ -715,75 +719,93 @@ class NetWatch:
                     )
 
             return 0
-            
+
         except Exception as e:
             logging.error(f"Scan failed: {e}", exc_info=True)
             self.display.show_error(f"Scan failed: {e}")
             return 1
-    
+
     def grab_banners(self, scan_result: ScanResult) -> None:
         """Grab banners from discovered services.
-        
+
         Args:
             scan_result: Scan results containing hosts and ports
         """
+        banner_targets = [
+            (ip, p.port)
+            for ip, host in scan_result.hosts.items()
+            for p in host.ports.values()
+            if p.state == 'open'
+        ]
+        if not banner_targets:
+            return
+
+        def apply_banner_result(ip: str, port_num: int, banner_result) -> None:
+            host = scan_result.hosts.get(ip)
+            if not host or port_num not in host.ports:
+                return
+
+            port_info = host.ports[port_num]
+            port_info.banner = banner_result.raw_banner
+            port_info.http_fingerprint = banner_result.http_fingerprint
+
+            # Update service/version from banner if detected
+            if banner_result.parsed_name:
+                port_info.service = banner_result.parsed_name
+            if banner_result.parsed_version:
+                port_info.version = banner_result.parsed_version
+
+            # Log HTTP fingerprint info if found
+            if banner_result.http_fingerprint:
+                fp = banner_result.http_fingerprint
+                if fp.device_type or fp.firmware_version:
+                    logger.info(
+                        f"HTTP fingerprint {ip}:{port_num}: "
+                        f"{fp.device_type} {fp.model} "
+                        f"Firmware: {fp.firmware_version}"
+                    )
+
         with self.display.create_progress() as progress:
-            total_ports = sum(len(h.ports) for h in scan_result.hosts.values())
-            banner_task = progress.add_task("[cyan]Grabbing banners...", total=total_ports)
-            
-            for ip, host in scan_result.hosts.items():
-                if not host.ports:
-                    continue
-                
-                open_ports = [p.port for p in host.ports.values() if p.state == 'open']
-                if not open_ports:
-                    continue
-                
-                # Grab banners concurrently
-                banners = self.banner_grabber.grab_banners(ip, open_ports)
-                
-                # Update port info with banner data
-                for port_num, banner_result in banners.items():
-                    if port_num in host.ports:
-                        host.ports[port_num].banner = banner_result.raw_banner
-                        host.ports[port_num].http_fingerprint = banner_result.http_fingerprint
-                        
-                        # Update service/version from banner if detected
-                        if banner_result.parsed_name:
-                            host.ports[port_num].service = banner_result.parsed_name
-                        if banner_result.parsed_version:
-                            host.ports[port_num].version = banner_result.parsed_version
-                        
-                        # Log HTTP fingerprint info if found
-                        if banner_result.http_fingerprint:
-                            fp = banner_result.http_fingerprint
-                            if fp.device_type or fp.firmware_version:
-                                logger.info(f"HTTP fingerprint {ip}:{port_num}: "
-                                          f"{fp.device_type} {fp.model} "
-                                          f"Firmware: {fp.firmware_version}")
-                
-                progress.update(banner_task, advance=len(open_ports))
-    
+            banner_task = progress.add_task(
+                "[cyan]Grabbing banners...",
+                total=len(banner_targets),
+            )
+            max_workers = min(self.settings.max_threads, len(banner_targets))
+            with ThreadPoolExecutor(max_workers=max_workers) as executor:
+                future_to_target = {
+                    executor.submit(self.banner_grabber.grab_banner, ip, port_num): (ip, port_num)
+                    for ip, port_num in banner_targets
+                }
+
+                for future in as_completed(future_to_target):
+                    ip, port_num = future_to_target[future]
+                    try:
+                        apply_banner_result(ip, port_num, future.result())
+                    except Exception as e:
+                        logger.error(f"Exception grabbing banner from {ip}:{port_num}: {e}")
+                    finally:
+                        progress.update(banner_task, advance=1)
+
     def check_eol_status(self, scan_result: ScanResult) -> None:
         """Check EOL status for discovered services.
-        
+
         Args:
             scan_result: Scan results
         """
         self.last_eol_data = {}
-        
+
         with self.display.create_progress() as progress:
             total_services = sum(
-                1 for h in scan_result.hosts.values() 
-                for p in h.ports.values() 
+                1 for h in scan_result.hosts.values()
+                for p in h.ports.values()
                 if p.service and p.service != 'unknown'
             )
-            
+
             eol_task = progress.add_task("[cyan]Checking EOL status...", total=max(total_services, 1))
-            
+
             for ip, host in scan_result.hosts.items():
                 self.last_eol_data[ip] = {}
-                
+
                 for port_num, port in host.ports.items():
                     if not port.service or port.service == 'unknown':
                         continue
@@ -838,38 +860,38 @@ class NetWatch:
                     if eol_status and eol_status.product and eol_status.product != "unknown":
                         self.last_eol_data[ip][port_num] = eol_status
                     progress.update(eol_task, advance=1)
-    
+
     def run_nse_scans(self, scan_result: ScanResult) -> None:
         """Run NSE (Nmap Scripting Engine) scans on discovered hosts.
-        
+
         Args:
             scan_result: Scan results containing hosts and ports
         """
         if not self.nse_scanner:
             return
-        
+
         print("Running NSE enhanced detection...")
-        
+
         for ip, host in scan_result.hosts.items():
             if not host.ports:
                 continue
-            
+
             # Get list of open ports as string
             open_ports = [str(p.port) for p in host.ports.values() if p.state == 'open']
             if not open_ports:
                 continue
-            
+
             port_string = ",".join(open_ports)
-            
+
             try:
                 # Run NSE scan
                 nse_info = self.nse_scanner.scan_host(ip, ports=port_string)
                 self.nse_results[ip] = nse_info
-                
+
                 # Update host info with NSE findings
                 if nse_info.os_guesses:
                     host.os_guess = nse_info.os_guesses[0]
-                
+
                 # Update port info with NSE script results
                 for script_name, results in nse_info.nse_results.items():
                     for nse_result in results:
@@ -884,7 +906,7 @@ class NetWatch:
                                         host=ip, port=port_num
                                     )
                                 host.ports[port_num].http_fingerprint.raw_html = nse_result.output
-                            
+
                             elif script_name == "http-server-header" and nse_result.output:
                                 # Update service version from server header
                                 server = nse_result.output.strip()
@@ -892,29 +914,29 @@ class NetWatch:
                                     name, version = server.split("/", 1)
                                     host.ports[port_num].service = name.lower()
                                     host.ports[port_num].version = version.split()[0]
-                
+
                 logger.info(f"NSE scan completed for {ip}")
-                
+
             except Exception as e:
                 logger.error(f"NSE scan failed for {ip}: {e}")
-    
+
     def run_auth_tests(self, scan_result: ScanResult) -> None:
         """Check for default credentials on discovered services.
-        
+
         WARNING: Only runs if auth testing is explicitly enabled.
-        
+
         Args:
             scan_result: Scan results containing hosts and ports
         """
         if not self.auth_tester or not self.auth_tester.enabled:
             return
-        
+
         print("WARNING: Testing default credentials (only test your own devices!)")
-        
+
         for ip, host in scan_result.hosts.items():
             if not host.ports:
                 continue
-            
+
             # Detect device type from existing data
             device_type = None
             for port in host.ports.values():
@@ -928,25 +950,25 @@ class NetWatch:
                         if brand in service_lower:
                             device_type = brand.replace("-", " ").title()
                             break
-            
+
             # Get open ports for testable services
             open_ports = [p.port for p in host.ports.values() if p.state == 'open']
-            
+
             # Run auth tests
             auth_results = self.auth_tester.check_all_services(
                 ip, open_ports, device_type
             )
-            
+
             if auth_results:
                 self.auth_results[ip] = auth_results
-                
+
                 # Generate and display report (only confirmed/likely findings)
                 report = self.auth_tester.generate_report(auth_results)
                 if report["vulnerable_services"]:
                     print(f"CRITICAL: {ip} has default credentials on ports: {report['vulnerable_services']}")
                 if report.get("suspected_services"):
                     print(f"LOW: {ip} — possible default credentials on ports (unconfirmed): {report['suspected_services']}")
-    
+
     def _arp_sweep(self, target: str) -> List[str]:
         """Send ARP requests to all hosts in target; return list of IP strings.
 
@@ -1151,6 +1173,172 @@ class NetWatch:
 
         # Findings are emitted solely by _eol_to_findings() to avoid duplicates.
         return findings
+
+    def _run_hardware_eol_pipeline(self, scan_result: ScanResult) -> List[Finding]:
+        """Check detected hardware models against the bundled hardware EOL DB."""
+        findings: List[Finding] = []
+        if not self.last_device_identities or not self.hardware_eol.available():
+            return findings
+
+        for ip, identity in self.last_device_identities.items():
+            model = identity.model or ""
+            if not model:
+                continue
+
+            host_info = scan_result.hosts.get(ip)
+            vendor = identity.vendor or (host_info.vendor if host_info else "")
+            hardware_version = self._hardware_version_for_host(host_info)
+
+            try:
+                match = self.hardware_eol.lookup(
+                    vendor=vendor,
+                    model=model,
+                    part_number=model,
+                    hardware_version=hardware_version,
+                )
+            except Exception as e:
+                logger.debug(f"Hardware EOL lookup failed for {ip} {vendor} {model}: {e}")
+                continue
+
+            if match:
+                findings.append(
+                    self._hardware_eol_to_finding(
+                        ip=ip,
+                        match=match,
+                        hardware_version=hardware_version,
+                    )
+                )
+
+        return findings
+
+    @staticmethod
+    def _hardware_version_for_host(host_info) -> str:
+        """Return the first hardware revision extracted by HTTP fingerprinting."""
+        if not host_info:
+            return ""
+        for port in host_info.ports.values():
+            fp = getattr(port, "http_fingerprint", None)
+            hardware_version = getattr(fp, "hardware_version", "") if fp else ""
+            if hardware_version:
+                return str(hardware_version).strip()
+        return ""
+
+    def _hardware_eol_to_finding(
+        self,
+        ip: str,
+        match: HardwareEOLMatch,
+        hardware_version: str = "",
+    ) -> Finding:
+        """Convert a hardware lifecycle database match to a NetWatch finding."""
+        label = " ".join(
+            part for part in [
+                match.vendor or match.canonical_vendor,
+                match.model,
+            ]
+            if part
+        )
+        source = match.source_url or "NetWatch hardware EOL database"
+        eol_date = match.security_eol_date
+        eol_date_text = f" on {eol_date}" if eol_date else ""
+        hardware_seen = hardware_version or "not detected"
+        record_ids = ", ".join(
+            str(record.get("id"))
+            for record in match.records[:5]
+            if record.get("id")
+        )
+        if len(match.records) > 5:
+            record_ids += f", +{len(match.records) - 5} more"
+
+        tags = [
+            "eol",
+            "hardware-eol",
+            "lifecycle",
+            match.canonical_vendor,
+            match.model_key,
+            f"hardware-id:{match.dedup_id}",
+        ]
+
+        if match.mixed:
+            status_counts = (
+                match.model_summary.get("status_counts", {})
+                if match.model_summary else {}
+            )
+            return Finding(
+                severity=Severity.LOW,
+                title=match.finding_title,
+                host=ip,
+                port=0,
+                protocol="",
+                category="Hardware Lifecycle",
+                description=(
+                    f"{label} appears in hardware lifecycle data with mixed support "
+                    f"status across {match.record_count} known revision/region record(s). "
+                    f"Status counts: {status_counts or 'not available'}."
+                ),
+                explanation=(
+                    "Some hardware revisions or regional variants of this model are "
+                    "listed as unsupported, but NetWatch could not confirm this "
+                    "device's exact revision from scan data."
+                ),
+                recommendation=(
+                    "1. Check the device label or admin UI for the exact hardware "
+                    "revision and region.\n"
+                    "2. Compare that revision with the vendor support page.\n"
+                    "3. If the exact revision no longer receives security updates, "
+                    "update firmware where possible or plan replacement."
+                ),
+                evidence=(
+                    f"Model summary: {match.dedup_id}; records: {match.record_count}; "
+                    f"hardware revision seen: {hardware_seen}; source: {source}"
+                ),
+                tags=tags,
+                confidence=Confidence.SUSPECTED,
+            )
+
+        risk_to_severity = {
+            "critical": Severity.HIGH,
+            "high": Severity.HIGH,
+            "medium": Severity.MEDIUM,
+            "low": Severity.LOW,
+            "info": Severity.INFO,
+        }
+        severity = risk_to_severity.get(match.risk, Severity.HIGH)
+        confidence = Confidence.CONFIRMED if match.selected_record else Confidence.LIKELY
+        reason = match.reason or "Vendor lifecycle data says security updates have ended."
+
+        return Finding(
+            severity=severity,
+            title=match.finding_title,
+            host=ip,
+            port=0,
+            protocol="",
+            category="Hardware Lifecycle",
+            description=(
+                f"{label} matched hardware lifecycle data with status "
+                f"{match.status!r}. {reason}"
+            ),
+            explanation=(
+                f"Vendor lifecycle data indicates this hardware no longer receives "
+                f"security updates{eol_date_text}. New vulnerabilities may remain "
+                "unpatched even if the device's exposed services are configured "
+                "correctly."
+            ),
+            recommendation=(
+                "1. Confirm the exact model, hardware revision, and region from the "
+                "device label or admin UI.\n"
+                "2. Apply the newest firmware still offered by the vendor.\n"
+                "3. If the vendor no longer provides security updates for this "
+                "hardware, plan replacement or isolate the device on a restricted "
+                "network segment."
+            ),
+            evidence=(
+                f"Hardware EOL records: {record_ids or match.dedup_id}; "
+                f"security EOL date: {eol_date or 'unknown'}; "
+                f"hardware revision seen: {hardware_seen}; source: {source}"
+            ),
+            tags=tags,
+            confidence=confidence,
+        )
 
     # Patterns to extract SSH daemon product + version from banners
     _SSH_CVE_PATTERNS = [
@@ -1425,6 +1613,18 @@ class NetWatch:
                 except Exception as e:
                     logger.debug(f"Identity→EOL pipeline error: {e}")
 
+            # ---- Hardware lifecycle EOL database ----
+            # Full assessments run hybrid passive/active identity fusion after
+            # this method, so defer hardware matching there to use the richer
+            # vendor/model data. Direct scans do not have a later fusion phase.
+            if self.last_device_identities and not getattr(self.args, "full_assessment", False):
+                progress.update(task, description="[cyan]Checking hardware lifecycle...")
+                try:
+                    hardware_findings = self._run_hardware_eol_pipeline(scan_result)
+                    self.finding_registry.add_all(hardware_findings)
+                except Exception as e:
+                    logger.debug(f"Hardware EOL pipeline error: {e}")
+
             # Print device identification summary table
             if self.last_device_identities:
                 self._print_device_id_table()
@@ -1615,19 +1815,19 @@ class NetWatch:
         if not self.last_scan_result:
             self.display.show_error("No scan results to export")
             return
-        
+
         format_type = self.menu.prompt_export_format()
-        
+
         # Generate default filename
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         default_name = f"netwatch_scan_{timestamp}.{format_type}"
-        
+
         filename = self.menu.prompt_filename(default_name)
-        
+
         # Ensure correct extension
         if not filename.endswith(f".{format_type}"):
             filename += f".{format_type}"
-        
+
         # Export (pass findings if available)
         findings_arg = self.finding_registry if self.finding_registry.total() > 0 else None
         scan_diff = None
@@ -1644,23 +1844,23 @@ class NetWatch:
             risk_scores=self.last_risk_scores or None,
             scan_diff=scan_diff,
         )
-        
+
         if success:
             self.display.show_success(f"Report exported to {filename}")
         else:
             self.display.show_error("Failed to export report")
-    
+
     def calculate_stats(
-        self, 
+        self,
         scan_result: ScanResult,
         eol_data: Dict[str, Dict[int, EOLStatus]]
     ) -> Dict[str, int]:
         """Calculate summary statistics.
-        
+
         Args:
             scan_result: Scan results
             eol_data: EOL status data
-            
+
         Returns:
             Dictionary of statistics
         """
@@ -1673,7 +1873,7 @@ class NetWatch:
             'ok': 0,
             'unknown': 0,
         }
-        
+
         for host_eol in eol_data.values():
             for eol_status in host_eol.values():
                 if eol_status.level.value == 'CRITICAL':
@@ -1698,10 +1898,10 @@ class NetWatch:
         stats['device_types'] = dict(type_counts.most_common())
 
         return stats
-    
+
     def run_full_assessment(self, target: str) -> int:
         """Run comprehensive security assessment on target.
-        
+
         This performs a complete workflow:
         1. Discovery scan (ping sweep)
         2. Port scanning on discovered hosts
@@ -1711,16 +1911,16 @@ class NetWatch:
         6. EOL status checking
         7. Security analysis (SSL/TLS, SSH, DNS, UPnP, CVE, JA3S)
         8. Auto-export to HTML with timestamp
-        
+
         Args:
             target: Target network range (e.g., "192.168.*.*")
-            
+
         Returns:
             Exit code
         """
         from datetime import datetime
         from core.input_parser import parse_target_input
-        
+
         # Estimate scan size and warn user
         targets = parse_target_input(target)
         estimated_hosts = 0
@@ -1734,7 +1934,7 @@ class NetWatch:
                 estimated_hosts += 100
             else:
                 estimated_hosts += 1
-        
+
         # Show warning for large scans
         if estimated_hosts > 1000:
             self.console.print("\n" + "="*70)
@@ -1751,11 +1951,11 @@ class NetWatch:
             self.console.print("  - Export results to HTML")
             self.console.print(f"\n[bold red]Estimated time: 2-6 hours[/bold red]")
             self.console.print("="*70 + "\n")
-            
+
             # In non-interactive mode, we need to use a different approach
             # For now, we'll proceed with the scan but show prominent warnings
             self.console.print("[yellow]Proceeding with full assessment...[/yellow]\n")
-        
+
         start_time = datetime.now()
 
         try:
@@ -1798,7 +1998,7 @@ class NetWatch:
                 return 0
 
             self.console.print(f"[green]Discovered {len(discovered_hosts)} active hosts[/green]\n")
-            
+
             # Phase 2: Port Scanning
             self.console.print("[bold blue]Phase 2/8: Port Scanning[/bold blue]")
             profile = self.args.profile if hasattr(self.args, 'profile') else "QUICK"
@@ -1808,12 +2008,12 @@ class NetWatch:
             scan_result.end_time = datetime.now()
             self.last_scan_result = scan_result
             self.console.print(f"[green]Port scan complete — {len(scan_result.hosts)} hosts with open ports[/green]\n")
-            
+
             # Phase 3: Banner Grabbing
             self.console.print("[bold blue]Phase 3/8: Service Banner Grabbing[/bold blue]")
             self.grab_banners(scan_result)
             self.console.print("[green]Banner grabbing complete[/green]\n")
-            
+
             # Phase 4: NSE Scripts (if scanner available)
             if self.nse_scanner:
                 self.console.print("[bold blue]Phase 4/8: NSE Enhanced Detection[/bold blue]")
@@ -1821,7 +2021,7 @@ class NetWatch:
                 self.console.print("[green]NSE scanning complete[/green]\n")
             else:
                 self.console.print("[dim]Phase 4/8: NSE Enhanced Detection (skipped - enable with --nse)[/dim]\n")
-            
+
             # Phase 5: Default Credentials
             if self.auth_tester and self.auth_tester.enabled:
                 self.console.print("[bold blue]Phase 5/8: Default Credential Testing[/bold blue]")
@@ -1830,7 +2030,7 @@ class NetWatch:
                 self.console.print("[green]Credential testing complete[/green]\n")
             else:
                 self.console.print("[dim]Phase 5/8: Default Credential Testing (skipped - enable with --check-defaults)[/dim]\n")
-            
+
             # Phase 6: EOL Check
             self.console.print("[bold blue]Phase 6/8: EOL Status Check[/bold blue]")
             self.check_eol_status(scan_result)
@@ -1900,6 +2100,17 @@ class NetWatch:
                 logger.debug(f"Hybrid fusion error: {e}")
                 self.console.print(f"[dim]Hybrid fusion skipped: {e}[/dim]\n")
 
+            # Hardware lifecycle checks use the best device identities now
+            # available. In full assessments this means post-hybrid identities;
+            # if hybrid was skipped, it falls back to active-scan identities.
+            try:
+                hardware_findings = self._run_hardware_eol_pipeline(scan_result)
+                if hardware_findings:
+                    self.finding_registry.add_all(hardware_findings)
+                    self.finding_registry.deduplicate()
+            except Exception as e:
+                logger.debug(f"Hardware EOL pipeline error: {e}")
+
             # Show results
             self.display.show_scan_info(scan_result)
             self.display.show_results_table(scan_result, self.last_eol_data)
@@ -1959,11 +2170,11 @@ class NetWatch:
                     self.console.print(
                         f"  {ip:<18} {risk.score:>3}/100  {risk.label}"
                     )
-            
+
             # Auto-export to HTML with timestamp
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             filename = f"netwatch_assessment_{timestamp}.html"
-            
+
             self.console.print(f"\n[bold blue]Exporting report to {filename}...[/bold blue]")
             success = self.exporter.export_html(
                 scan_result,
@@ -1993,9 +2204,9 @@ class NetWatch:
                 self.console.print(f"[bold green]Report also saved to: {report_path}[/bold green]")
             else:
                 self.console.print("[red]Failed to export report[/red]")
-            
+
             return 0
-            
+
         except KeyboardInterrupt:
             self.console.print("\n[yellow]Assessment interrupted by user[/yellow]")
             return 130
@@ -2007,7 +2218,7 @@ class NetWatch:
 
 def create_parser() -> argparse.ArgumentParser:
     """Create and configure argument parser.
-    
+
     Returns:
         Configured ArgumentParser
     """
@@ -2044,50 +2255,50 @@ examples:
   %(prog)s --update-cache                           Refresh CVE/EOL data
         """
     )
-    
+
     parser.add_argument(
         '--target',
         metavar='TARGET',
         help='Target to scan (IP, CIDR, or hostname). Skips menu and scans directly.'
     )
-    
+
     parser.add_argument(
         '--profile',
         choices=['QUICK', 'FULL', 'STEALTH', 'PING', 'IOT', 'SMB'],
         default='QUICK',
         help='Scan profile: QUICK, FULL, STEALTH, PING, IOT, SMB (default: QUICK)'
     )
-    
+
     parser.add_argument(
         '--verbose',
         action='store_true',
         help='Enable verbose/debug logging'
     )
-    
+
     parser.add_argument(
         '--no-color',
         action='store_true',
         help='Disable colored output'
     )
-    
+
     parser.add_argument(
         '--nse',
         action='store_true',
         help='Enable NSE (Nmap Scripting Engine) enhanced detection'
     )
-    
+
     parser.add_argument(
         '--check-defaults',
         action='store_true',
         help='Check for default passwords (use with caution, only on your own devices)'
     )
-    
+
     parser.add_argument(
         '-i', '--interactive',
         action='store_true',
         help='Launch interactive mode for guided scanning'
     )
-    
+
     parser.add_argument(
         '--full-assessment',
         action='store_true',
@@ -2194,7 +2405,7 @@ examples:
         '--download',
         metavar='MODULE',
         default=None,
-        help='Download a data module (e.g. credentials-full, snmp-community, or "all")'
+        help='Download a data module (e.g. credentials-full, snmp-community, hardware-eol, or "all")'
     )
 
     parser.add_argument(
@@ -2486,11 +2697,15 @@ def run_setup_wizard(db_size: str = "normal") -> int:
     except Exception as e:
         console.print(f"  [yellow]![/yellow] CVE download error: {e}")
 
-    # ---- Step 5: Download default modules (credentials-mini, wappalyzer-mini) ----
+    # ---- Step 5: Download default modules ----
     console.print("\n[bold]Step 5/6: Downloading default data modules[/bold]")
     try:
         mm = ModuleManager()
-        for mod_name in ("credentials-mini", "wappalyzer-mini"):
+        default_modules = [
+            name for name, info in MODULE_REGISTRY.items()
+            if info.get("default")
+        ]
+        for mod_name in default_modules:
             ok = mm.download(mod_name, quiet=False)
             if ok:
                 console.print(f"  [green]✓[/green] {mod_name}")
@@ -2785,7 +3000,7 @@ def main() -> int:
             print("Error: --full-assessment requires a target. Use --target to specify.")
             print("Example: python netwatch.py --full-assessment --target 192.168.1.0/24")
             return 1
-        
+
         # Auto-enable NSE and auth testing for full assessment
         if not args.nse:
             print("[INFO] Auto-enabling NSE scripts for full assessment")
@@ -2794,16 +3009,16 @@ def main() -> int:
             print("[INFO] Auto-enabling default credential testing for full assessment")
             print("[WARNING] Only test devices you own!")
             args.check_defaults = True
-        
+
         # Run full assessment
         app = NetWatch(args)
         return app.run_full_assessment(args.target)
-    
+
     # Check if target was provided for direct scan
     if args.target:
         app = NetWatch(args)
         return app.direct_scan(args.target, args.profile)
-    
+
     # Run standard application (interactive menu)
     app = NetWatch(args)
     return app.run()

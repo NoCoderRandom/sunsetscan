@@ -1,0 +1,92 @@
+{
+  "metadata": {
+    "schema": "netwatch.hardware_eol.v1",
+    "generated_at": "2026-04-30T15:20:54",
+    "as_of_date": "2026-04-30",
+    "source_policy": "Built only from downloaded files under output/RawData. The legacy combined output/eol_database.json is intentionally ignored.",
+    "raw_root": "output/RawData",
+    "warning_days": 365,
+    "status_definitions": {
+      "unsupported": "A support/security/EOL date has passed.",
+      "unsupported_status_only": "Vendor/source marks the product discontinued or unsupported but no exact date is available.",
+      "support_ending_soon": "Security/support end date is within 365 days.",
+      "end_of_sale": "Sales ended, but support appears to continue or is unknown.",
+      "vendor_eol_but_supported": "Vendor EOL date passed, but a later support date is listed.",
+      "supported": "Support date is in the future.",
+      "supported_status_only": "Vendor/source marks the product active/supported without exact dates.",
+      "unknown": "No usable lifecycle signal was found."
+    }
+  },
+  "summary": {
+    "total_records": 30071,
+    "total_model_summaries": 17498,
+    "records_not_receiving_security_updates": 19306,
+    "records_receiving_security_updates": 1648,
+    "records_unknown_security_update_status": 9117,
+    "vendors": {
+      "asus": 393,
+      "asustor": 89,
+      "brother": 278,
+      "canon": 142,
+      "cisco": 14635,
+      "cudy": 110,
+      "dahua": 71,
+      "dlink": 438,
+      "edimax": 79,
+      "epson": 47,
+      "hp": 884,
+      "huawei": 378,
+      "linksys": 4398,
+      "mercusys": 107,
+      "mikrotik": 543,
+      "netgear": 3001,
+      "tenda": 114,
+      "totolink": 125,
+      "tplink": 3773,
+      "ubiquiti": 114,
+      "zyxel": 352
+    },
+    "lifecycle_statuses": {
+      "end_of_sale": 2646,
+      "support_ending_soon": 889,
+      "supported": 39,
+      "supported_status_only": 35,
+      "unknown": 6522,
+      "unsupported": 16679,
+      "unsupported_status_only": 2627,
+      "vendor_eol_but_supported": 634
+    },
+    "risks": {
+      "critical": 16679,
+      "high": 2627,
+      "info": 74,
+      "low": 3280,
+      "medium": 889,
+      "unknown": 6522
+    },
+    "device_classes": {
+      "accessory": 145,
+      "controller": 36,
+      "ip_camera": 479,
+      "modem": 19,
+      "module": 581,
+      "nas": 1548,
+      "network_adapter": 803,
+      "network_device": 6377,
+      "network_switch": 3436,
+      "powerline": 334,
+      "printer": 1348,
+      "router": 4709,
+      "service": 556,
+      "smart_home": 653,
+      "software": 7721,
+      "wireless_access_point": 1326
+    },
+    "model_summary_statuses": {
+      "mixed": 3736,
+      "supported": 1050,
+      "unknown": 2677,
+      "unsupported": 10035
+    }
+  }
+}

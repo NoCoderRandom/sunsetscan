@@ -128,6 +128,10 @@ class DeviceMap:
         Returns:
             True if saved successfully.
         """
+        if not self._dirty:
+            logger.debug("Device map unchanged; skipping save")
+            return True
+
         try:
             self._path.parent.mkdir(parents=True, exist_ok=True)
             serialized = {

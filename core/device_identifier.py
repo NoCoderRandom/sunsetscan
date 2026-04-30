@@ -83,7 +83,8 @@ class DeviceIdentity:
         if self.model:
             parts.append(self.model)
         if self.version:
-            parts.append(f"v{self.version}")
+            version = self.version
+            parts.append(version if version.lower().startswith("v") else f"v{version}")
         return " — ".join(parts) if parts else "Unknown Device"
 
     def to_dict(self) -> dict:
@@ -152,6 +153,8 @@ _HOSTNAME_PATTERNS: List[Tuple[re.Pattern, str, str, Optional[re.Pattern]]] = [
     # Hikvision cameras
     (re.compile(r'Hikvision|DS-2[A-Z]{2}', re.I), "Hikvision", "Camera",
      re.compile(r'(DS-2[A-Z]{2}\S+)', re.I)),
+    # Pi-hole DNS resolvers
+    (re.compile(r'Pi[-_ ]?hole', re.I), "", "DNS Resolver", None),
     # Generic NAS hint
     (re.compile(r'^Nas$', re.I), "", "NAS", None),
 ]
@@ -275,7 +278,7 @@ _CERT_PATTERNS: List[Tuple[re.Pattern, str, str]] = [
 
 # HTTP Server header patterns -> (vendor, device_type, model_group_index_or_None)
 _HTTP_SERVER_PATTERNS: List[Tuple[re.Pattern, str, str]] = [
-    (re.compile(r'HP HTTP Server;\s*HP\s+(.+)', re.I),         "HP",          "Printer"),
+    (re.compile(r'HP HTTP Server;\s*HP\s+([^;]+)', re.I),      "HP",          "Printer"),
     (re.compile(r'Brother/(\S+)', re.I),                        "Brother",     "Printer"),
     (re.compile(r'Canon HTTP Server', re.I),                    "Canon",       "Printer"),
     (re.compile(r'Epson_Linux', re.I),                          "Epson",       "Printer"),
@@ -586,6 +589,11 @@ class DeviceIdentifier:
                     "ASUS": ("ASUS", "Router"),
                     "Synology": ("Synology", "NAS"),
                     "QNAP": ("QNAP", "NAS"),
+                    "HP": ("HP", "Printer"),
+                    "Brother": ("Brother", "Printer"),
+                    "Canon": ("Canon", "Printer"),
+                    "Epson": ("Epson", "Printer"),
+                    "Xerox": ("Xerox", "Printer"),
                     "Ubiquiti": ("Ubiquiti", "Network Device"),
                     "Cisco": ("Cisco", "Network Device"),
                     "MikroTik": ("MikroTik", "Router"),
@@ -631,6 +639,8 @@ class DeviceIdentifier:
                             h_model = ""
                             if m.lastindex and m.lastindex >= 1:
                                 h_model = m.group(1).strip()
+                                if pat_vendor == "HP":
+                                    h_model = re.sub(r'\s+-\s+[A-Z0-9._-]{4,}$', '', h_model).strip()
                             results.append(_Evidence(
                                 source="http_fingerprint_header",
                                 vendor=self._normalize_vendor(pat_vendor),
@@ -688,6 +698,8 @@ class DeviceIdentifier:
                     model = ""
                     if m.lastindex and m.lastindex >= 1:
                         model = m.group(1).strip()
+                        if vendor == "HP":
+                            model = re.sub(r'\s+-\s+[A-Z0-9._-]{4,}$', '', model).strip()
                     ev = _Evidence(
                         source="http_server_header",
                         vendor=self._normalize_vendor(vendor),
@@ -1122,6 +1134,16 @@ class DeviceIdentifier:
                 (re.compile(r'Synology\s+DSM', re.I),    "Synology", "NAS",     ""),
                 (re.compile(r'samba\s+smbd', re.I),      "",         "NAS",     ""),
                 (re.compile(r'MikroTik\s+(\S+)', re.I),  "MikroTik", "Router",  ""),
+                (re.compile(r'OpenWrt', re.I),            "",         "Router",  ""),
+                (
+                    re.compile(
+                        r'HP\s+((?:DeskJet|LaserJet|OfficeJet|ENVY|Smart Tank|PageWide)[\w -]+?)\s+printer',
+                        re.I,
+                    ),
+                    "HP",
+                    "Printer",
+                    "",
+                ),
                 (re.compile(r'APC\s+(\S+)', re.I),       "APC",      "UPS",     ""),
                 (re.compile(r'iLO\s+(\d)', re.I),        "HPE",      "Server",  ""),
                 (re.compile(r'IPMI', re.I),              "",          "Server",  ""),

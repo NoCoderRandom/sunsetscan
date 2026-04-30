@@ -18,3 +18,4 @@ netwatch text eol=lf
 *.jpg   binary
 *.gif   binary
 *.ico   binary
+*.gz    binary
