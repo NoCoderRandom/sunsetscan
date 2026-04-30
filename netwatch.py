@@ -576,7 +576,7 @@ class NetWatch:
         self.console.print()
         if Confirm.ask("Download a module?", default=False):
             name = Prompt.ask(
-                "Module name (or 'all')",
+                "Module name (or 'all', e.g. hardware-eol)",
                 default="all"
             )
             if name.lower() == "all":

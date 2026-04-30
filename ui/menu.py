@@ -288,6 +288,7 @@ and produces a professional HTML security report.
   netwatch --instant                               Instant device scan
   netwatch --modules                               Show data modules
   netwatch --download all                          Download all modules
+  netwatch --download hardware-eol                 Download hardware EOL DB
   netwatch --history                               View past scans
   netwatch --diff                                  Compare last two scans
   netwatch -i                                      Interactive mode
