@@ -22,6 +22,12 @@ reports/
 data/hardware_eol/*.json
 !data/hardware_eol/netwatch_hardware_eol_summary.json
 
+# Raw vendor lifecycle source files copied from nhedb-scraper for local analysis.
+# These may include vendor PDFs/exports and must never be committed or uploaded.
+data/hardware_eol/raw_vendor_sources/
+data/hardware_eol/local_backups/
+data/hardware_eol/experiments/
+
 # NetWatch backups
 netwatch_backup_*/
 
