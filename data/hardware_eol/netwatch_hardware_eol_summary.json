@@ -15,6 +15,12 @@
       "supported": "Support date is in the future.",
       "supported_status_only": "Vendor/source marks the product active/supported without exact dates.",
       "unknown": "No usable lifecycle signal was found."
+    },
+    "license": {
+      "name": "Creative Commons Attribution-NonCommercial 4.0 International",
+      "spdx": "CC-BY-NC-4.0",
+      "url": "https://creativecommons.org/licenses/by-nc/4.0/",
+      "notice": "This database is licensed under the Creative Commons Attribution-NonCommercial 4.0 International License (CC BY-NC 4.0)."
     }
   },
   "summary": {
