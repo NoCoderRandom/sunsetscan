@@ -121,7 +121,7 @@ MODULE_REGISTRY: Dict[str, Dict[str, Any]] = {
         "parser": "_parse_mac_oui",
     },
     "hardware-eol": {
-        "description": "Network hardware lifecycle/EOL database",
+        "description": "Network hardware lifecycle/EOL database (CC BY-NC 4.0)",
         "source": "NoCoderRandom/netwatch",
         "url": "https://raw.githubusercontent.com/NoCoderRandom/netwatch/main/data/hardware_eol/netwatch_hardware_eol.json.gz",
         "local_path": "data/cache/hardware_eol/netwatch_hardware_eol.json",
@@ -129,6 +129,8 @@ MODULE_REGISTRY: Dict[str, Dict[str, Any]] = {
         "default": True,
         "parser": "_parse_hardware_eol",
         "binary": True,
+        "license": "CC BY-NC 4.0",
+        "license_url": "https://creativecommons.org/licenses/by-nc/4.0/",
     },
 }
 
@@ -592,6 +594,10 @@ class ModuleManager:
                 "local_path": info["local_path"],
                 "entries": _entry_count(parsed, module_name),
             }
+            if info.get("license"):
+                self._meta[module_name]["license"] = info["license"]
+            if info.get("license_url"):
+                self._meta[module_name]["license_url"] = info["license_url"]
             self._save_meta()
 
             if not quiet:

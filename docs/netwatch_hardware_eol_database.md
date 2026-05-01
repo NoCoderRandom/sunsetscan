@@ -89,6 +89,7 @@ NetWatch distributes the database as a compressed module:
 - source artifact in the repo: `data/hardware_eol/netwatch_hardware_eol.json.gz`
 - installed cache path: `data/cache/hardware_eol/netwatch_hardware_eol.json`
 - module name: `hardware-eol`
+- license: CC BY-NC 4.0, see `data/hardware_eol/LICENSE.md`
 
 Users install or refresh it through the existing module system:
 
@@ -101,3 +102,13 @@ python3 netwatch.py --update-cache
 The expanded full JSON is intentionally not committed because it is larger than
 GitHub's normal single-file limit. Scans read the installed cache file and do
 not contact GitHub.
+
+## License
+
+This database is licensed under the Creative Commons Attribution-NonCommercial
+4.0 International License (CC BY-NC 4.0).
+
+This license applies only to the NetWatch hardware EOL database artifacts. The
+NetWatch repository and application code remain licensed under MIT.
+
+License text: https://creativecommons.org/licenses/by-nc/4.0/

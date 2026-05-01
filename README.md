@@ -6,6 +6,7 @@
 [![Python 3.9+](https://img.shields.io/badge/python-3.9%2B-blue?logo=python&logoColor=white)](https://www.python.org/downloads/)
 [![Platform](https://img.shields.io/badge/platform-Linux%20%7C%20WSL2-brightgreen?logo=linux)](https://github.com)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
+[![Hardware DB License: CC BY-NC 4.0](https://img.shields.io/badge/hardware%20DB-CC%20BY--NC%204.0-lightgrey)](data/hardware_eol/LICENSE.md)
 [![Requires: nmap](https://img.shields.io/badge/requires-nmap-orange)](https://nmap.org)
 [![CVE data: OSV.dev](https://img.shields.io/badge/CVE%20data-OSV.dev-blueviolet)](https://osv.dev)
 [![EOL data: endoflife.date](https://img.shields.io/badge/EOL%20data-endoflife.date-yellow)](https://endoflife.date)
@@ -260,7 +261,7 @@ NetWatch includes 9 downloadable data modules that extend detection capabilities
 | `snmp-community` | danielmiessler/SecLists | Extended SNMP community strings |
 | `camera-credentials` | many-passwords/many-passwords | IP camera/DVR/NVR default passwords |
 | `mac-oui` | IEEE Standards Association | MAC prefix vendor database (default) |
-| `hardware-eol` | NoCoderRandom/netwatch | Hardware lifecycle/EOL database (default) |
+| `hardware-eol` | NoCoderRandom/netwatch | Hardware lifecycle/EOL database (default; database license: CC BY-NC 4.0) |
 
 ```bash
 netwatch --modules                # Show module status
@@ -607,7 +608,9 @@ NetWatch is **entirely non-destructive and read-only**. It does not exploit vuln
 
 ## License
 
-MIT License — Copyright 2024 NetWatch Contributors
+The NetWatch repository and application code are licensed under the MIT License — Copyright 2024 NetWatch Contributors.
+
+Only the NetWatch hardware EOL database artifacts under `data/hardware_eol/` are licensed separately: This database is licensed under the Creative Commons Attribution-NonCommercial 4.0 International License (CC BY-NC 4.0). See [data/hardware_eol/LICENSE.md](data/hardware_eol/LICENSE.md).
 
 ---
 
