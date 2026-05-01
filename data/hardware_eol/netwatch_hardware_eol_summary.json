@@ -1,7 +1,7 @@
 {
   "metadata": {
     "schema": "netwatch.hardware_eol.v1",
-    "generated_at": "2026-04-30T15:20:54",
+    "generated_at": "2026-05-01T03:16:00",
     "as_of_date": "2026-04-30",
     "source_policy": "Built only from downloaded files under output/RawData. The legacy combined output/eol_database.json is intentionally ignored.",
     "raw_root": "output/RawData",
@@ -14,21 +14,28 @@
       "vendor_eol_but_supported": "Vendor EOL date passed, but a later support date is listed.",
       "supported": "Support date is in the future.",
       "supported_status_only": "Vendor/source marks the product active/supported without exact dates.",
-      "unknown": "No usable lifecycle signal was found."
+      "unknown": "No usable lifecycle signal was found.",
+      "lifecycle_review": "Official source indicates EOL/discontinued/lifecycle concern, but security-update status is not confirmed or may conflict with firmware evidence."
     },
     "license": {
       "name": "Creative Commons Attribution-NonCommercial 4.0 International",
       "spdx": "CC-BY-NC-4.0",
       "url": "https://creativecommons.org/licenses/by-nc/4.0/",
       "notice": "This database is licensed under the Creative Commons Attribution-NonCommercial 4.0 International License (CC BY-NC 4.0)."
+    },
+    "interpretation_policy": {
+      "name": "cautious_policy_v2",
+      "purpose": "Prevent EOL/discontinued/end-of-sale sources from being treated as confirmed loss of security updates unless the source explicitly proves that.",
+      "changed_records": 1759,
+      "rule": "Ambiguous status-only/discontinued/vendor EOL-list records become lifecycle_review with unknown receives_security_updates."
     }
   },
   "summary": {
     "total_records": 30071,
     "total_model_summaries": 17498,
-    "records_not_receiving_security_updates": 19306,
+    "records_not_receiving_security_updates": 17547,
     "records_receiving_security_updates": 1648,
-    "records_unknown_security_update_status": 9117,
+    "records_unknown_security_update_status": 10876,
     "vendors": {
       "asus": 393,
       "asustor": 89,
@@ -54,19 +61,20 @@
     },
     "lifecycle_statuses": {
       "end_of_sale": 2646,
+      "lifecycle_review": 1759,
       "support_ending_soon": 889,
       "supported": 39,
       "supported_status_only": 35,
       "unknown": 6522,
-      "unsupported": 16679,
-      "unsupported_status_only": 2627,
+      "unsupported": 16600,
+      "unsupported_status_only": 947,
       "vendor_eol_but_supported": 634
     },
     "risks": {
-      "critical": 16679,
-      "high": 2627,
+      "critical": 16600,
+      "high": 947,
       "info": 74,
-      "low": 3280,
+      "low": 5039,
       "medium": 889,
       "unknown": 6522
     },
@@ -89,10 +97,11 @@
       "wireless_access_point": 1326
     },
     "model_summary_statuses": {
-      "mixed": 3736,
+      "lifecycle_review": 1706,
+      "mixed": 3728,
       "supported": 1050,
       "unknown": 2677,
-      "unsupported": 10035
+      "unsupported": 8337
     }
   }
 }

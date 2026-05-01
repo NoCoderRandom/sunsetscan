@@ -230,8 +230,8 @@ NetWatch runs 12 security checker modules during a full assessment:
 - **CVE correlation** — maps detected service versions to known CVEs using OSV.dev
 - **EOL checking** — 150+ products checked against endoflife.date
 - **Hardware lifecycle checking** — downloadable NetWatch hardware EOL database
-  flags routers, switches, NAS, cameras, printers, and access points that no
-  longer receive security updates
+  flags routers, switches, NAS, cameras, printers, and access points with
+  confirmed unsupported status or vendor lifecycle signals that need review
 - **JA3S TLS fingerprinting** — identifies server software from TLS handshake signatures
 - Fully offline during scans — no external API calls are made during scanning. endoflife.date, OSV.dev, and GitHub module sources are only contacted by `--setup`, `--update-cache`, and `--download`. Scans work without any internet connection as long as caches are populated.
 - Weekly CVE refresh, monthly EOL refresh — controlled by you

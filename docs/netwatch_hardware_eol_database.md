@@ -34,8 +34,26 @@ Each record has:
   important risk date.
 - `lifecycle.receives_security_updates`: `false`, `true`, or `null`.
 - `lifecycle.status`: one of `unsupported`, `unsupported_status_only`,
-  `support_ending_soon`, `end_of_sale`, `vendor_eol_but_supported`,
-  `supported`, `supported_status_only`, or `unknown`.
+  `support_ending_soon`, `lifecycle_review`, `end_of_sale`,
+  `vendor_eol_but_supported`, `supported`, `supported_status_only`, or
+  `unknown`.
+
+NetWatch applies a cautious interpretation policy after the raw database is
+built:
+
+```bash
+python3 tools/apply_hardware_eol_policy.py \
+  --input output/netwatch_hardware_eol/netwatch_hardware_eol.json \
+  --output-json data/hardware_eol/netwatch_hardware_eol.json \
+  --output-gz data/hardware_eol/netwatch_hardware_eol.json.gz \
+  --output-summary data/hardware_eol/netwatch_hardware_eol_summary.json
+```
+
+The policy preserves official vendor source data but downgrades ambiguous
+EOL/discontinued/end-of-sale signals to `lifecycle_review` unless the source
+explicitly proves that security, firmware, vulnerability, or support updates
+have stopped. This avoids false hard warnings when a vendor EOL list conflicts
+with product-specific firmware releases.
 
 Recommended NetWatch behavior:
 
@@ -81,6 +99,10 @@ For broad model matches where NetWatch does not know the exact hardware
 revision, use `model_summaries`. A summary with `overall_status: "mixed"` means
 some revisions or regions are unsupported and NetWatch should ask the user to
 confirm the exact device revision before making a hard replacement call.
+
+A summary with `overall_status: "lifecycle_review"` means the model appears in
+vendor lifecycle data, but NetWatch should emit a low-severity review finding
+instead of saying security updates have definitely stopped.
 
 ## NetWatch Distribution
 

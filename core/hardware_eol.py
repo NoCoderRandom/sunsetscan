@@ -52,6 +52,7 @@ class HardwareEOLMatch:
     selected_record: Optional[Dict[str, Any]] = None
     model_summary: Optional[Dict[str, Any]] = None
     mixed: bool = False
+    review_required: bool = False
     confidence: str = "medium"
 
     @property
@@ -157,7 +158,8 @@ class HardwareEOLDatabase:
         """Look up hardware lifecycle data for a detected vendor/model.
 
         Returns a match only when NetWatch should emit a finding: unsupported
-        hardware or mixed lifecycle status that needs manual revision checks.
+        hardware, mixed lifecycle status, or a vendor lifecycle signal that
+        needs manual review.
         """
         if not model:
             return None
@@ -393,6 +395,10 @@ class HardwareEOLDatabase:
             r for r in focused
             if (r.get("lifecycle") or {}).get("receives_security_updates") is not False
         ]
+        review_records = [
+            r for r in focused
+            if str((r.get("lifecycle") or {}).get("status") or "") == "lifecycle_review"
+        ]
 
         if unsupported and not supported_or_unknown:
             selected = focused[0] if len(focused) == 1 else None
@@ -420,6 +426,11 @@ class HardwareEOLDatabase:
         if unsupported and supported_or_unknown:
             return self._mixed_match(
                 vendor, model, vendor_key, model_key, match_type, summary, focused
+            )
+
+        if review_records:
+            return self._review_match(
+                vendor, model, vendor_key, model_key, match_type, summary, review_records
             )
 
         return None
@@ -460,6 +471,11 @@ class HardwareEOLDatabase:
                 vendor, model, vendor_key, model_key, match_type, summary, records
             )
 
+        if overall_status == "lifecycle_review":
+            return self._review_match(
+                vendor, model, vendor_key, model_key, match_type, summary, records
+            )
+
         return None
 
     def _mixed_match(
@@ -493,6 +509,38 @@ class HardwareEOLDatabase:
             selected_record=None,
             model_summary=summary,
             mixed=True,
+            review_required=False,
+            confidence="low",
+        )
+
+    def _review_match(
+        self,
+        vendor: str,
+        model: str,
+        vendor_key: str,
+        model_key: str,
+        match_type: str,
+        summary: Optional[Dict[str, Any]],
+        records: List[Dict[str, Any]],
+    ) -> HardwareEOLMatch:
+        display_vendor = (summary or {}).get("vendor") or vendor or vendor_key
+        display_model = (summary or {}).get("model") or model
+        title = f"{display_vendor} {display_model} lifecycle review needed".strip()
+        return HardwareEOLMatch(
+            vendor=vendor,
+            model=model,
+            canonical_vendor=vendor_key,
+            model_key=model_key,
+            match_type=match_type,
+            status="lifecycle_review",
+            risk=str((summary or {}).get("strongest_risk") or self._strongest_risk(records)),
+            finding_title=title,
+            receives_security_updates=None,
+            records=records,
+            selected_record=records[0] if len(records) == 1 else None,
+            model_summary=summary,
+            mixed=False,
+            review_required=True,
             confidence="low",
         )
 
@@ -509,6 +557,8 @@ class HardwareEOLDatabase:
                 return str(netwatch["finding_title"])
         display_vendor = (summary or {}).get("vendor") or vendor
         display_model = (summary or {}).get("model") or model
+        if (summary or {}).get("overall_status") == "lifecycle_review":
+            return f"{display_vendor} {display_model} lifecycle review needed".strip()
         return f"{display_vendor} {display_model} no longer receives security updates".strip()
 
     @staticmethod
@@ -517,6 +567,7 @@ class HardwareEOLDatabase:
             "unsupported",
             "unsupported_status_only",
             "support_ending_soon",
+            "lifecycle_review",
             "vendor_eol_but_supported",
             "end_of_sale",
             "supported",

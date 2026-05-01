@@ -1257,6 +1257,53 @@ class NetWatch:
             match.model_key,
             f"hardware-id:{match.dedup_id}",
         ]
+        if match.status == "lifecycle_review" or match.review_required:
+            tags.append("lifecycle-review")
+
+            status_counts = (
+                match.model_summary.get("status_counts", {})
+                if match.model_summary else {}
+            )
+            reason = match.reason or (
+                "Vendor lifecycle data needs review before NetWatch can confirm "
+                "whether security updates have stopped."
+            )
+            return Finding(
+                severity=Severity.LOW,
+                title=match.finding_title,
+                host=ip,
+                port=0,
+                protocol="",
+                category="Hardware Lifecycle",
+                description=(
+                    f"{label} appears in vendor lifecycle data, but the source "
+                    "does not prove that firmware or security updates have stopped. "
+                    f"{reason}"
+                ),
+                explanation=(
+                    "Vendors use terms such as EOL, discontinued, end of sale, "
+                    "and support ended differently. NetWatch keeps this as a "
+                    "review finding instead of a confirmed unsupported finding "
+                    "when the evidence is ambiguous or may conflict with firmware "
+                    "release data."
+                ),
+                recommendation=(
+                    "1. Check the vendor firmware/support page for this exact "
+                    "model and hardware revision.\n"
+                    "2. Confirm whether recent firmware or security signature "
+                    "updates are still available.\n"
+                    "3. If vendor security updates have truly stopped, plan "
+                    "replacement or isolate the device on a restricted network "
+                    "segment."
+                ),
+                evidence=(
+                    f"Hardware lifecycle records: {record_ids or match.dedup_id}; "
+                    f"status counts: {status_counts or 'not available'}; "
+                    f"hardware revision seen: {hardware_seen}; source: {source}"
+                ),
+                tags=tags,
+                confidence=Confidence.SUSPECTED,
+            )
 
         if match.mixed:
             status_counts = (
