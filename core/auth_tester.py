@@ -20,7 +20,8 @@ import json
 import logging
 import re
 import os
-from dataclasses import dataclass, field
+import time
+from dataclasses import dataclass
 from enum import Enum
 from typing import Dict, List, Optional, Tuple
 from pathlib import Path
@@ -78,6 +79,21 @@ class AuthTestResult:
     error: str = ""
     confidence: AuthConfidence = AuthConfidence.FAILED
     notes: str = ""
+    lockout_suspected: bool = False
+    credential_sent: bool = False
+
+
+@dataclass(frozen=True)
+class AuthCredentialCandidate:
+    """A single lockout-safe default credential candidate."""
+
+    username: str
+    password: str
+    vendor: str = ""
+    models: Tuple[str, ...] = ()
+    services: Tuple[str, ...] = ()
+    source: str = ""
+    notes: str = ""
 
 
 # ---------------------------------------------------------------------------
@@ -101,6 +117,14 @@ _FAILURE_KEYWORDS = [
     "wrong password", "bad credentials", "error", "failed",
     "please enter", "enter your password", "enter your username",
 ]
+
+_LOCKOUT_KEYWORDS = [
+    "too many attempts", "too many login attempts", "account locked",
+    "temporarily locked", "try again later", "rate limit", "rate-limit",
+    "blocked", "locked out",
+]
+
+_LOCKOUT_STATUS_CODES = {423, 429}
 
 # Keywords that indicate a login form is still being displayed —
 # even without an explicit error message.
@@ -126,6 +150,11 @@ def _has_failure_keywords(body: str) -> bool:
     return any(kw in bl for kw in _FAILURE_KEYWORDS)
 
 
+def _has_lockout_keywords(body: str) -> bool:
+    bl = _body_lower(body)
+    return any(kw in bl for kw in _LOCKOUT_KEYWORDS)
+
+
 def _has_login_form(body: str) -> bool:
     bl = _body_lower(body)
     return any(marker.lower() in bl for marker in _LOGIN_FORM_MARKERS)
@@ -143,6 +172,16 @@ def _new_cookies(baseline_cookies: dict, new_cookies: dict) -> dict:
     return {k: v for k, v in new_cookies.items() if k not in baseline_cookies}
 
 
+def _mark_lockout_if_seen(
+    result: AuthTestResult,
+    status_code: Optional[int] = None,
+    body: str = "",
+) -> None:
+    if status_code in _LOCKOUT_STATUS_CODES or _has_lockout_keywords(body):
+        result.lockout_suspected = True
+        result.error = result.error or "Possible account lockout/rate limit response"
+
+
 # ---------------------------------------------------------------------------
 # Main class
 # ---------------------------------------------------------------------------
@@ -151,8 +190,8 @@ class AuthTester:
     """Tests for default credentials on network services.
 
     This class checks common services (HTTP, SSH, Telnet) for default
-    or weak credentials. It uses a database of known default passwords
-    for various device manufacturers.
+    factory-default credentials. It uses a small source-backed database and
+    requires exact device/model matches by default to avoid account lockouts.
 
     WARNING: Only use on devices you own or have explicit permission
     to test. Unauthorized access testing is illegal.
@@ -223,59 +262,152 @@ class AuthTester:
             logger.error(f"Failed to load credentials DB: {e}")
             return {"credentials": {}}
 
+    @staticmethod
+    def _normalise(value: str) -> str:
+        return re.sub(r"[^a-z0-9]+", "", (value or "").lower())
+
+    def _vendor_matches(
+        self,
+        requested: str,
+        vendor: str,
+        aliases: Optional[List[str]] = None,
+    ) -> bool:
+        requested_norm = self._normalise(requested)
+        if not requested_norm:
+            return False
+        options = [vendor] + list(aliases or [])
+        return any(
+            self._normalise(option) and self._normalise(option) in requested_norm
+            for option in options
+        )
+
+    def _model_matches(self, context: str, models: List[str]) -> bool:
+        context_norm = self._normalise(context)
+        if not context_norm or not models:
+            return False
+        for model in models:
+            model_norm = self._normalise(model)
+            if model_norm and (model_norm in context_norm or context_norm in model_norm):
+                return True
+        return False
+
+    def _candidate_from_entry(
+        self,
+        vendor: str,
+        entry: Dict,
+        default_models: List[str],
+    ) -> Optional[AuthCredentialCandidate]:
+        if entry.get("testable", True) is False:
+            return None
+        password = entry.get("password")
+        if password is None:
+            return None
+        username = entry.get("username", "admin")
+        if not username and not password:
+            return None
+        return AuthCredentialCandidate(
+            username=str(username),
+            password=str(password),
+            vendor=vendor,
+            models=tuple(entry.get("models") or default_models or ()),
+            services=tuple(entry.get("services") or ()),
+            source=entry.get("source_url", "") or entry.get("source", ""),
+            notes=entry.get("notes", ""),
+        )
+
+    def get_credential_candidates(
+        self,
+        device_type: Optional[str] = None,
+        model: Optional[str] = None,
+        service: Optional[str] = None,
+    ) -> List[AuthCredentialCandidate]:
+        """Return exact-context default credential candidates.
+
+        The safe default is intentionally strict: no generic password list is
+        used unless explicitly enabled in Settings. Built-in candidates require
+        a vendor match and a model/family match, so a router or printer does not
+        receive unrelated guesses that can trigger lockouts.
+        """
+        credentials = self.credentials_db.get("credentials", {})
+        context = " ".join(part for part in (device_type, model) if part)
+        candidates: List[AuthCredentialCandidate] = []
+
+        if self.settings.auth_require_known_device and not context.strip():
+            return []
+
+        for vendor, vendor_data in credentials.items():
+            aliases = vendor_data.get("aliases", [])
+            common_models = vendor_data.get("common_models", [])
+            vendor_match = self._vendor_matches(context, vendor, aliases)
+            model_match = self._model_matches(context, common_models)
+            if not (vendor_match or model_match):
+                continue
+
+            raw_entries = vendor_data.get("credential_sets")
+            if raw_entries is None:
+                raw_entries = [
+                    {
+                        "username": vendor_data.get("username", "admin"),
+                        "password": password,
+                        "models": common_models,
+                    }
+                    for password in vendor_data.get("passwords", [])
+                ]
+
+            for raw_entry in raw_entries:
+                entry_models = raw_entry.get("models") or common_models
+                if self.settings.auth_require_known_device and not self._model_matches(context, entry_models):
+                    continue
+                candidate = self._candidate_from_entry(vendor, raw_entry, entry_models)
+                if candidate is None:
+                    continue
+                if service and candidate.services and service not in candidate.services:
+                    continue
+                candidates.append(candidate)
+
+        if self.settings.auth_allow_module_credentials and device_type:
+            for entry in self.module_manager.get_credentials(vendor=device_type):
+                pair_model = entry.get("model", "")
+                if self.settings.auth_require_known_device and not self._model_matches(context, [pair_model]):
+                    continue
+                candidates.append(AuthCredentialCandidate(
+                    username=entry.get("username", ""),
+                    password=entry.get("password", ""),
+                    vendor=entry.get("vendor", device_type),
+                    models=(pair_model,) if pair_model else (),
+                    source="external credential module",
+                ))
+
+        if self.settings.auth_allow_generic_fallback and not candidates:
+            generic = self.credentials_db.get("generic", {})
+            for entry in generic.get("credential_sets", []):
+                candidate = self._candidate_from_entry("generic", entry, [])
+                if candidate:
+                    candidates.append(candidate)
+
+        seen = set()
+        deduped: List[AuthCredentialCandidate] = []
+        for candidate in candidates:
+            key = (candidate.username, candidate.password)
+            if key in seen:
+                continue
+            seen.add(key)
+            deduped.append(candidate)
+            if len(deduped) >= self.settings.auth_max_attempts_per_host:
+                break
+
+        return deduped
+
     def get_credentials_for_device(
         self,
         device_type: str,
+        model: Optional[str] = None,
     ) -> List[Tuple[str, str]]:
-        """Get default credentials for a device type.
-
-        Uses ModuleManager for vendor-aware credential selection:
-        1. If vendor is known, get vendor-specific credentials first
-        2. Then add generic/universal defaults
-        3. Falls back to built-in credentials_db if no modules installed
-
-        Args:
-            device_type: Device manufacturer/type (e.g., "TP-Link", "ASUS", "Hikvision")
-
-        Returns:
-            List of (username, password) tuples
-        """
-        credentials = []
-        seen = set()
-
-        # Try ModuleManager first (external data sources)
-        module_creds = self.module_manager.get_credentials(vendor=device_type)
-        if module_creds:
-            for entry in module_creds:
-                pair = (entry.get("username", ""), entry.get("password", ""))
-                if pair not in seen and (pair[0] or pair[1]):
-                    seen.add(pair)
-                    credentials.append(pair)
-            logger.debug(
-                f"ModuleManager returned {len(credentials)} credentials "
-                f"for vendor={device_type!r}"
-            )
-            return credentials
-
-        # Fallback to built-in credentials_db (data/default_credentials.json)
-        if device_type in self.credentials_db.get("credentials", {}):
-            creds = self.credentials_db["credentials"][device_type]
-            username = creds.get("username", "admin")
-            for password in creds.get("passwords", []):
-                pair = (username, password)
-                if pair not in seen:
-                    seen.add(pair)
-                    credentials.append(pair)
-
-        generic = self.credentials_db.get("generic", {})
-        for username in generic.get("common_usernames", ["admin"]):
-            for password in generic.get("common_passwords", ["admin"]):
-                pair = (username, password)
-                if pair not in seen:
-                    seen.add(pair)
-                    credentials.append(pair)
-
-        return credentials
+        """Backward-compatible tuple view of safe credential candidates."""
+        return [
+            (candidate.username, candidate.password)
+            for candidate in self.get_credential_candidates(device_type, model=model)
+        ]
 
     # ------------------------------------------------------------------
     # Internal request helpers
@@ -401,6 +533,7 @@ class AuthTester:
             return result
 
         # ---- Step 2: Authenticated request ------------------------------------
+        result.credential_sent = True
         try:
             response = requests.get(
                 url,
@@ -425,6 +558,7 @@ class AuthTester:
         elif response.status_code == 401:
             result.notes = "Server correctly rejected credentials (401)"
         else:
+            _mark_lockout_if_seen(result, response.status_code, response.text or "")
             result.error = f"Unexpected status after auth: {response.status_code}"
 
         return result
@@ -484,6 +618,7 @@ class AuthTester:
             return result
 
         # ---- Step 2: Authenticated request ------------------------------------
+        result.credential_sent = True
         try:
             response = requests.get(
                 url,
@@ -504,6 +639,7 @@ class AuthTester:
         elif response.status_code == 401:
             result.notes = "Server correctly rejected digest credentials"
         else:
+            _mark_lockout_if_seen(result, response.status_code, response.text or "")
             result.error = f"Unexpected status after digest auth: {response.status_code}"
 
         return result
@@ -550,6 +686,7 @@ class AuthTester:
         login_url = f"{protocol}://{host}:{port}/login.cgi"
         encoded = base64.b64encode(f"{username}:{password}".encode()).decode()
 
+        result.credential_sent = True
         try:
             response = requests.post(
                 login_url,
@@ -593,6 +730,7 @@ class AuthTester:
                 else:
                     result.notes = f"ASUS form redirected back to login: {location}"
             else:
+                _mark_lockout_if_seen(result, response.status_code, body)
                 result.notes = f"ASUS login.cgi returned non-JSON status {response.status_code}"
 
         return result
@@ -642,6 +780,7 @@ class AuthTester:
             f"&format=cookie"
         )
 
+        result.credential_sent = True
         try:
             response = requests.get(
                 auth_url,
@@ -669,6 +808,7 @@ class AuthTester:
             )
         else:
             code = data.get("error", {}).get("code", "unknown")
+            _mark_lockout_if_seen(result, response.status_code, response.text or "")
             result.notes = f"Synology API rejected credentials (error code {code})"
 
         return result
@@ -755,6 +895,7 @@ class AuthTester:
         response = None
         for fields in field_sets:
             try:
+                result.credential_sent = True
                 response = requests.post(
                     login_url,
                     data=fields,
@@ -786,6 +927,7 @@ class AuthTester:
 
         # Non-success HTTP status for a form POST is almost always a failure
         if response.status_code not in (200, 301, 302, 303):
+            _mark_lockout_if_seen(result, response.status_code, response.text or "")
             result.notes = f"Form POST returned HTTP {response.status_code}"
             return result
 
@@ -803,6 +945,9 @@ class AuthTester:
         # Failure keywords → disqualify
         if _has_failure_keywords(body):
             disqualifiers_found.append("Failure/error keywords found in response body")
+        if _has_lockout_keywords(body):
+            result.lockout_suspected = True
+            disqualifiers_found.append("Possible lockout/rate-limit response")
 
         # Login form still present → disqualify
         if _has_login_form(body):
@@ -870,6 +1015,8 @@ class AuthTester:
         port: int,
         device_type: str,
         test_method: str = "basic",
+        model: Optional[str] = None,
+        candidates: Optional[List[AuthCredentialCandidate]] = None,
     ) -> List[AuthTestResult]:
         """Test all default credentials for a device type.
 
@@ -888,16 +1035,25 @@ class AuthTester:
             logger.warning("Auth testing is disabled. Enable with enabled=True")
             return results
 
-        credentials = self.get_credentials_for_device(device_type)
-        logger.info(f"Testing {len(credentials)} credential combinations for {device_type}")
+        candidates = candidates or self.get_credential_candidates(
+            device_type=device_type,
+            model=model,
+            service=self.TESTABLE_SERVICES.get(port),
+        )
+        logger.info(
+            "Testing %d bounded credential candidate(s) for %s %s",
+            len(candidates),
+            device_type,
+            model or "",
+        )
 
-        for username, password in credentials:
+        for candidate in candidates[:self.settings.auth_max_attempts_per_service]:
             if test_method == "basic":
-                result = self.test_http_basic(host, port, username, password)
+                result = self.test_http_basic(host, port, candidate.username, candidate.password)
             elif test_method == "digest":
-                result = self.test_http_digest(host, port, username, password)
+                result = self.test_http_digest(host, port, candidate.username, candidate.password)
             elif test_method == "form":
-                result = self.test_http_form(host, port, username, password)
+                result = self.test_http_form(host, port, candidate.username, candidate.password)
             else:
                 logger.error(f"Unknown test method: {test_method}")
                 continue
@@ -908,14 +1064,25 @@ class AuthTester:
                 AuthConfidence.CONFIRMED, AuthConfidence.LIKELY
             ):
                 break  # No point testing more credentials
+            if result.lockout_suspected:
+                logger.warning("Possible lockout detected on %s:%s; stopping auth tests", host, port)
+                break
 
         return results
+
+    def _wait_between_attempts(self, attempts_used: int) -> None:
+        if attempts_used <= 0:
+            return
+        delay = max(float(self.settings.auth_delay_seconds), 0.0)
+        if delay:
+            time.sleep(delay)
 
     def check_all_services(
         self,
         host: str,
         open_ports: List[int],
         device_type: Optional[str] = None,
+        model: Optional[str] = None,
     ) -> Dict[int, List[AuthTestResult]]:
         """Check all open services for default credentials.
 
@@ -939,21 +1106,50 @@ class AuthTester:
             logger.warning("Auth testing is disabled")
             return all_results
 
+        host_attempts = 0
+
         for port in open_ports:
             if port not in self.TESTABLE_SERVICES:
                 continue
+            if host_attempts >= self.settings.auth_max_attempts_per_host:
+                break
 
             service = self.TESTABLE_SERVICES[port]
 
             if service in ("http", "https", "http-alt", "https-alt"):
                 test_device = device_type or "generic"
                 port_results: List[AuthTestResult] = []
+                candidates = self.get_credential_candidates(
+                    device_type=test_device,
+                    model=model,
+                    service=service,
+                )
+                if not candidates:
+                    logger.info(
+                        "Skipping default credential audit for %s:%s: "
+                        "no exact device/model credential candidate",
+                        host,
+                        port,
+                    )
+                    continue
+                candidates = candidates[:max(
+                    0,
+                    min(
+                        self.settings.auth_max_attempts_per_service,
+                        self.settings.auth_max_attempts_per_host - host_attempts,
+                    ),
+                )]
+                if not candidates:
+                    break
 
                 # 1. HTTP Basic Auth (with baseline check — prevents false positives)
+                self._wait_between_attempts(host_attempts)
                 basic_results = self.test_device_defaults(
-                    host, port, test_device, test_method="basic"
+                    host, port, test_device, test_method="basic",
+                    model=model, candidates=candidates,
                 )
                 port_results.extend(basic_results)
+                host_attempts += sum(1 for r in basic_results if r.credential_sent)
 
                 # If Basic confirmed success, stop here
                 if any(
@@ -962,12 +1158,24 @@ class AuthTester:
                 ):
                     all_results[port] = port_results
                     continue
+                if any(r.lockout_suspected for r in basic_results):
+                    all_results[port] = port_results
+                    break
+                if host_attempts >= self.settings.auth_max_attempts_per_host:
+                    all_results[port] = port_results
+                    break
 
                 # 2. HTTP Digest Auth (with baseline check)
+                self._wait_between_attempts(host_attempts)
                 digest_results = self.test_device_defaults(
-                    host, port, test_device, test_method="digest"
+                    host, port, test_device, test_method="digest",
+                    model=model, candidates=candidates[:max(
+                        0,
+                        self.settings.auth_max_attempts_per_host - host_attempts,
+                    )],
                 )
                 port_results.extend(digest_results)
+                host_attempts += sum(1 for r in digest_results if r.credential_sent)
 
                 if any(
                     r.success and r.confidence in (AuthConfidence.CONFIRMED, AuthConfidence.LIKELY)
@@ -975,15 +1183,29 @@ class AuthTester:
                 ):
                     all_results[port] = port_results
                     continue
+                if any(r.lockout_suspected for r in digest_results):
+                    all_results[port] = port_results
+                    break
+                if host_attempts >= self.settings.auth_max_attempts_per_host:
+                    all_results[port] = port_results
+                    break
 
                 # 3. Form-based login (handles ASUS, Synology, and generic web UIs)
+                self._wait_between_attempts(host_attempts)
                 form_results = self.test_device_defaults(
-                    host, port, test_device, test_method="form"
+                    host, port, test_device, test_method="form",
+                    model=model, candidates=candidates[:max(
+                        0,
+                        self.settings.auth_max_attempts_per_host - host_attempts,
+                    )],
                 )
                 port_results.extend(form_results)
+                host_attempts += sum(1 for r in form_results if r.credential_sent)
 
                 if port_results:
                     all_results[port] = port_results
+                if any(r.lockout_suspected for r in form_results):
+                    break
 
         return all_results
 
@@ -1015,7 +1237,9 @@ class AuthTester:
         _suspected_ports_seen: set = set()
 
         for port, port_results in results.items():
-            report["total_attempts"] += len(port_results)
+            report["total_attempts"] += sum(
+                1 for result in port_results if getattr(result, "credential_sent", False)
+            )
 
             for result in port_results:
                 if not result.success:

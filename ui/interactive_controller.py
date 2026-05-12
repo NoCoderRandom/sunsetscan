@@ -382,7 +382,7 @@ class InteractiveController:
         menu = """
 [1] Host Operations      - Scan/analyze specific hosts
 [2] Bulk Operations      - Actions on all discovered hosts
-[3] Full Assessment      - Complete security audit + HTML report
+[3] Full Assessment      - Complete audit + HTML report (password audit optional)
 [4] Network Menu         - Rescan, change target, discover
 [5] Results & History    - View, export, compare results
 [6] Modules & Data       - Download data modules, update cache
@@ -418,7 +418,7 @@ class InteractiveController:
 [1] Quick port scan      - Scan common ports
 [2] Deep scan            - Full scan with OS detection
 [3] Grab banners         - Get service banners
-[4] Check credentials    - Test default passwords
+[4] Default password audit - Opt-in, exact-model, lockout-safe checks
 [5] Check EOL            - Check software EOL status
 [6] View details         - Show all collected info
 [0] Back to main menu
@@ -456,7 +456,7 @@ class InteractiveController:
 [4] SMB scan all         - Windows shares + EternalBlue check
 [5] Grab all banners     - Banner grab from all hosts
 [6] Check all EOL        - EOL check on all services
-[7] Check all credentials- Test for default passwords
+[7] Default password audit- Opt-in, exact-model, lockout-safe checks
 [8] Generate report      - Create network summary report
 [0] Back to main menu
         """
@@ -596,11 +596,12 @@ class InteractiveController:
         menu = f"""
 Current Settings:
   NSE Scripts: {'Enabled' if self.nse_scanner else 'Disabled'}
-  Auth Testing: {'Enabled' if self.auth_tester and self.auth_tester.enabled else 'Disabled'}
+  Default Password Audit: {'Enabled' if self.auth_tester and self.auth_tester.enabled else 'Disabled'}
+  Auth Attempt Limits: {self.settings.auth_max_attempts_per_host}/host, {self.settings.auth_max_attempts_per_service}/service, {self.settings.auth_delay_seconds:.1f}s delay
   Timeout: {self.settings.banner_timeout}s
 
 [1] Toggle NSE scripts   - {'Disable' if self.nse_scanner else 'Enable'}
-[2] Toggle auth testing  - {'Disable' if self.auth_tester and self.auth_tester.enabled else 'Enable'}
+[2] Toggle password audit- {'Disable' if self.auth_tester and self.auth_tester.enabled else 'Enable'} default-password checks
 [3] Change timeout       - Banner grab timeout
 [0] Back to main menu
         """
@@ -626,8 +627,11 @@ Current Settings:
                 self.console.print("[yellow]Auth testing disabled[/yellow]")
             else:
                 self.auth_tester = AuthTester(settings=self.settings, enabled=True)
-                self.console.print("[green]Auth testing enabled[/green]")
-                self.console.print("[red]WARNING: Only test devices you own![/red]")
+                self.console.print("[green]Default password audit enabled[/green]")
+                self.console.print(
+                    "[yellow]Only exact device/model defaults are tested; "
+                    "attempts are capped and delayed to reduce lockout risk.[/yellow]"
+                )
         elif choice == "3":
             timeout = Prompt.ask("Enter timeout (seconds)", default="3")
             try:
@@ -765,15 +769,29 @@ Current Settings:
             ips: List of IP addresses
         """
         if not self.auth_tester:
-            self.console.print("[red]Auth tester not initialized. Enable in Settings.[/red]")
-            return
+            if not Confirm.ask(
+                "Enable lockout-safe default password audit for this run?",
+                default=False,
+            ):
+                self.console.print("[yellow]Default password audit skipped.[/yellow]")
+                return
+            self.auth_tester = AuthTester(settings=self.settings, enabled=True)
 
         if not self.auth_tester.enabled:
-            self.console.print("[red]Auth testing is disabled. Enable in Settings first.[/red]")
-            return
+            if not Confirm.ask(
+                "Default password audit is disabled. Enable for this run?",
+                default=False,
+            ):
+                self.console.print("[yellow]Default password audit skipped.[/yellow]")
+                return
+            self.auth_tester = AuthTester(settings=self.settings, enabled=True)
 
-        self.console.print(f"\n[yellow]WARNING: Only testing devices you own![/yellow]")
-        self.console.print(f"[blue]Checking credentials on {len(ips)} host(s)...[/blue]\n")
+        self.console.print(
+            "\n[yellow]Default password audit: only test devices you own. "
+            "NetWatch uses exact model/vendor matches, capped attempts, and "
+            "delays between tries.[/yellow]"
+        )
+        self.console.print(f"[blue]Checking default credentials on {len(ips)} host(s)...[/blue]\n")
 
         vulnerable_found = False
 
@@ -784,10 +802,11 @@ Current Settings:
 
             # Get device type if known
             device_type = disc_host.device_type or None
+            model = disc_host.hostname or None
 
             # Check all services
             auth_results = self.auth_tester.check_all_services(
-                ip, disc_host.open_ports, device_type
+                ip, disc_host.open_ports, device_type, model=model
             )
 
             if auth_results:
@@ -797,7 +816,7 @@ Current Settings:
                         if result.success:
                             self.console.print(f"[red]CRITICAL: {ip}:{port} - Default credentials work![/red]")
                             self.console.print(f"[red]  Username: {result.username}[/red]")
-                            self.console.print(f"[red]  Password: {result.password}[/red]")
+                            self.console.print("[red]  Password: factory default matched (masked)[/red]")
                             vulnerable_found = True
                             break
                     if vulnerable_found:
@@ -806,7 +825,7 @@ Current Settings:
                 if not vulnerable_found:
                     self.console.print(f"[green]{ip}: No default credentials found[/green]")
             else:
-                self.console.print(f"[dim]{ip}: No testable services[/dim]")
+                    self.console.print(f"[dim]{ip}: No exact model credential candidates or no testable services[/dim]")
 
         if not vulnerable_found:
             self.console.print("\n[green]No default credentials detected on tested hosts.[/green]")
@@ -1128,13 +1147,27 @@ Device Types Found:
             self.console.print("[red]No target set. Use Network Menu to set a target.[/red]")
             return
         self.console.print(f"\n[bold]Running Full Assessment on {self.current_target}...[/bold]")
-        self.console.print("[dim]This runs all scan phases + security checks + HTML export.[/dim]\n")
+        include_defaults = Confirm.ask(
+            "Include default password audit? Exact model matches only, capped and delayed",
+            default=False,
+        )
+        self.console.print(
+            "[dim]This runs discovery, port scan, banners, NSE, EOL, security checks, "
+            "and HTML export.[/dim]"
+        )
+        if include_defaults:
+            self.console.print(
+                "[yellow]Default password audit enabled for this assessment: "
+                "owned devices only, exact model matches, capped attempts.[/yellow]\n"
+            )
+        else:
+            self.console.print("[dim]Default password audit skipped.[/dim]\n")
 
         try:
             import argparse
             args = argparse.Namespace(
                 target=self.current_target, profile="QUICK", verbose=False,
-                no_color=self._no_color, nse=True, check_defaults=True, interactive=False,
+                no_color=self._no_color, nse=True, check_defaults=include_defaults, interactive=False,
                 full_assessment=True, setup=False, update_cache=False,
                 save_baseline=False, cache_status=False, check_version=False,
                 update=False, history=False, diff=False, since=None,

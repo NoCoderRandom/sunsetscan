@@ -75,6 +75,14 @@ class Settings:
     # IPs to never include in any scan (typically gateway + own IP, set when
     # NetWatch detects it is running on the LAN's DNS resolver / gateway).
     excluded_hosts: Tuple[str, ...] = ()
+    # Default credential audit safety controls. These keep the feature as a
+    # bounded factory-default check, not a password guessing/brute-force tool.
+    auth_require_known_device: bool = True
+    auth_allow_generic_fallback: bool = False
+    auth_allow_module_credentials: bool = False
+    auth_max_attempts_per_host: int = 2
+    auth_max_attempts_per_service: int = 1
+    auth_delay_seconds: float = 2.0
     
     def __post_init__(self):
         # Dataclass is frozen, so we can't modify directly
