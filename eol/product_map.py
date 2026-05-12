@@ -1,5 +1,5 @@
 """
-NetWatch Product Mapping Module.
+SunsetScan Product Mapping Module.
 
 This module maps common detected software names and service banners to their
 corresponding endoflife.date API slugs. This allows the EOL checker to
@@ -131,7 +131,7 @@ PRODUCT_MAP = {
     "libssh": "libssh",
     "dropbear": "dropbear",
     "putty": "putty",
-    
+
     # Web Servers
     "apache": "apache-http-server",
     "apache http server": "apache-http-server",
@@ -144,7 +144,7 @@ PRODUCT_MAP = {
     "caddy": "caddy",
     "tomcat": "tomcat",
     "apache tomcat": "tomcat",
-    
+
     # Databases
     "mysql": "mysql",
     "mariadb": "mariadb",
@@ -154,7 +154,7 @@ PRODUCT_MAP = {
     "redis": "redis",
     "elasticsearch": "elasticsearch",
     "couchdb": "couchdb",
-    
+
     # Operating Systems - Linux
     "ubuntu": "ubuntu",
     "debian": "debian",
@@ -172,7 +172,7 @@ PRODUCT_MAP = {
     "sles": "sles",
     "amazon linux": "amazon-linux",
     "oracle linux": "oracle-linux",
-    
+
     # Operating Systems - Other
     "windows": "windows",
     "windows server": "windows-server",
@@ -182,7 +182,7 @@ PRODUCT_MAP = {
     "macos": "macos",
     "mac os": "macos",
     "osx": "macos",
-    
+
     # Programming Languages / Runtimes
     "python": "python",
     "php": "php",
@@ -195,51 +195,51 @@ PRODUCT_MAP = {
     "go": "go",
     "golang": "go",
     "rust": "rust",
-    
+
     # Container/Orchestration
     "docker": "docker-engine",
     "kubernetes": "kubernetes",
     "k8s": "kubernetes",
-    
+
     # Mail Servers
     "postfix": "postfix",
     "exim": "exim",
     "dovecot": "dovecot",
     "sendmail": "sendmail",
-    
+
     # FTP Servers
     "vsftpd": "vsftpd",
     "proftpd": "proftpd",
     "pure-ftpd": "pure-ftpd",
     "filezilla": "filezilla-server",
-    
+
     # DNS Servers
     "bind": "bind",
     "bind9": "bind",
     "powerdns": "powerdns",
-    
+
     # VPN/Remote Access
     "openvpn": "openvpn",
     "wireguard": "wireguard",
-    
+
     # Version Control
     "git": "git",
     "gitlab": "gitlab",
     "github enterprise": "github-enterprise-server",
-    
+
     # Monitoring
     "nagios": "nagios",
     "zabbix": "zabbix",
     "prometheus": "prometheus",
     "grafana": "grafana",
-    
+
     # Network Devices - Routers/Switches
     "cisco ios": "cisco-ios-xe",
     "cisco ios xe": "cisco-ios-xe",
     "cisco": "cisco-ios-xe",
     "junos": "junos",
     "pfsense": "pfsense",
-    
+
     # TP-Link (many consumer routers don't have EOL pages, but we map them)
     "tp-link": "tplink",
     "tp link": "tplink",
@@ -248,27 +248,27 @@ PRODUCT_MAP = {
     "tp-link archer": "tplink",
     "tp-link tl": "tplink",
     "tp-link deco": "tplink",
-    
+
     # ASUS Routers
     "asus": "asus",
     "asus router": "asus",
     "asuswrt": "asus",
-    
+
     # Netgear
     "netgear": "netgear",
-    
+
     # Linksys
     "linksys": "linksys",
-    
+
     # D-Link
     "d-link": "d-link",
     "dlink": "d-link",
-    
+
     # Ubiquiti
     "ubiquiti": "ubiquiti",
     "ubnt": "ubiquiti",
     "unifi": "ubiquiti",
-    
+
     # MikroTik
     "mikrotik": "mikrotik",
     "routeros": "mikrotik",
@@ -313,17 +313,17 @@ PRODUCT_MAP = {
     # IP cameras
     "hikvision": "hikvision",
     "dahua": "dahua",
-    
+
     # Message Queue
     "rabbitmq": "rabbitmq",
     "kafka": "apache-kafka",
     "activemq": "activemq",
-    
+
     # CMS
     "wordpress": "wordpress",
     "drupal": "drupal",
     "joomla": "joomla",
-    
+
     # Other Common Services
     "samba": "samba",
     "samba smbd": "samba",
@@ -438,31 +438,31 @@ PRODUCT_MAP = {
 
 def normalize_software_name(name: str) -> str:
     """Normalize a software name for matching.
-    
+
     Removes version numbers, converts to lowercase, and strips
     common suffixes/prefixes.
-    
+
     Args:
         name: Raw software name from banner or service detection
-        
+
     Returns:
         Normalized name suitable for lookup in PRODUCT_MAP
     """
     if not name:
         return ""
-    
+
     # Convert to lowercase
     normalized = name.lower()
-    
+
     # Remove common prefixes
     prefixes_to_remove = ['gnu/', 'the ', 'apache ']
     for prefix in prefixes_to_remove:
         if normalized.startswith(prefix):
             normalized = normalized[len(prefix):]
-    
+
     # Remove version numbers (e.g., "nginx/1.18" -> "nginx")
     normalized = re.sub(r'[/\s-]\d+\.\d+.*$', '', normalized)
-    
+
     # Remove common suffixes
     suffixes_to_remove = [
         ' server', ' daemon', ' service', ' software',
@@ -471,22 +471,22 @@ def normalize_software_name(name: str) -> str:
     for suffix in suffixes_to_remove:
         if normalized.endswith(suffix):
             normalized = normalized[:-len(suffix)]
-    
+
     # Clean up whitespace
     normalized = normalized.strip()
-    
+
     return normalized
 
 
 def get_product_slug(software_name: str) -> Optional[str]:
     """Map a detected software name to endoflife.date slug.
-    
+
     Args:
         software_name: Software name from banner or service detection
-        
+
     Returns:
         endoflife.date API slug or None if no mapping exists
-        
+
     Example:
         >>> get_product_slug("OpenSSH_8.2p1")
         'openssh'
@@ -503,12 +503,12 @@ def get_product_slug(software_name: str) -> Optional[str]:
 
     # Normalize the input name
     normalized = normalize_software_name(software_name)
-    
+
     # Direct lookup
     if normalized in PRODUCT_MAP:
         logger.debug(f"Found direct mapping: '{normalized}' -> '{PRODUCT_MAP[normalized]}'")
         return PRODUCT_MAP[normalized]
-    
+
     # Try to extract base name from compound strings
     # e.g., "OpenSSH_8.2" -> "openssh"
     base_match = re.match(r'^([a-z]+)', normalized)
@@ -517,7 +517,7 @@ def get_product_slug(software_name: str) -> Optional[str]:
         if base in PRODUCT_MAP:
             logger.debug(f"Found base mapping: '{software_name}' -> '{base}' -> '{PRODUCT_MAP[base]}'")
             return PRODUCT_MAP[base]
-    
+
     # Try partial matching for compound names (skip short keys to avoid
     # false positives like "go" matching inside "mongo")
     for key, slug in PRODUCT_MAP.items():
@@ -526,14 +526,14 @@ def get_product_slug(software_name: str) -> Optional[str]:
         if key in normalized or normalized in key:
             logger.debug(f"Found partial match: '{software_name}' -> '{key}' -> '{slug}'")
             return slug
-    
+
     logger.debug(f"No mapping found for: '{software_name}' (normalized: '{normalized}')")
     return None
 
 
 def list_supported_products() -> dict:
     """List all supported products and their slugs.
-    
+
     Returns:
         Dictionary mapping categories to product lists
     """
@@ -541,7 +541,7 @@ def list_supported_products() -> dict:
         "SSH Daemons": ["openssh", "libssh", "dropbear", "putty"],
         "Web Servers": ["apache-http-server", "nginx", "iis", "lighttpd", "caddy", "tomcat"],
         "Databases": ["mysql", "mariadb", "postgresql", "mongodb", "redis", "elasticsearch"],
-        "Operating Systems": ["ubuntu", "debian", "centos", "redhat-enterprise-linux", 
+        "Operating Systems": ["ubuntu", "debian", "centos", "redhat-enterprise-linux",
                              "fedora", "windows", "freebsd"],
         "Programming Languages": ["python", "php", "nodejs", "ruby", "java", "go"],
         "Mail Servers": ["postfix", "exim", "dovecot"],
@@ -554,10 +554,10 @@ def list_supported_products() -> dict:
 
 def is_supported(software_name: str) -> bool:
     """Check if a software product is supported by endoflife.date.
-    
+
     Args:
         software_name: Software name to check
-        
+
     Returns:
         True if product has EOL data available
     """

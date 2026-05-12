@@ -1,5 +1,5 @@
 """
-NetWatch HTTP Fingerprinter Module.
+SunsetScan HTTP Fingerprinter Module.
 
 This module provides HTTP-based fingerprinting for network devices,
 especially useful for finding firmware versions on routers, access points,

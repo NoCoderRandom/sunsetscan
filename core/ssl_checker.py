@@ -1,5 +1,5 @@
 """
-NetWatch SSL/TLS Certificate Checker.
+SunsetScan SSL/TLS Certificate Checker.
 
 Connects to HTTPS ports and inspects the TLS certificate, cipher suite,
 and computes a JA3S server fingerprint for each port.
@@ -861,7 +861,7 @@ def run_ssl_checks(
             if ja3s_result is not None:
                 ja3s_hash, matched_app, matched_desc = ja3s_result
 
-                # Store match in module cache for netwatch.py EOL pipeline
+                # Store match in module cache for sunsetscan.py EOL pipeline
                 if matched_app:
                     _ja3s_match_cache[(host, port)] = (matched_app, matched_desc or "")
 

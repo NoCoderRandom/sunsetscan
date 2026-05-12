@@ -1,27 +1,27 @@
 #!/usr/bin/env bash
 #
-# NetWatch one-line bootstrap installer.
+# SunsetScan one-line bootstrap installer.
 #
 # Clones the repository (or pulls latest changes if already present), then
 # runs install.sh. Designed to be safe to invoke via:
 #
-#   curl -fsSL https://raw.githubusercontent.com/NoCoderRandom/netwatch/main/bootstrap.sh | bash
+#   curl -fsSL https://raw.githubusercontent.com/NoCoderRandom/sunsetscan/main/bootstrap.sh | bash
 #
 # Environment variables:
-#   INSTALL_DIR  Where to clone the repo            (default: $HOME/netwatch)
+#   INSTALL_DIR  Where to clone the repo            (default: $HOME/sunsetscan)
 #   BRANCH       Branch to checkout                 (default: main)
-#   REPO         Repository URL                     (default: NoCoderRandom/netwatch)
+#   REPO         Repository URL                     (default: NoCoderRandom/sunsetscan)
 #
 # Anything passed after `bash` is forwarded to install.sh — for example:
 #   curl ... | bash -s -- --symlink
 
 set -euo pipefail
 
-INSTALL_DIR="${INSTALL_DIR:-$HOME/netwatch}"
+INSTALL_DIR="${INSTALL_DIR:-$HOME/sunsetscan}"
 BRANCH="${BRANCH:-main}"
-REPO="${REPO:-https://github.com/NoCoderRandom/netwatch.git}"
+REPO="${REPO:-https://github.com/NoCoderRandom/sunsetscan.git}"
 
-echo "==> NetWatch bootstrap"
+echo "==> SunsetScan bootstrap"
 echo "    Repo:    $REPO"
 echo "    Branch:  $BRANCH"
 echo "    Target:  $INSTALL_DIR"

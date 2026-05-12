@@ -1,5 +1,5 @@
 """
-NetWatch ARP Spoofing Detection Module.
+SunsetScan ARP Spoofing Detection Module.
 
 Uses Scapy to send ARP requests and analyse responses for anomalies:
   - Duplicate MAC detection: two IPs claiming the same MAC = possible ARP spoofing

@@ -1,5 +1,5 @@
 """
-NetWatch Rogue Device Baseline Module.
+SunsetScan Rogue Device Baseline Module.
 
 Saves the set of known devices (MAC + IP + hostname + vendor) from a scan
 as a baseline. Subsequent scans compare against this baseline to detect:
@@ -13,10 +13,10 @@ It is never deleted automatically — only updated when --save-baseline is used.
 
 Usage:
     # Save current scan as baseline
-    python netwatch.py --save-baseline
+    python sunsetscan.py --save-baseline
 
     # Compare any subsequent scan automatically (happens if baseline exists)
-    python netwatch.py --target 192.168.1.0/24
+    python sunsetscan.py --target 192.168.1.0/24
 """
 
 import json

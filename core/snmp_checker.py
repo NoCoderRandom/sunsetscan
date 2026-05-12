@@ -1,5 +1,5 @@
 """
-NetWatch SNMP Security Checker.
+SunsetScan SNMP Security Checker.
 
 Tests SNMP community strings and extracts device information:
   - Community string testing: 'public', 'private', and common defaults

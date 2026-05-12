@@ -27,11 +27,11 @@ def test_settings_menu_replaces_frozen_settings_and_rebuilds_components(monkeypa
 
 
 def test_tui_full_assessment_preserves_safe_mode_flags(monkeypatch):
-    import netwatch
+    import sunsetscan
 
     captured = {}
 
-    class FakeNetWatch:
+    class FakeSunsetScan:
         def __init__(self, args):
             captured["args"] = args
 
@@ -39,7 +39,7 @@ def test_tui_full_assessment_preserves_safe_mode_flags(monkeypatch):
             captured["target"] = target
             return 0
 
-    monkeypatch.setattr(netwatch, "NetWatch", FakeNetWatch)
+    monkeypatch.setattr(sunsetscan, "SunsetScan", FakeSunsetScan)
     monkeypatch.setattr("ui.interactive_controller.Confirm.ask", lambda *a, **k: True)
     controller = InteractiveController(settings=Settings(safe_mode=True), no_color=True)
     controller.current_target = "10.0.0.0/24"
@@ -54,18 +54,18 @@ def test_tui_full_assessment_preserves_safe_mode_flags(monkeypatch):
 
 
 def test_tui_full_assessment_preserves_no_safe_mode_flag(monkeypatch):
-    import netwatch
+    import sunsetscan
 
     captured = {}
 
-    class FakeNetWatch:
+    class FakeSunsetScan:
         def __init__(self, args):
             captured["args"] = args
 
         def run_full_assessment(self, target):
             return 0
 
-    monkeypatch.setattr(netwatch, "NetWatch", FakeNetWatch)
+    monkeypatch.setattr(sunsetscan, "SunsetScan", FakeSunsetScan)
     monkeypatch.setattr("ui.interactive_controller.Confirm.ask", lambda *a, **k: False)
     controller = InteractiveController(
         settings=Settings(),

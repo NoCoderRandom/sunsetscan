@@ -1,5 +1,5 @@
 """
-NetWatch DNS Security Checker.
+SunsetScan DNS Security Checker.
 
 Checks for DNS hijacking/interception by comparing local DNS resolution
 against a trusted public resolver (Cloudflare 1.1.1.1).
@@ -217,8 +217,8 @@ def run_dns_checks(local_network: str = "") -> List[Finding]:
                 "The system may be offline, or DNS may be blocked."
             ),
             explanation=(
-                "NetWatch could not reach the DNS resolver to perform hijack checks. "
-                "This is normal if the machine running NetWatch has no internet access."
+                "SunsetScan could not reach the DNS resolver to perform hijack checks. "
+                "This is normal if the machine running SunsetScan has no internet access."
             ),
             recommendation="Check internet connectivity. Run --update-cache when online.",
             tags=["dns", "offline"],
@@ -238,7 +238,7 @@ def run_dns_checks(local_network: str = "") -> List[Finding]:
             protocol="udp",
             category="DNS Security",
             description=(
-                "NetWatch could not query Cloudflare (1.1.1.1) to compare DNS responses. "
+                "SunsetScan could not query Cloudflare (1.1.1.1) to compare DNS responses. "
                 "DNS hijack detection requires internet access."
             ),
             explanation="DNS comparison checks are skipped when the trusted resolver is unreachable.",

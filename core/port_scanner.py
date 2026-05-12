@@ -1,5 +1,5 @@
 """
-NetWatch Port Scanner Orchestrator.
+SunsetScan Port Scanner Orchestrator.
 
 Uses masscan for fast initial port discovery when available, then runs
 nmap service detection only on discovered open ports. Falls back silently

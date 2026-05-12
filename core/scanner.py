@@ -1,5 +1,5 @@
 """
-NetWatch Network Scanner Module.
+SunsetScan Network Scanner Module.
 
 This module provides network scanning capabilities using the python-nmap library.
 All scanning operations are performed through nmap.PortScanner() - no raw socket
@@ -32,7 +32,7 @@ PortScannerTimeout = getattr(nmap, "PortScannerTimeout", TimeoutError)
 @dataclass
 class PortInfo:
     """Information about a single port/service.
-    
+
     Attributes:
         port: Port number
         protocol: Protocol (tcp/udp)
@@ -54,7 +54,7 @@ class PortInfo:
 @dataclass
 class HostInfo:
     """Information about a scanned host.
-    
+
     Attributes:
         ip: IP address
         hostname: Resolved hostname
@@ -78,7 +78,7 @@ class HostInfo:
 @dataclass
 class ScanResult:
     """Complete result of a network scan.
-    
+
     Attributes:
         target: Target that was scanned
         profile: Scan profile used
@@ -93,7 +93,7 @@ class ScanResult:
     end_time: Optional[datetime] = None
     hosts: Dict[str, HostInfo] = field(default_factory=dict)
     summary: str = ""
-    
+
     @property
     def duration(self) -> float:
         """Calculate scan duration in seconds."""
@@ -104,25 +104,25 @@ class ScanResult:
 
 class NetworkScanner:
     """Network scanner using python-nmap library.
-    
+
     This class wraps nmap.PortScanner() to provide a clean interface
     for various scan types. All scanning is done through python-nmap's
     scan() method with appropriate arguments.
-    
+
     Attributes:
         nm: nmap.PortScanner instance
         settings: Settings configuration object
         _progress_callback: Optional callback for progress updates
-        
+
     Example:
         scanner = NetworkScanner()
         scanner.set_progress_callback(lambda msg, pct: print(f"{msg}: {pct}%"))
         result = scanner.quick_scan("192.168.1.0/24")
     """
-    
+
     def __init__(self, settings: Optional[Settings] = None):
         """Initialize the network scanner.
-        
+
         Args:
             settings: Configuration settings. Uses defaults if not provided.
         """
@@ -130,15 +130,15 @@ class NetworkScanner:
         self.nm = nmap.PortScanner()
         self._progress_callback: Optional[Callable[[str, float], None]] = None
         logger.debug("NetworkScanner initialized")
-    
+
     def set_progress_callback(self, callback: Callable[[str, float], None]) -> None:
         """Set a callback function for progress updates.
-        
+
         Args:
             callback: Function accepting (message, percentage) arguments
         """
         self._progress_callback = callback
-    
+
     def _update_progress(self, message: str, percentage: float) -> None:
         """Update progress via callback if set."""
         if self._progress_callback:
@@ -146,30 +146,30 @@ class NetworkScanner:
                 self._progress_callback(message, percentage)
             except Exception as e:
                 logger.warning(f"Progress callback failed: {e}")
-    
+
     def scan(
-        self, 
-        target: str, 
+        self,
+        target: str,
         profile: str = "QUICK",
         arguments: Optional[str] = None
     ) -> ScanResult:
         """Perform a network scan.
-        
+
         Args:
             target: Target IP, range, or CIDR (e.g., "192.168.1.0/24")
             profile: Scan profile name (QUICK, FULL, STEALTH, PING)
             arguments: Optional custom nmap arguments (overrides profile)
-            
+
         Returns:
             ScanResult containing all scan data
-            
+
         Raises:
             nmap.PortScannerError: If nmap scan fails
             ValueError: If invalid profile specified
         """
         result = ScanResult(target=target, profile=profile)
         result.start_time = datetime.now()
-        
+
         # Determine arguments
         if arguments:
             scan_args = arguments
@@ -178,7 +178,7 @@ class NetworkScanner:
         else:
             raise ValueError(f"Unknown scan profile: {profile}. "
                            f"Valid profiles: {list(SCAN_PROFILES.keys())}")
-        
+
         # Apply safe-mode downgrades + host exclusions
         scan_args = self._apply_safety(scan_args)
 
@@ -193,15 +193,15 @@ class NetworkScanner:
                 arguments=scan_args,
                 timeout=self._nmap_timeout(),
             )
-            
+
             # Check for scan errors
             if self.nm.scaninfo().get('error', []):
                 for error in self.nm.scaninfo()['error']:
                     logger.warning(f"nmap scan error: {error}")
-            
+
             # Parse results from nmap result dictionary
             self._parse_results(result)
-            
+
             result.summary = self.nm.get_nmap_last_output()[:500]  # Truncated
             logger.info(f"Scan completed: {len(result.hosts)} hosts found")
         except PortScannerTimeout as e:
@@ -240,7 +240,7 @@ class NetworkScanner:
         finally:
             result.end_time = datetime.now()
             self._update_progress("Scan complete", 100.0)
-        
+
         return result
 
     def _nmap_timeout(self) -> int:
@@ -251,7 +251,7 @@ class NetworkScanner:
         except (TypeError, ValueError):
             timeout = 900
         return max(timeout, 1)
-    
+
     def _apply_safety(self, args: str) -> str:
         """Apply safe-mode downgrades and exclusions to an nmap argument string.
 
@@ -359,37 +359,37 @@ class NetworkScanner:
 
     def _parse_results(self, result: ScanResult) -> None:
         """Parse nmap results into structured format.
-        
+
         Args:
             result: ScanResult object to populate
         """
         all_hosts = self.nm.all_hosts()
         total_hosts = len(all_hosts)
-        
+
         for idx, host in enumerate(all_hosts):
             # Ensure host is a string
             host = str(host)
             self._update_progress(
-                f"Processing host {host}", 
+                f"Processing host {host}",
                 (idx / max(total_hosts, 1)) * 100
             )
-            
+
             host_info = self._parse_host(host)
             result.hosts[host] = host_info
-    
+
     def _parse_host(self, host: str) -> HostInfo:
         """Parse information for a single host.
-        
+
         Args:
             host: IP address string
-            
+
         Returns:
             HostInfo populated with scan data
         """
         # Ensure host is a string
         host = str(host)
         info = HostInfo(ip=host)
-        
+
         # Basic host info from nmap dict
         # Use try/except instead of 'in' check to avoid type issues with python-nmap
         try:
@@ -397,24 +397,24 @@ class NetworkScanner:
         except (KeyError, AssertionError):
             # Host not in results or type error
             return info
-        
+
         if host_data:
             info.state = host_data.get('status', {}).get('state', 'unknown')
             info.hostname = host_data.get('hostnames', [{}])[0].get('name', '')
-            
+
             # MAC address and vendor (if available)
             addresses = host_data.get('addresses', {})
             if 'mac' in addresses:
                 info.mac = addresses['mac']
             if 'vendor' in host_data and info.mac in host_data['vendor']:
                 info.vendor = host_data['vendor'][info.mac]
-            
+
             # OS detection
             osmatch = host_data.get('osmatch', [])
             if osmatch:
                 info.os_guess = osmatch[0].get('name', '')
                 info.os_accuracy = osmatch[0].get('accuracy', '')
-            
+
             # Port information
             for protocol in ['tcp', 'udp']:
                 if protocol in host_data:
@@ -432,59 +432,59 @@ class NetworkScanner:
                             port_info.service = product.lower()
                             if port_data.get('version'):
                                 port_info.version = port_data.get('version')
-                        
+
                         info.ports[int(port_num)] = port_info
-        
+
         return info
-    
+
     def quick_scan(self, target: str) -> ScanResult:
         """Perform a quick scan of common ports.
-        
+
         Args:
             target: Target network or host
-            
+
         Returns:
             ScanResult with discovered hosts and services
         """
         return self.scan(target, profile="QUICK")
-    
+
     def full_scan(self, target: str) -> ScanResult:
         """Perform a comprehensive scan with OS detection.
-        
+
         Args:
             target: Target network or host
-            
+
         Returns:
             ScanResult with detailed host information
         """
         return self.scan(target, profile="FULL")
-    
+
     def stealth_scan(self, target: str) -> ScanResult:
         """Perform a stealth SYN scan.
-        
+
         Args:
             target: Target network or host
-            
+
         Returns:
             ScanResult with discovered hosts
         """
         return self.scan(target, profile="STEALTH")
-    
+
     def ping_sweep(self, target: str) -> List[str]:
         """Perform a ping sweep to discover live hosts.
-        
+
         Args:
             target: Target network (e.g., "192.168.1.0/24")
-            
+
         Returns:
             List of IP addresses that responded
         """
         result = self.scan(target, profile="PING")
         return [ip for ip, host in result.hosts.items() if host.state == 'up']
-    
+
     def get_scan_stats(self) -> Dict[str, Any]:
         """Get statistics from the last scan.
-        
+
         Returns:
             Dictionary with scan statistics
         """

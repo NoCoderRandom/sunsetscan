@@ -7,7 +7,7 @@
 - **Prompt 03**: Hardened `config/settings.py`, `core/findings.py`, `core/host_capability.py`, and `core/identity_fusion.py` with type safety and edge-case fixes.
 - **Prompt 04**: Mechanical cleanup — CRLF normalization, dead code removal (wildcard check, unreachable regexes, self-assignment), typo fixes.
 - **Prompt 05**: Rendered fused identities in reports, recognised AirTunes `am` model TXT, Apple Remote Pairing TXT, preferred avahi-browse over zeroconf for mDNS.
-- **Prompt 06**: Removed orphaned methods (`NetWatch.recheck_eol`, `CacheManager.cleanup_expired`, `EOLChecker.refresh_cache`, `RiskScorer.network_summary`). Slimmed `core/__init__.py` to stable public API only. Fixed setup wizard summary to read EOL stats from per-product cache.
+- **Prompt 06**: Removed orphaned methods (`SunsetScan.recheck_eol`, `CacheManager.cleanup_expired`, `EOLChecker.refresh_cache`, `RiskScorer.network_summary`). Slimmed `core/__init__.py` to stable public API only. Fixed setup wizard summary to read EOL stats from per-product cache.
 - **May validation pass**: Added root-assisted validation collection, bounded
   safe-mode nmap/masscan behavior, discovery-limited full-assessment port
   scans, timeout recovery with discovery-only reports, and report wording that

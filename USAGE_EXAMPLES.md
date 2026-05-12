@@ -1,12 +1,12 @@
-# NetWatch Usage Examples
+# SunsetScan Usage Examples
 
 ## Interactive Mode (Recommended for Beginners)
 
 Launch the interactive mode for guided network scanning:
 ```bash
-python netwatch.py --interactive
+python sunsetscan.py --interactive
 # or
-python netwatch.py -i
+python sunsetscan.py -i
 ```
 
 ### Interactive Mode Features
@@ -35,19 +35,19 @@ python netwatch.py -i
 
 ```bash
 # Interactive mode (easiest)
-python netwatch.py -i
+python sunsetscan.py -i
 
 # Scan entire network with all features
-python netwatch.py --target 192.168.1.0/24 --profile QUICK --nse
+python sunsetscan.py --target 192.168.1.0/24 --profile QUICK --nse
 
 # Scan specific host with full details
-python netwatch.py --target 192.168.1.115 --profile FULL --nse
+python sunsetscan.py --target 192.168.1.115 --profile FULL --nse
 
 # Opt in to lockout-safe default password audit (your devices only)
-python netwatch.py --target 192.168.1.115 --check-defaults
+python sunsetscan.py --target 192.168.1.115 --check-defaults
 
 # Quick ping sweep to find hosts
-python netwatch.py --target 192.168.1.0/24 --profile PING
+python sunsetscan.py --target 192.168.1.0/24 --profile PING
 ```
 
 ## Target Specification
@@ -95,22 +95,22 @@ router.local            # Hostname
 
 1. **Start with Interactive Mode**
    ```bash
-   python netwatch.py -i
+   python sunsetscan.py -i
    ```
 
 2. **Or use PING first to find hosts**
    ```bash
-   python netwatch.py --target 192.168.1.0/24 --profile PING
+   python sunsetscan.py --target 192.168.1.0/24 --profile PING
    ```
 
 3. **Then scan specific hosts**
    ```bash
-   python netwatch.py --target 192.168.1.115 --profile FULL --nse
+   python sunsetscan.py --target 192.168.1.115 --profile FULL --nse
    ```
 
 4. **Run the default password audit only on your devices**
    ```bash
-   python netwatch.py --target 192.168.1.115 --check-defaults
+   python sunsetscan.py --target 192.168.1.115 --check-defaults
    ```
 
 ## Example Output

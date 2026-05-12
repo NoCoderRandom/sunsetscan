@@ -1,23 +1,23 @@
 from datetime import datetime
 
-from netwatch import NetWatch
+from sunsetscan import SunsetScan
 
 
 def test_full_assessment_scan_target_uses_discovered_hosts_only():
-    hosts = NetWatch._normalise_discovered_hosts(
+    hosts = SunsetScan._normalise_discovered_hosts(
         {"192.168.1.10", "192.168.1.2", "192.168.1.1"},
         excluded_hosts=("192.168.1.1",),
     )
 
     assert hosts == ["192.168.1.2", "192.168.1.10"]
     assert (
-        NetWatch._scan_target_for_discovered_hosts(hosts, "192.168.1.0/24")
+        SunsetScan._scan_target_for_discovered_hosts(hosts, "192.168.1.0/24")
         == "192.168.1.2 192.168.1.10"
     )
 
 
 def test_discovery_only_scan_result_keeps_hosts_visible():
-    result = NetWatch._discovery_only_scan_result(
+    result = SunsetScan._discovery_only_scan_result(
         target="192.168.1.0/24",
         profile="STEALTH",
         discovered_hosts=["192.168.1.2", "192.168.1.10"],

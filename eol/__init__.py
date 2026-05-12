@@ -1,5 +1,5 @@
 """
-NetWatch EOL (End-of-Life) Module.
+SunsetScan EOL (End-of-Life) Module.
 
 This package contains End-of-Life checking functionality:
 - checker: EOL API queries and version comparison logic

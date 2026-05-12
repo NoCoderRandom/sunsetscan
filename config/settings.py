@@ -1,8 +1,8 @@
 """
-NetWatch Configuration Settings Module.
+SunsetScan Configuration Settings Module.
 
 This module contains all configurable constants, port lists, timing values,
-and thresholds used throughout the NetWatch application. No magic numbers
+and thresholds used throughout the SunsetScan application. No magic numbers
 should exist outside this file.
 
 Exports:
@@ -22,7 +22,7 @@ from typing import Dict, List, Tuple
 
 @dataclass(frozen=True)
 class Settings:
-    """Centralized configuration settings for NetWatch.
+    """Centralized configuration settings for SunsetScan.
 
     Attributes:
         tool_name: Name of the application
@@ -42,8 +42,8 @@ class Settings:
         upnp_discovery_timeout: Timeout for SSDP UPnP discovery (seconds)
         nmap_scan_timeout_seconds: Maximum runtime for one nmap invocation
     """
-    tool_name: str = "NetWatch"
-    version: str = "1.7.1"
+    tool_name: str = "SunsetScan"
+    version: str = "2.0.0"
     banner_timeout: int = 3
     cache_ttl_hours: int = 24       # legacy — used by eol/cache.py
     cve_cache_ttl_days: int = 7     # CVE data refreshed weekly
@@ -73,7 +73,7 @@ class Settings:
     # Safe mode sets this to 0.5 to halve all probe timeouts.
     probe_timeout_factor: float = 1.0
     # IPs to never include in any scan (typically gateway + own IP, set when
-    # NetWatch detects it is running on the LAN's DNS resolver / gateway).
+    # SunsetScan detects it is running on the LAN's DNS resolver / gateway).
     excluded_hosts: Tuple[str, ...] = ()
     # Default credential audit safety controls. These keep the feature as a
     # bounded factory-default check, not a password guessing/brute-force tool.
@@ -83,11 +83,11 @@ class Settings:
     auth_max_attempts_per_host: int = 2
     auth_max_attempts_per_service: int = 1
     auth_delay_seconds: float = 2.0
-    
+
     def __post_init__(self):
         # Dataclass is frozen, so we can't modify directly
         object.__setattr__(
-            self, 
+            self,
             'common_ports',
             [21, 22, 23, 25, 53, 80, 110, 143, 443, 445, 993, 995, 3306, 3389, 5432, 8080, 8443]
         )
@@ -229,7 +229,7 @@ MENU_OPTIONS = [
     ("3", "Stealth Scan", "SYN scan, slow timing (root)"),
     ("4", "IoT Scan", "Cameras, routers, smart devices"),
     ("5", "SMB Scan", "Windows shares + EternalBlue check (root)"),
-    ("6", "Full Assessment", "Everything + HTML report"),
+    ("6", "Full Assessment", "Full report; password audit only when enabled"),
     ("7", "Instant Scan", "Super fast, no port scanning (root)"),
     ("8", "Custom Target", "Specify IP, range, CIDR, or profile"),
     ("9", "Export Report", "Save as JSON or HTML"),
@@ -237,22 +237,17 @@ MENU_OPTIONS = [
     ("m", "Modules", "Download/update data modules"),
     ("s", "Settings", "View/change configuration"),
     ("h", "Help", "Usage guide and scan profiles"),
-    ("q", "Exit", "Quit NetWatch"),
+    ("q", "Exit", "Quit SunsetScan"),
 ]
 
 # Banner ASCII art
 ASCII_BANNER = """
-╔══════════════════════════════════════════════════════════════════════════╗
-║                                                                          ║
-║   ███╗   ██╗███████╗████████╗██╗    ██╗ █████╗ ████████╗ ██████╗██╗  ██╗ ║
-║   ████╗  ██║██╔════╝╚══██╔══╝██║    ██║██╔══██╗╚══██╔══╝██╔════╝██║  ██║ ║
-║   ██╔██╗ ██║█████╗     ██║   ██║ █╗ ██║███████║   ██║   ██║     ███████║ ║
-║   ██║╚██╗██║██╔══╝     ██║   ██║███╗██║██╔══██║   ██║   ██║     ██╔══██║ ║
-║   ██║ ╚████║███████╗   ██║   ╚███╔███╔╝██║  ██║   ██║   ╚██████╗██║  ██║ ║
-║   ╚═╝  ╚═══╝╚══════╝   ╚═╝    ╚══╝╚══╝ ╚═╝  ╚═╝   ╚═╝    ╚═════╝╚═╝  ╚═╝ ║
-║                                                                          ║
-║              Network EOL Scanner & Security Assessment Tool              ║
-║                         Version {version}                                  ║
-║                                                                          ║
-╚══════════════════════════════════════════════════════════════════════════╝
++----------------------------------------------------------------------+
+|                                                                      |
+|   SUNSETSCAN                                                         |
+|                                                                      |
+|   Network EOL Scanner & Security Assessment Tool                     |
+|   Version {version:<58}|
+|                                                                      |
++----------------------------------------------------------------------+
 """

@@ -1,10 +1,10 @@
 """
-NetWatch Findings Module.
+SunsetScan Findings Module.
 
 Central definition of the Finding dataclass, severity levels, and
 the FindingRegistry that collects all findings across all scan modules.
 
-Every security check in NetWatch produces Finding objects. These are
+Every security check in SunsetScan produces Finding objects. These are
 collected in the FindingRegistry and consumed by the report exporter.
 
 Severity levels:

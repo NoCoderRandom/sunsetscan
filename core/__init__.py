@@ -1,5 +1,5 @@
 """
-NetWatch Core Module.
+SunsetScan Core Module.
 
 This package contains the core network scanning functionality including:
 - scanner: nmap-based network scanning

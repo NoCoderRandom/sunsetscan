@@ -1,0 +1,211 @@
+{
+  "metadata": {
+    "schema": "sunsetscan.hardware_eol.v1",
+    "generated_at": "2026-05-11T03:03:18",
+    "as_of_date": "2026-05-10",
+    "source_policy": "Built only from downloaded files under output/RawData. The legacy combined output/eol_database.json is intentionally ignored.",
+    "raw_root": "output/RawData",
+    "warning_days": 365,
+    "status_definitions": {
+      "unsupported": "A support/security/EOL date has passed.",
+      "unsupported_status_only": "Vendor/source marks the product discontinued or unsupported but no exact date is available.",
+      "support_ending_soon": "Security/support end date is within 365 days.",
+      "end_of_sale": "Sales ended, but support appears to continue or is unknown.",
+      "vendor_eol_but_supported": "Vendor EOL date passed, but a later support date is listed.",
+      "supported": "Support date is in the future.",
+      "supported_status_only": "Vendor/source marks the product active/supported without exact dates.",
+      "unknown": "No usable lifecycle signal was found.",
+      "lifecycle_review": "Official source indicates EOL/discontinued/lifecycle concern, but security-update status is not confirmed or may conflict with firmware evidence."
+    },
+    "interpretation_policy": {
+      "name": "cautious_policy_v2",
+      "purpose": "Prevent EOL/discontinued/end-of-sale sources from being treated as confirmed loss of security updates unless the source explicitly proves that.",
+      "changed_records": 1759,
+      "rule": "Ambiguous status-only/discontinued/vendor EOL-list records become lifecycle_review with unknown receives_security_updates."
+    },
+    "raw_table_import": {
+      "generated_at": "2026-05-11T04:57:54",
+      "source_project": "nhedb-scraper",
+      "raw_root": "output/RawData",
+      "imported_records": 22681,
+      "imported_vendors": 39,
+      "policy": "Conservative table import from raw source manifests; prose-only and blocked sources are not normalized."
+    },
+    "artifact_layout": {
+      "format": "split",
+      "version": 1,
+      "index_file": "sunsetscan_hardware_eol_index.json.gz",
+      "category_count": 5,
+      "generated_at": "2026-05-11T04:58:05"
+    }
+  },
+  "summary": {
+    "total_records": 59969,
+    "total_model_summaries": 47341,
+    "records_not_receiving_security_updates": 35786,
+    "records_receiving_security_updates": 7427,
+    "records_unknown_security_update_status": 16756,
+    "vendors": {
+      "a10": 15,
+      "adtran": 1,
+      "allied_telesis": 200,
+      "arista": 450,
+      "aruba_hpe": 752,
+      "asus": 393,
+      "asustor": 89,
+      "barracuda": 29,
+      "brother": 278,
+      "calix": 960,
+      "cambium": 3269,
+      "canon": 142,
+      "checkpoint": 309,
+      "cisco": 14635,
+      "cisco_meraki": 439,
+      "citrix_netscaler": 33,
+      "cudy": 110,
+      "dahua": 71,
+      "dell_networking": 958,
+      "digital_watchdog": 762,
+      "dlink": 438,
+      "draytek": 40,
+      "edimax": 79,
+      "engenius": 40,
+      "epson": 47,
+      "extreme": 7844,
+      "forcepoint": 7,
+      "forescout": 10,
+      "grandstream": 91,
+      "h3c": 257,
+      "honeywell_productivity": 20,
+      "hp": 884,
+      "huawei": 378,
+      "imperva": 17,
+      "juniper": 7218,
+      "lantronix_transition": 40,
+      "linksys": 4398,
+      "mercusys": 107,
+      "mikrotik": 543,
+      "moxa": 2,
+      "netgear": 3001,
+      "oki_printers": 29,
+      "opengear": 37,
+      "paloalto": 17,
+      "perle": 1085,
+      "progress_kemp": 74,
+      "reolink": 39,
+      "riverbed": 4099,
+      "ruckus": 27,
+      "supermicro_networking": 7,
+      "teltonika": 36,
+      "tenda": 114,
+      "totolink": 125,
+      "tplink": 3773,
+      "trendnet": 50,
+      "ubiquiti": 114,
+      "vivotek": 451,
+      "watchguard": 176,
+      "westermo": 2,
+      "zte_networking": 6,
+      "zyxel": 352
+    },
+    "lifecycle_statuses": {
+      "end_of_sale": 11463,
+      "lifecycle_review": 2352,
+      "support_ending_soon": 2354,
+      "supported": 607,
+      "supported_status_only": 55,
+      "unknown": 6539,
+      "unsupported": 34839,
+      "unsupported_status_only": 947,
+      "vendor_eol_but_supported": 813
+    },
+    "risks": {
+      "critical": 34839,
+      "high": 947,
+      "info": 662,
+      "low": 14628,
+      "medium": 2354,
+      "unknown": 6539
+    },
+    "device_classes": {
+      "accessory": 396,
+      "controller": 135,
+      "ip_camera": 996,
+      "modem": 88,
+      "module": 2155,
+      "nas": 1633,
+      "network_adapter": 1000,
+      "network_device": 22389,
+      "network_switch": 4962,
+      "powerline": 334,
+      "printer": 1348,
+      "router": 6578,
+      "security_appliance": 4903,
+      "service": 1361,
+      "smart_home": 807,
+      "software": 8272,
+      "wireless_access_point": 2612
+    },
+    "model_summary_statuses": {
+      "lifecycle_review": 2298,
+      "mixed": 3728,
+      "supported": 6814,
+      "unknown": 7964,
+      "unsupported": 26537
+    }
+  },
+  "record_shards": {
+    "network_infrastructure": {
+      "label": "Network Infrastructure",
+      "path": "records/network_infrastructure.json.gz",
+      "record_count": 14375,
+      "device_classes": {
+        "controller": 135,
+        "modem": 88,
+        "network_switch": 4962,
+        "router": 6578,
+        "wireless_access_point": 2612
+      }
+    },
+    "general_network_devices": {
+      "label": "General Network Devices",
+      "path": "records/general_network_devices.json.gz",
+      "record_count": 22389,
+      "device_classes": {
+        "network_device": 22389
+      }
+    },
+    "security_surveillance": {
+      "label": "Security and Surveillance",
+      "path": "records/security_surveillance.json.gz",
+      "record_count": 5899,
+      "device_classes": {
+        "ip_camera": 996,
+        "security_appliance": 4903
+      }
+    },
+    "endpoints_peripherals": {
+      "label": "Endpoints and Peripherals",
+      "path": "records/endpoints_peripherals.json.gz",
+      "record_count": 5122,
+      "device_classes": {
+        "nas": 1633,
+        "network_adapter": 1000,
+        "powerline": 334,
+        "printer": 1348,
+        "smart_home": 807
+      }
+    },
+    "software_services_modules": {
+      "label": "Software, Services, and Modules",
+      "path": "records/software_services_modules.json.gz",
+      "record_count": 12184,
+      "device_classes": {
+        "accessory": 396,
+        "module": 2155,
+        "service": 1361,
+        "software": 8272
+      }
+    }
+  }
+}

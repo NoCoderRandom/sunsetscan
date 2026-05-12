@@ -1,5 +1,5 @@
 """
-NetWatch Packet Parsers Module.
+SunsetScan Packet Parsers Module.
 
 Parses raw network packets captured by the passive sniffer into structured
 device metadata. Supports three discovery protocols:

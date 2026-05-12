@@ -1,11 +1,11 @@
 """
-NetWatch Persistent Device Map Module.
+SunsetScan Persistent Device Map Module.
 
 Maintains a JSON-backed database mapping MAC addresses to device identities.
 On each scan run, known devices are preloaded from disk, new data is merged,
 and confidence scores are updated based on evidence consistency.
 
-The device map survives between scan sessions, allowing NetWatch to:
+The device map survives between scan sessions, allowing SunsetScan to:
     - Instantly identify previously seen devices
     - Track device history (first seen, last seen)
     - Detect new/unknown devices on the network

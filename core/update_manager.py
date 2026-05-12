@@ -1,5 +1,5 @@
 """
-NetWatch Update Manager.
+SunsetScan Update Manager.
 
 Handles two update channels:
   Channel 1 — Tool updates: checks GitHub releases for new code versions.
@@ -25,8 +25,8 @@ from typing import Optional
 
 logger = logging.getLogger(__name__)
 
-_REPO_URL = "https://github.com/NoCoderRandom/netwatch"
-_RELEASES_API = "https://api.github.com/repos/NoCoderRandom/netwatch/releases/latest"
+_REPO_URL = "https://github.com/NoCoderRandom/sunsetscan"
+_RELEASES_API = "https://api.github.com/repos/NoCoderRandom/sunsetscan/releases/latest"
 _PROJECT_ROOT = Path(__file__).parent.parent
 _CACHE_DIR = _PROJECT_ROOT / "data" / "cache"
 _META_FILE = _CACHE_DIR / "cache_meta.json"
@@ -81,13 +81,13 @@ class UpdateManager:
 
     def update_tool(self) -> int:
         """Pull latest code and reinstall requirements. Returns exit code."""
-        print("Updating NetWatch tool code...")
+        print("Updating SunsetScan tool code...")
         try:
             # Check git is available
             result = subprocess.run(["git", "rev-parse", "--git-dir"],
                                     capture_output=True, cwd=_PROJECT_ROOT)
             if result.returncode != 0:
-                print("  ERROR: NetWatch directory is not a git repository.")
+                print("  ERROR: SunsetScan directory is not a git repository.")
                 print(f"  Clone from: {_REPO_URL}")
                 return 1
 
@@ -126,7 +126,7 @@ class UpdateManager:
 
             cache = CacheManager(settings=Settings())
             session = requests.Session()
-            session.headers.update({"User-Agent": "NetWatch/1.1.0"})
+            session.headers.update({"User-Agent": "SunsetScan/1.1.0"})
             products = list(set(v for v in PRODUCT_MAP.values()
                                 if v not in NOT_TRACKED_PRODUCTS))
             ok = 0
@@ -191,7 +191,7 @@ class UpdateManager:
         try:
             import requests
             session = requests.Session()
-            session.headers.update({"User-Agent": "NetWatch/1.2.0"})
+            session.headers.update({"User-Agent": "SunsetScan/1.2.0"})
             merged: dict = {}
             files = [f"{c}.json" for c in "abcdefghijklmnopqrstuvwxyz"]
             for fname in files:
@@ -236,7 +236,7 @@ class UpdateManager:
             import io
             import requests
             session = requests.Session()
-            session.headers.update({"User-Agent": "NetWatch/1.5.0"})
+            session.headers.update({"User-Agent": "SunsetScan/1.5.0"})
             r = session.get(url, timeout=30)
             if r.status_code != 200:
                 if not quiet:
@@ -273,7 +273,7 @@ class UpdateManager:
 
     def show_cache_status(self) -> None:
         """Print a table of cache file ages and sizes."""
-        print("\nNetWatch Cache Status")
+        print("\nSunsetScan Cache Status")
         print("=" * 55)
         now = datetime.now(timezone.utc)
 

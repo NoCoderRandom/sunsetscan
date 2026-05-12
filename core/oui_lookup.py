@@ -1,5 +1,5 @@
 """
-NetWatch OUI Vendor Lookup Module.
+SunsetScan OUI Vendor Lookup Module.
 
 Loads the IEEE OUI database and provides MAC address → vendor name resolution.
 The OUI (Organizationally Unique Identifier) is the first 3 octets of a MAC

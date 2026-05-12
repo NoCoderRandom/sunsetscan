@@ -1,5 +1,5 @@
 """
-NetWatch Interactive Menu Module.
+SunsetScan Interactive Menu Module.
 
 Modern terminal UI with arrow-key navigation AND number/letter shortcuts.
 Uses raw terminal input (no extra dependencies beyond Rich).
@@ -33,10 +33,23 @@ def _read_key() -> str:
         - "q" for q/Q
         - the character itself for printable keys
     """
+    def read_line_fallback() -> str:
+        try:
+            line = input()
+        except EOFError:
+            return "q"
+        return line.strip() if line.strip() else "enter"
+
+    if not sys.stdin.isatty():
+        return read_line_fallback()
+
     try:
         import tty
         import termios
+    except ImportError:
+        return read_line_fallback()
 
+    try:
         fd = sys.stdin.fileno()
         old_settings = termios.tcgetattr(fd)
         try:
@@ -64,10 +77,9 @@ def _read_key() -> str:
         finally:
             termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
 
-    except (ImportError, OSError):
+    except (OSError, termios.error):
         # Fallback for environments without termios (e.g. Windows, piped stdin)
-        line = input()
-        return line.strip() if line.strip() else "enter"
+        return read_line_fallback()
 
 
 def _render_menu(
@@ -124,13 +136,13 @@ class Menu:
         os.system('cls' if os.name == 'nt' else 'clear')
 
     def show_banner(self) -> None:
-        """Display the NetWatch ASCII banner."""
+        """Display the SunsetScan ASCII banner."""
         banner_text = ASCII_BANNER.format(version=self.settings.version)
         try:
             self.console.print(banner_text, style="cyan")
         except UnicodeEncodeError:
             self.console.print(f"\n{'=' * 70}")
-            self.console.print(f"  NetWatch - Network EOL Scanner v{self.settings.version}")
+            self.console.print(f"  SunsetScan - Network EOL Scanner v{self.settings.version}")
             self.console.print(f"{'=' * 70}\n")
         self.console.print(f"  {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n", style="dim")
 
@@ -259,9 +271,9 @@ Socket Timeout:     {self.settings.socket_connect_timeout} seconds
     def show_help(self) -> None:
         """Display help information."""
         help_text = """
-[bold cyan]NetWatch Help[/bold cyan]
+[bold cyan]SunsetScan Help[/bold cyan]
 
-NetWatch discovers every device on your network, fingerprints running
+SunsetScan discovers every device on your network, fingerprints running
 software, checks for known vulnerabilities and end-of-life dates,
 and produces a professional HTML security report.
 
@@ -282,16 +294,16 @@ and produces a professional HTML security report.
   router.local           Hostname
 
 [bold]Key CLI Commands:[/bold]
-  netwatch --target 192.168.1.0/24                 Quick scan
-  netwatch --full-assessment --target 192.168.1.0/24  Full report
-  netwatch --target 192.168.1.0/24 --profile IOT   IoT device scan
-  netwatch --instant                               Instant device scan
-  netwatch --modules                               Show data modules
-  netwatch --download all                          Download all modules
-  netwatch --download hardware-eol                 Download hardware EOL DB
-  netwatch --history                               View past scans
-  netwatch --diff                                  Compare last two scans
-  netwatch -i                                      Interactive mode
+  sunsetscan --target 192.168.1.0/24                 Quick scan
+  sunsetscan --full-assessment --target 192.168.1.0/24  Full report
+  sunsetscan --target 192.168.1.0/24 --profile IOT   IoT device scan
+  sunsetscan --instant                               Instant device scan
+  sunsetscan --modules                               Show data modules
+  sunsetscan --download all                          Download all modules
+  sunsetscan --download hardware-eol                 Download hardware EOL DB
+  sunsetscan --history                               View past scans
+  sunsetscan --diff                                  Compare last two scans
+  sunsetscan -i                                      Interactive mode
         """
 
         self.console.print(help_text)
@@ -348,7 +360,7 @@ Scan Duration:      {stats.get('duration', 'N/A')}s
         print("- Stealth SYN scan unavailable")
         print("- Some ports may not be accessible")
         print("")
-        print("For best results, run with: sudo netwatch")
+        print("For best results, run with: sudo sunsetscan")
 
     def prompt_yes_no(self, question: str, default: bool = False) -> bool:
         """Prompt user with yes/no question."""

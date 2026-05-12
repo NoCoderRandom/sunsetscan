@@ -1,5 +1,5 @@
 """
-NetWatch mDNS/Zeroconf Discovery Module.
+SunsetScan mDNS/Zeroconf Discovery Module.
 
 Discovers devices that announce themselves via mDNS (Multicast DNS) /
 Bonjour / Zeroconf — even if they don't respond to nmap port scans.

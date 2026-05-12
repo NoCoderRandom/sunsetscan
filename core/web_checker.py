@@ -1,5 +1,5 @@
 """
-NetWatch Web Interface Security Checker.
+SunsetScan Web Interface Security Checker.
 
 Performs passive, read-only HTTP checks on web interfaces discovered
 during the port scan. No fuzzing, no payloads, no modification of
@@ -285,7 +285,7 @@ def _make_session(timeout: float = 5.0) -> requests.Session:
     session = requests.Session()
     session.verify = False  # Local devices often have self-signed certs
     session.headers.update({
-        "User-Agent": "NetWatch-SecurityScanner/1.1",
+        "User-Agent": "SunsetScan-SecurityScanner/1.1",
         "Accept": "text/html,application/xhtml+xml,*/*;q=0.9",
     })
     return session

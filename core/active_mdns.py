@@ -1,5 +1,5 @@
 """
-NetWatch Active mDNS Query Module.
+SunsetScan Active mDNS Query Module.
 
 Actively queries the local network for mDNS services using the zeroconf
 library, producing ``ParsedPacket`` objects that feed directly into the
@@ -217,7 +217,7 @@ def _query_via_avahi(timeout: float) -> List[ParsedPacket]:
 
     When ``avahi-daemon`` is running (standard on Raspberry Pi OS, Debian,
     Ubuntu, most Linux desktops) it owns UDP 5353 and maintains a complete
-    mDNS cache that is already populated by the time NetWatch starts. This
+    mDNS cache that is already populated by the time SunsetScan starts. This
     path is far more reliable than the python ``zeroconf`` library on such
     hosts because:
 
