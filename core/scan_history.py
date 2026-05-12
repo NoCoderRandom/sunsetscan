@@ -13,6 +13,7 @@ Exports:
 """
 
 import gzip
+import ipaddress
 import json
 import logging
 from dataclasses import dataclass, field
@@ -24,6 +25,15 @@ logger = logging.getLogger(__name__)
 
 _HISTORY_DIR = Path(__file__).parent.parent / "data" / "history"
 _RETENTION_DAYS = 90
+
+
+def _ip_sort_key(value: str) -> tuple:
+    """Sort IP-like labels numerically while keeping non-IP text stable."""
+    try:
+        ip = ipaddress.ip_address(str(value))
+        return (0, ip.version, int(ip))
+    except ValueError:
+        return (1, str(value))
 
 
 # ---------------------------------------------------------------------------
@@ -53,6 +63,10 @@ class ScanDiff:
     """Differences between two scan snapshots."""
     older_ts: str
     newer_ts: str
+    older_target: str = ""
+    newer_target: str = ""
+    older_profile: str = ""
+    newer_profile: str = ""
     new_hosts: List[str] = field(default_factory=list)
     removed_hosts: List[str] = field(default_factory=list)
     new_ports: List[Tuple[str, int]] = field(default_factory=list)   # (ip, port)
@@ -231,22 +245,29 @@ class ScanHistory:
     # ---- Diffing ----------------------------------------------------------
 
     def diff(self, older: ScanSnapshot, newer: ScanSnapshot) -> ScanDiff:
-        d = ScanDiff(older_ts=older.timestamp, newer_ts=newer.timestamp)
+        d = ScanDiff(
+            older_ts=older.timestamp,
+            newer_ts=newer.timestamp,
+            older_target=older.target,
+            newer_target=newer.target,
+            older_profile=older.profile,
+            newer_profile=newer.profile,
+        )
 
         old_hosts = set(older.hosts.keys())
         new_hosts = set(newer.hosts.keys())
-        d.new_hosts = sorted(new_hosts - old_hosts)
-        d.removed_hosts = sorted(old_hosts - new_hosts)
+        d.new_hosts = sorted(new_hosts - old_hosts, key=_ip_sort_key)
+        d.removed_hosts = sorted(old_hosts - new_hosts, key=_ip_sort_key)
 
-        for ip in old_hosts & new_hosts:
+        for ip in sorted(old_hosts & new_hosts, key=_ip_sort_key):
             old_ports = set(p for p, v in older.hosts[ip].ports.items() if v.get("state") == "open")
             new_ports_set = set(p for p, v in newer.hosts[ip].ports.items() if v.get("state") == "open")
-            for p in new_ports_set - old_ports:
+            for p in sorted(new_ports_set - old_ports):
                 d.new_ports.append((ip, p))
-            for p in old_ports - new_ports_set:
+            for p in sorted(old_ports - new_ports_set):
                 d.closed_ports.append((ip, p))
             # Version changes
-            for p in old_ports & new_ports_set:
+            for p in sorted(old_ports & new_ports_set):
                 old_v = older.hosts[ip].ports.get(p, {}).get("version", "")
                 new_v = newer.hosts[ip].ports.get(p, {}).get("version", "")
                 if old_v and new_v and old_v != new_v:
@@ -259,7 +280,53 @@ class ScanHistory:
 
         return d
 
-    def diff_last_two(self) -> Optional[ScanDiff]:
+    def _compatible_with_latest(
+        self,
+        same_target: bool = True,
+        same_profile: bool = True,
+        cutoff: Optional[datetime] = None,
+    ) -> Optional[Tuple[ScanSnapshot, ScanSnapshot]]:
+        snaps = self.list_snapshots()
+        if len(snaps) < 2:
+            return None
+
+        newer = self.load_snapshot(snaps[-1][1])
+        if not newer:
+            return None
+
+        candidates = snaps[:-1]
+        if cutoff is not None:
+            candidates = [
+                (ts, path) for ts, path in candidates
+                if (ts if ts.tzinfo else ts.replace(tzinfo=timezone.utc)) <= cutoff
+            ]
+
+        for _ts, path in reversed(candidates):
+            older = self.load_snapshot(path)
+            if not older:
+                continue
+            if same_target and older.target != newer.target:
+                continue
+            if same_profile and older.profile != newer.profile:
+                continue
+            return older, newer
+
+        return None
+
+    def diff_last_two(
+        self,
+        same_target: bool = True,
+        same_profile: bool = True,
+    ) -> Optional[ScanDiff]:
+        pair = self._compatible_with_latest(
+            same_target=same_target,
+            same_profile=same_profile,
+        )
+        if pair:
+            return self.diff(*pair)
+        if same_target or same_profile:
+            return None
+
         snaps = self.list_snapshots()
         if len(snaps) < 2:
             return None
@@ -269,19 +336,21 @@ class ScanHistory:
             return self.diff(older, newer)
         return None
 
-    def diff_since_days(self, days: int) -> Optional[ScanDiff]:
+    def diff_since_days(
+        self,
+        days: int,
+        same_target: bool = True,
+        same_profile: bool = True,
+    ) -> Optional[ScanDiff]:
         """Diff latest snapshot against the oldest one at least `days` ago."""
-        snaps = self.list_snapshots()
-        if not snaps:
-            return None
         cutoff = datetime.now(timezone.utc) - timedelta(days=days)
-        older_candidates = [(ts, p) for ts, p in snaps if ts.replace(tzinfo=timezone.utc) <= cutoff]
-        if not older_candidates:
-            older_candidates = [snaps[0]]
-        older = self.load_snapshot(older_candidates[-1][1])
-        newer = self.load_snapshot(snaps[-1][1])
-        if older and newer:
-            return self.diff(older, newer)
+        pair = self._compatible_with_latest(
+            same_target=same_target,
+            same_profile=same_profile,
+            cutoff=cutoff,
+        )
+        if pair:
+            return self.diff(*pair)
         return None
 
     def history_table(self) -> List[dict]:

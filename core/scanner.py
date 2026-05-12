@@ -26,6 +26,7 @@ import nmap
 from config.settings import Settings, SCAN_PROFILES
 
 logger = logging.getLogger(__name__)
+PortScannerTimeout = getattr(nmap, "PortScannerTimeout", TimeoutError)
 
 
 @dataclass
@@ -185,8 +186,13 @@ class NetworkScanner:
         self._update_progress(f"Starting {profile} scan on {target}", 0.0)
 
         try:
-            # Perform scan using python-nmap
-            self.nm.scan(hosts=target, arguments=scan_args)
+            # Perform scan using python-nmap. The timeout is per nmap
+            # invocation, not the whole assessment workflow.
+            self.nm.scan(
+                hosts=target,
+                arguments=scan_args,
+                timeout=self._nmap_timeout(),
+            )
             
             # Check for scan errors
             if self.nm.scaninfo().get('error', []):
@@ -198,7 +204,13 @@ class NetworkScanner:
             
             result.summary = self.nm.get_nmap_last_output()[:500]  # Truncated
             logger.info(f"Scan completed: {len(result.hosts)} hosts found")
-            
+        except PortScannerTimeout as e:
+            logger.warning(
+                "Nmap scan timed out after %s seconds: %s",
+                self._nmap_timeout(),
+                e,
+            )
+            raise
         except nmap.PortScannerError as e:
             err_msg = str(e)
             # If a profile requires root (OS scan, SYN scan) and we don't
@@ -208,7 +220,11 @@ class NetworkScanner:
                 fallback_args = self._strip_root_flags(scan_args)
                 if fallback_args != scan_args:
                     try:
-                        self.nm.scan(hosts=target, arguments=fallback_args)
+                        self.nm.scan(
+                            hosts=target,
+                            arguments=fallback_args,
+                            timeout=self._nmap_timeout(),
+                        )
                         self._parse_results(result)
                         result.summary = self.nm.get_nmap_last_output()[:500]
                         logger.info(f"Fallback scan completed: {len(result.hosts)} hosts found")
@@ -226,6 +242,15 @@ class NetworkScanner:
             self._update_progress("Scan complete", 100.0)
         
         return result
+
+    def _nmap_timeout(self) -> int:
+        """Return the configured per-invocation nmap timeout in seconds."""
+        timeout = getattr(self.settings, "nmap_scan_timeout_seconds", 900)
+        try:
+            timeout = int(timeout)
+        except (TypeError, ValueError):
+            timeout = 900
+        return max(timeout, 1)
     
     def _apply_safety(self, args: str) -> str:
         """Apply safe-mode downgrades and exclusions to an nmap argument string.
@@ -243,6 +268,7 @@ class NetworkScanner:
         out = args
         if getattr(self.settings, "safe_mode", False):
             out = downgrade_nmap_args(out)
+            out = self._bound_safe_scan_args(out)
             logger.info("Safe mode: nmap args downgraded to: %s", out)
 
         excluded = getattr(self.settings, "excluded_hosts", ())
@@ -250,17 +276,58 @@ class NetworkScanner:
             out = f"{out} --exclude {','.join(excluded)}"
         return out
 
+    @classmethod
+    def _bound_safe_scan_args(cls, args: str) -> str:
+        """Keep safe-mode nmap scans bounded even when running as root.
+
+        Root profiles such as STEALTH normally keep ``-sS`` and can otherwise
+        fall back to nmap's default 1000 TCP ports across a whole subnet. Safe
+        mode should avoid that unless the caller supplied an explicit port set.
+        """
+        parts = args.split()
+        out = list(parts)
+        if "-sn" not in parts and not cls._has_port_limit(parts):
+            out.append("-F")
+        if "-sV" in out and not cls._has_version_intensity(parts):
+            out.extend(["--version-intensity", "2"])
+        return " ".join(out)
+
+    @staticmethod
+    def _has_port_limit(parts: List[str]) -> bool:
+        """Return True if nmap args already constrain the port set."""
+        return "-F" in parts or any(
+            p == "-p"
+            or (p.startswith("-p") and len(p) > 2)
+            or p == "--top-ports"
+            or p.startswith("--top-ports=")
+            for p in parts
+        )
+
+    @staticmethod
+    def _has_version_intensity(parts: List[str]) -> bool:
+        """Return True if nmap args already set service-version intensity."""
+        return any(
+            p == "--version-intensity" or p.startswith("--version-intensity=")
+            for p in parts
+        )
+
     @staticmethod
     def _strip_root_flags(args: str) -> str:
         """Remove nmap flags that require root privileges.
 
         -A implies -O -sV -sC --traceroute — all of which need root for -O.
         Replace -A with just -sV -sC (version + default scripts).
-        Replace -sS (SYN scan) with -sT (connect scan).
+        Replace -sS (SYN scan) with -sT (connect scan). Once nmap falls back
+        to a connect scan it is no longer stealthy, so keep it bounded by
+        using fast/common ports, moderate timing, and light version detection
+        unless the profile already supplied an explicit port list.
         Remove -O and --osscan-guess entirely.
         """
         parts = args.split()
         out = []
+        replaced_syn_scan = "-sS" in parts
+        has_port_limit = NetworkScanner._has_port_limit(parts)
+        has_version_intensity = NetworkScanner._has_version_intensity(parts)
         for p in parts:
             if p == '-A':
                 out.extend(['-sV', '-sC'])
@@ -268,10 +335,18 @@ class NetworkScanner:
                 continue
             elif p == '--osscan-guess':
                 continue
+            elif replaced_syn_scan and p.startswith("-T") and len(p) == 3:
+                continue
             elif p == '-sS':
                 out.append('-sT')
             else:
                 out.append(p)
+        if replaced_syn_scan and not has_port_limit:
+            out.append('-F')
+        if replaced_syn_scan:
+            out.append('-T3')
+            if '-sV' in out and not has_version_intensity:
+                out.extend(['--version-intensity', '2'])
         # Deduplicate -sV if it was already present alongside -A
         seen = set()
         deduped = []

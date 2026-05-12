@@ -310,9 +310,19 @@ class UpdateManager:
         except Exception:
             pass
 
+        cve_last = self._meta.get("cve_osv_last_updated")
+        cve_meta_path = _CACHE_DIR / "cve_cache_meta.json"
+        try:
+            if not cve_last and cve_meta_path.exists():
+                import json as _json
+                with open(cve_meta_path, "r", encoding="utf-8") as _f:
+                    cve_last = _json.load(_f).get("cve_osv_last_updated")
+        except Exception:
+            pass
+
         entries = [
             ("EOL cache (per-product)", _CACHE_DIR,                        eol_last),
-            ("CVE cache",          _CACHE_DIR / "cve_cache.json",      self._meta.get("cve_osv_last_updated")),
+            ("CVE cache",          _CACHE_DIR / "cve_cache.json",      cve_last),
             ("Wappalyzer",         _CACHE_DIR / "wappalyzer_tech.json",self._meta.get("wappalyzer_last_updated")),
             ("JA3 signatures",     _CACHE_DIR / "ja3_signatures.json", self._meta.get("ja3_last_updated")),
         ]

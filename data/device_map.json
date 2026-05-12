@@ -19,5 +19,28 @@
     "last_seen": "2026-04-05T20:48:07.832613",
     "observation_count": 1,
     "metadata": {}
+  },
+  "00:15:5d:f8:50:9d": {
+    "mac": "00:15:5d:f8:50:9d",
+    "vendor": "Microsoft Corporation",
+    "model": "",
+    "version": "",
+    "device_type": "",
+    "device_name": "OLED77C44LA.DEUQLJP-566de32cba2d40aeae7dc06b559e6a10",
+    "confidence": 0.9450000000000001,
+    "sources": [
+      "mdns",
+      "oui",
+      "history"
+    ],
+    "ips": [],
+    "hostnames": [
+      "Nas",
+      "OLED77C44LA.DEUQLJP-566de32cba2d40aeae7dc06b559e6a10"
+    ],
+    "first_seen": "2026-05-11T22:39:52.525606",
+    "last_seen": "2026-05-12T07:47:26.602921",
+    "observation_count": 3,
+    "metadata": {}
   }
 }

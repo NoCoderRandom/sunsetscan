@@ -40,9 +40,10 @@ class Settings:
         ssl_check_timeout: Timeout for SSL certificate checks (seconds)
         web_check_timeout: Timeout for HTTP checks (seconds)
         upnp_discovery_timeout: Timeout for SSDP UPnP discovery (seconds)
+        nmap_scan_timeout_seconds: Maximum runtime for one nmap invocation
     """
     tool_name: str = "NetWatch"
-    version: str = "1.7.0"
+    version: str = "1.7.1"
     banner_timeout: int = 3
     cache_ttl_hours: int = 24       # legacy — used by eol/cache.py
     cve_cache_ttl_days: int = 7     # CVE data refreshed weekly
@@ -56,6 +57,7 @@ class Settings:
     ssl_check_timeout: float = 5.0
     web_check_timeout: float = 5.0
     upnp_discovery_timeout: float = 3.0
+    nmap_scan_timeout_seconds: int = 900
     nmap_parallel_hosts: int = 4
     scan_worker_threads: int = 8
     history_retention_days: int = 90

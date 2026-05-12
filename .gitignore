@@ -20,6 +20,8 @@ reports/
 # Hardware EOL source artifact: keep the compressed downloadable module in git,
 # but do not commit expanded generated JSON databases.
 data/hardware_eol/*.json
+data/hardware_eol/records/*.json
+data/hardware_eol/netwatch_hardware_eol.json.gz
 !data/hardware_eol/netwatch_hardware_eol_summary.json
 
 # Raw vendor lifecycle source files copied from nhedb-scraper for local analysis.
@@ -52,11 +54,17 @@ desktop.ini
 
 # Temp files
 *.bak
+*.bak.*
 *.tmp
 .claude
 .claude/
 
 # Personal planning and development files — never commit
+.codex
+.codex/
+.codex_backups/
+prompts/audit_fixes/
+HARDWARE_EOL_INTEGRATION_NOTES.md
 SESSION_NOTES.txt
 NetWatch_Improvement_Master_Document.html
 NetWatch_Improvement_Master_Document.docx

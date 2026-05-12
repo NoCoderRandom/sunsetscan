@@ -40,8 +40,8 @@ sys.path.insert(0, str(Path(__file__).parent))
 from rich.console import Console
 from rich.prompt import Prompt, Confirm
 
-from config.settings import Settings
-from core.scanner import ScanResult
+from config.settings import Settings, SCAN_PROFILES
+from core.scanner import HostInfo, ScanResult
 from core.port_scanner import PortScanOrchestrator
 from core.banner_grabber import BannerGrabber
 from core.nse_scanner import NSEScanner
@@ -301,9 +301,11 @@ class NetWatch:
                 f"[yellow]Safe mode enabled[/yellow] ([dim]{reasons}[/dim])"
             )
             self.console.print(
-                f"  [dim]masscan capped, nmap_parallel_hosts="
+                f"  [dim]masscan capped/skipped for broad profiles, "
+                f"nmap_parallel_hosts="
                 f"{self.settings.nmap_parallel_hosts}, "
                 f"workers={self.settings.scan_worker_threads}, "
+                f"unbounded nmap port scans avoided, "
                 f"-O fingerprinting disabled[/dim]"
             )
             if self.settings.excluded_hosts:
@@ -561,9 +563,10 @@ class NetWatch:
         if Confirm.ask("Show diff of last two scans?", default=False):
             diff = history.diff_last_two()
             if diff is None:
-                self.console.print("[yellow]Need at least two scans for a diff.[/yellow]")
+                self.console.print("[yellow]Need at least two scans with the same target and profile for a diff.[/yellow]")
             else:
                 self.console.print(f"\nDiff: {diff.older_ts[:19]}  ->  {diff.newer_ts[:19]}")
+                self.console.print(f"[dim]Target/profile: {diff.newer_target or 'unknown'} / {diff.newer_profile or 'unknown'}[/dim]")
                 for line in diff.summary_lines():
                     self.console.print(f"  {line}")
         Prompt.ask("\nPress ENTER to return to menu")
@@ -2035,10 +2038,16 @@ class NetWatch:
                         f"  [cyan]ARP sweep found {len(extra)} additional "
                         f"host(s) not visible to ping sweep: "
                         f"{', '.join(sorted(extra))}[/cyan]")
-                discovered_hosts = sorted(nmap_hosts | arp_hosts)
+                discovered_hosts = self._normalise_discovered_hosts(
+                    nmap_hosts | arp_hosts,
+                    excluded_hosts=getattr(self.settings, "excluded_hosts", ()),
+                )
             else:
                 nmap_hosts = set(self.scanner.ping_sweep(target))
-                discovered_hosts = sorted(nmap_hosts)
+                discovered_hosts = self._normalise_discovered_hosts(
+                    nmap_hosts,
+                    excluded_hosts=getattr(self.settings, "excluded_hosts", ()),
+                )
 
             if not discovered_hosts:
                 self.console.print("[yellow]No active hosts found.[/yellow]")
@@ -2049,12 +2058,45 @@ class NetWatch:
             # Phase 2: Port Scanning
             self.console.print("[bold blue]Phase 2/8: Port Scanning[/bold blue]")
             profile = self.args.profile if hasattr(self.args, 'profile') else "QUICK"
-            self.console.print(f"[dim]Scanning {len(discovered_hosts)} hosts in parallel...[/dim]")
-            scan_result = self.scanner.scan(target, profile=profile)
+            scan_target = self._scan_target_for_discovered_hosts(discovered_hosts, target)
+            self.console.print(
+                f"[dim]Scanning {len(discovered_hosts)} discovered host(s) "
+                f"instead of the whole target range...[/dim]"
+            )
+            port_scan_timed_out = False
+            port_scan_error = ""
+            try:
+                scan_result = self.scanner.scan(
+                    scan_target,
+                    profile=profile,
+                    arguments=SCAN_PROFILES.get(profile),
+                )
+            except Exception as e:
+                if not self._is_nmap_timeout_error(e):
+                    raise
+                port_scan_timed_out = True
+                port_scan_error = str(e)
+                self.console.print(
+                    "[yellow]Port scan timed out. Continuing with a "
+                    "discovery-only report for this profile.[/yellow]"
+                )
+                scan_result = self._discovery_only_scan_result(
+                    target=target,
+                    profile=profile,
+                    discovered_hosts=discovered_hosts,
+                    start_time=start_time,
+                )
+            scan_result.target = target
+            self._merge_discovered_hosts(scan_result, discovered_hosts)
             scan_result.start_time = start_time
             scan_result.end_time = datetime.now()
             self.last_scan_result = scan_result
-            self.console.print(f"[green]Port scan complete — {len(scan_result.hosts)} hosts with open ports[/green]\n")
+            hosts_with_ports = sum(1 for h in scan_result.hosts.values() if h.ports)
+            total_ports = sum(len(h.ports) for h in scan_result.hosts.values())
+            self.console.print(
+                f"[green]Port scan complete — {hosts_with_ports} host(s) "
+                f"with open ports, {total_ports} open port(s) total[/green]\n"
+            )
 
             # Phase 3: Banner Grabbing
             self.console.print("[bold blue]Phase 3/8: Service Banner Grabbing[/bold blue]")
@@ -2086,6 +2128,29 @@ class NetWatch:
             # Phase 7: Security Checks (SSL/TLS, SSH, DNS, UPnP, CVE, JA3S)
             self.console.print("[bold blue]Phase 7/8: Security Analysis[/bold blue]")
             self.run_security_checks(scan_result)
+            if port_scan_timed_out:
+                self.finding_registry.add(Finding(
+                    severity=Severity.LOW,
+                    title=f"{profile} port scan timed out; report is discovery-only",
+                    host="local",
+                    category="Scanner Runtime",
+                    description=(
+                        f"The {profile} port scan for {target} exceeded the "
+                        "configured nmap timeout before service enumeration "
+                        "completed."
+                    ),
+                    explanation=(
+                        "NetWatch preserved the discovery results and continued "
+                        "with the rest of the assessment so the validation run "
+                        "still produces a usable report."
+                    ),
+                    recommendation=(
+                        "Use QUICK or FULL safe-mode reports for service detail, "
+                        "or scan a smaller target set when using STEALTH."
+                    ),
+                    evidence=port_scan_error,
+                    tags=["scanner-runtime", "timeout", "network-level"],
+                ))
             self.console.print("[green]Security analysis complete[/green]\n")
 
             # Phase 8: Hybrid Identity Fusion (passive + active + OUI + history)
@@ -2157,6 +2222,11 @@ class NetWatch:
                     self.finding_registry.deduplicate()
             except Exception as e:
                 logger.debug(f"Hardware EOL pipeline error: {e}")
+
+            # Full-assessment duration should include enrichment, security
+            # checks, identity fusion, and hardware lifecycle matching, not
+            # only the initial port scan.
+            scan_result.end_time = datetime.now()
 
             # Show results
             self.display.show_scan_info(scan_result)
@@ -2261,6 +2331,53 @@ class NetWatch:
             logging.error(f"Full assessment failed: {e}", exc_info=True)
             self.display.show_error(f"Assessment failed: {e}")
             return 1
+
+    @staticmethod
+    def _normalise_discovered_hosts(hosts, excluded_hosts=()) -> List[str]:
+        """Sort discovered hosts numerically and drop excluded scanner/gateway IPs."""
+        excluded = {str(ip) for ip in (excluded_hosts or ())}
+
+        def key(ip: str):
+            try:
+                return tuple(int(part) for part in str(ip).split("."))
+            except ValueError:
+                return (999, str(ip))
+
+        return sorted({str(ip) for ip in hosts if str(ip) not in excluded}, key=key)
+
+    @staticmethod
+    def _scan_target_for_discovered_hosts(discovered_hosts: List[str], fallback: str) -> str:
+        """Build an nmap host expression for already-discovered active hosts."""
+        return " ".join(discovered_hosts) if discovered_hosts else fallback
+
+    @staticmethod
+    def _merge_discovered_hosts(scan_result: ScanResult, discovered_hosts: List[str]) -> None:
+        """Keep discovered-but-closed hosts visible in narrow-profile reports."""
+        for ip in discovered_hosts:
+            if ip not in scan_result.hosts:
+                scan_result.hosts[ip] = HostInfo(ip=ip, state="up")
+            elif scan_result.hosts[ip].state in ("", "unknown"):
+                scan_result.hosts[ip].state = "up"
+
+    @staticmethod
+    def _discovery_only_scan_result(
+        target: str,
+        profile: str,
+        discovered_hosts: List[str],
+        start_time: datetime,
+    ) -> ScanResult:
+        """Create a reportable result when service enumeration times out."""
+        result = ScanResult(target=target, profile=profile)
+        result.start_time = start_time
+        result.summary = "Port scan timed out; showing discovery-only host list."
+        for ip in discovered_hosts:
+            result.hosts[ip] = HostInfo(ip=ip, state="up")
+        return result
+
+    @staticmethod
+    def _is_nmap_timeout_error(error: Exception) -> bool:
+        text = str(error).lower()
+        return "timeout from nmap process" in text or "timed out" in text
 
 
 def create_parser() -> argparse.ArgumentParser:
@@ -3010,9 +3127,10 @@ def main() -> int:
         since_days = getattr(args, 'since', None)
         diff = history.diff_since_days(since_days) if since_days else history.diff_last_two()
         if diff is None:
-            print("Not enough scan history for a diff. Run at least two scans first.")
+            print("Not enough compatible scan history for a diff. Run at least two scans with the same target and profile first.")
             return 0
         print(f"\nDiff: {diff.older_ts[:19]}  ->  {diff.newer_ts[:19]}")
+        print(f"Target/profile: {diff.newer_target or 'unknown'} / {diff.newer_profile or 'unknown'}")
         print("-" * 60)
         for line in diff.summary_lines():
             print(f"  {line}")

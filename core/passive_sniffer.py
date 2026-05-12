@@ -127,6 +127,12 @@ class PassiveSniffer:
         except ImportError:
             logger.warning("scapy not installed — passive sniffing disabled")
             return False
+        except PermissionError:
+            logger.warning("Passive sniffer requires raw socket access — capture disabled")
+            return False
+        except OSError as e:
+            logger.warning("Passive sniffer unavailable — capture disabled: %s", e)
+            return False
 
         self._stop_event.clear()
         self._packets.clear()

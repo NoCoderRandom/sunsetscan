@@ -7,6 +7,7 @@ EOL checker because the source data is vendor hardware lifecycle data, not
 endoflife.date cycles.
 """
 
+import gzip
 import json
 import logging
 import re
@@ -18,7 +19,11 @@ logger = logging.getLogger(__name__)
 
 _PROJECT_ROOT = Path(__file__).parent.parent
 _DEFAULT_DB_PATH = _PROJECT_ROOT / "data" / "cache" / "hardware_eol" / "netwatch_hardware_eol.json"
+_DEFAULT_INDEX_PATH = _PROJECT_ROOT / "data" / "cache" / "hardware_eol" / "netwatch_hardware_eol_index.json"
 _DEVELOPER_DB_PATH = _PROJECT_ROOT / "data" / "hardware_eol" / "netwatch_hardware_eol.json"
+_DEVELOPER_DB_GZ_PATH = _PROJECT_ROOT / "data" / "hardware_eol" / "netwatch_hardware_eol.json.gz"
+_DEVELOPER_INDEX_PATH = _PROJECT_ROOT / "data" / "hardware_eol" / "netwatch_hardware_eol_index.json"
+_DEVELOPER_INDEX_GZ_PATH = _PROJECT_ROOT / "data" / "hardware_eol" / "netwatch_hardware_eol_index.json.gz"
 
 
 def normalize_key(value: Any) -> str:
@@ -130,11 +135,15 @@ class HardwareEOLDatabase:
 
     def __init__(self, path: Optional[Path] = None):
         self.path = Path(path) if path is not None else _DEFAULT_DB_PATH
+        self._db_path: Optional[Path] = None
         self._db: Optional[Dict[str, Any]] = None
         self._indexes: Dict[str, Any] = {}
         self._records: List[Dict[str, Any]] = []
         self._record_positions: Dict[str, int] = {}
         self._summary_by_key: Dict[str, Dict[str, Any]] = {}
+        self._record_locations: Dict[str, str] = {}
+        self._record_shards: Dict[str, Any] = {}
+        self._shard_cache: Dict[str, Dict[str, Any]] = {}
 
     def available(self) -> bool:
         """Return True if a hardware lifecycle database file exists."""
@@ -236,16 +245,24 @@ class HardwareEOLDatabase:
             return
 
         try:
-            with db_path.open("r", encoding="utf-8") as f:
-                self._db = json.load(f)
+            self._db = self._load_json_file(db_path)
         except Exception as e:
             logger.warning("Could not load hardware EOL database: %s", e)
             self._db = {}
             return
 
+        self._db_path = db_path
         self._indexes = self._db.get("indexes") or {}
         self._records = self._db.get("records") or []
         self._record_positions = self._indexes.get("by_id") or {}
+        if self._records and not self._record_positions:
+            self._record_positions = {
+                str(record["id"]): pos
+                for pos, record in enumerate(self._records)
+                if record.get("id")
+            }
+        self._record_locations = self._db.get("record_locations") or {}
+        self._record_shards = self._db.get("record_shards") or {}
         self._summary_by_key = {}
         for summary in self._db.get("model_summaries") or []:
             vendor_slug = summary.get("vendor_slug") or ""
@@ -253,19 +270,41 @@ class HardwareEOLDatabase:
             if vendor_slug and model_key:
                 self._summary_by_key[f"{vendor_slug}|{model_key}"] = summary
 
+        summary = self._db.get("summary") or {}
+        total_records = len(self._records) or summary.get("total_records") or 0
+        layout = "split" if self._record_locations else "monolithic"
         logger.debug(
-            "Hardware EOL database loaded from %s: %d records, %d model summaries",
+            "Hardware EOL database loaded from %s: %d records, %d model summaries, %s layout",
             db_path,
-            len(self._records),
+            total_records,
             len(self._summary_by_key),
+            layout,
         )
 
     def _candidate_path(self) -> Path:
-        if self.path.exists():
+        if self.path != _DEFAULT_DB_PATH:
             return self.path
-        if self.path == _DEFAULT_DB_PATH and _DEVELOPER_DB_PATH.exists():
-            return _DEVELOPER_DB_PATH
+
+        candidates = (
+            _DEFAULT_INDEX_PATH,
+            _DEVELOPER_INDEX_PATH,
+            _DEVELOPER_INDEX_GZ_PATH,
+            _DEFAULT_DB_PATH,
+            _DEVELOPER_DB_PATH,
+            _DEVELOPER_DB_GZ_PATH,
+        )
+        for candidate in candidates:
+            if candidate.exists():
+                return candidate
         return self.path
+
+    @staticmethod
+    def _load_json_file(path: Path) -> Dict[str, Any]:
+        if path.suffix == ".gz":
+            with gzip.open(path, "rt", encoding="utf-8") as f:
+                return json.load(f)
+        with path.open("r", encoding="utf-8") as f:
+            return json.load(f)
 
     def _lookup_record_ids(self, vendor_key: str, model_key: str) -> Tuple[List[str], str]:
         composite = f"{vendor_key}|{model_key}" if vendor_key else ""
@@ -296,6 +335,9 @@ class HardwareEOLDatabase:
         return [], ""
 
     def _records_for_ids(self, record_ids: List[str]) -> List[Dict[str, Any]]:
+        if self._record_locations:
+            return self._records_for_ids_from_shards(record_ids)
+
         seen = set()
         records: List[Dict[str, Any]] = []
         for record_id in record_ids:
@@ -306,6 +348,84 @@ class HardwareEOLDatabase:
             if isinstance(pos, int) and 0 <= pos < len(self._records):
                 records.append(self._records[pos])
         return records
+
+    def _records_for_ids_from_shards(self, record_ids: List[str]) -> List[Dict[str, Any]]:
+        seen = set()
+        records: List[Dict[str, Any]] = []
+        for record_id in record_ids:
+            if record_id in seen:
+                continue
+            seen.add(record_id)
+            category = self._record_locations.get(record_id)
+            if not category:
+                continue
+            record = self._record_from_shard(category, record_id)
+            if record:
+                records.append(record)
+        return records
+
+    def _record_from_shard(self, category: str, record_id: str) -> Optional[Dict[str, Any]]:
+        shard = self._load_record_shard(category)
+        records = shard.get("records") or []
+        positions = shard.get("positions") or {}
+        pos = positions.get(record_id)
+        if isinstance(pos, int) and 0 <= pos < len(records):
+            return records[pos]
+        for record in records:
+            if str(record.get("id") or "") == record_id:
+                return record
+        return None
+
+    def _load_record_shard(self, category: str) -> Dict[str, Any]:
+        if category in self._shard_cache:
+            return self._shard_cache[category]
+
+        info = self._record_shards.get(category) or {}
+        rel_path = info.get("path") if isinstance(info, dict) else str(info)
+        if not rel_path:
+            self._shard_cache[category] = {"records": [], "positions": {}}
+            return self._shard_cache[category]
+
+        path = self._resolve_related_path(rel_path)
+        try:
+            shard_data = self._load_json_file(path)
+        except Exception as e:
+            logger.warning("Could not load hardware EOL shard %s: %s", path, e)
+            self._shard_cache[category] = {"records": [], "positions": {}}
+            return self._shard_cache[category]
+
+        records = shard_data.get("records") or []
+        positions = (shard_data.get("indexes") or {}).get("by_id") or {}
+        if not positions:
+            positions = {
+                str(record["id"]): pos
+                for pos, record in enumerate(records)
+                if record.get("id")
+            }
+        self._shard_cache[category] = {"records": records, "positions": positions}
+        return self._shard_cache[category]
+
+    def _resolve_related_path(self, rel_path: str) -> Path:
+        path = Path(rel_path)
+        if path.is_absolute():
+            candidates = [path]
+        else:
+            base = self._db_path.parent if self._db_path else self.path.parent
+            candidate = base / path
+            candidates = [candidate]
+
+        extra = []
+        for candidate in candidates:
+            if candidate.suffix == ".gz":
+                extra.append(candidate.with_suffix(""))
+            else:
+                extra.append(Path(f"{candidate}.gz"))
+        candidates.extend(extra)
+
+        for candidate in candidates:
+            if candidate.exists():
+                return candidate
+        return candidates[0]
 
     @staticmethod
     def _ids_for_records(records: List[Dict[str, Any]]) -> List[str]:

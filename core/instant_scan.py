@@ -17,6 +17,7 @@ Exports:
 """
 
 import logging
+import os
 import time
 from typing import Dict, List, Optional
 
@@ -209,7 +210,17 @@ def run_instant_scan(target: Optional[str] = None) -> int:
 
     if not arp_table:
         console.print("[yellow]No hosts responded to ARP sweep.[/yellow]")
-        console.print("[dim]Make sure you are running as root/sudo.[/dim]")
+        if hasattr(os, "geteuid") and os.geteuid() != 0:
+            console.print("[dim]Make sure you are running as root/sudo.[/dim]")
+        else:
+            console.print(
+                "[dim]Running as root was confirmed. This usually means the "
+                "target is not on this host's local L2 network, the interface "
+                "is a VM/WSL/NAT adapter, Wi-Fi client isolation is active, or "
+                "devices are ignoring ARP. Use a routed nmap profile for that "
+                "target, or run Instant Scan on a host directly connected to "
+                "the LAN.[/dim]"
+            )
         sniffer.stop()
         return 1
 

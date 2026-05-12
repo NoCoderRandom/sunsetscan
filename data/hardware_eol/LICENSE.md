@@ -6,7 +6,8 @@ License text: https://creativecommons.org/licenses/by-nc/4.0/
 
 This license applies to the NetWatch hardware EOL database artifacts in this directory, including:
 
-- `netwatch_hardware_eol.json.gz`
+- `netwatch_hardware_eol_index.json.gz`
+- `records/*.json.gz`
 - `netwatch_hardware_eol_summary.json`
 
 This database license applies only to the database artifacts listed above. It does not replace or modify the MIT License for the NetWatch repository and application code.
