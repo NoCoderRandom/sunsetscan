@@ -2716,6 +2716,12 @@ def run_setup_wizard(db_size: str = "normal") -> int:
     console.print("\n[bold blue]SunsetScan Setup Wizard[/bold blue]")
     console.print("=" * 60)
     console.print("This will prepare SunsetScan for first use.\n")
+    if os.name != "nt" and hasattr(os, "geteuid") and os.geteuid() == 0 and os.environ.get("SUDO_USER"):
+        console.print(
+            "[yellow]Setup is running under sudo. This can make data/cache files "
+            "root-owned and block later TUI module downloads. Prefer running "
+            "`./sunsetscan --setup` as your normal user.[/yellow]\n"
+        )
 
     # ---- Step 1: Check system dependencies ----
     console.print("[bold]Step 1/6: Checking system dependencies[/bold]")

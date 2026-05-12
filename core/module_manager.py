@@ -29,6 +29,7 @@ import gzip
 import io
 import json
 import logging
+import os
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
@@ -496,7 +497,10 @@ class ModuleManager:
     """
 
     def __init__(self):
-        _CACHE_DIR.mkdir(parents=True, exist_ok=True)
+        try:
+            _CACHE_DIR.mkdir(parents=True, exist_ok=True)
+        except OSError as e:
+            logger.error("Could not create module cache directory %s: %s", _CACHE_DIR, e)
         self._meta = self._load_meta()
 
     # ------------------------------------------------------------------
@@ -596,6 +600,47 @@ class ModuleManager:
     # Download
     # ------------------------------------------------------------------
 
+    def _download_targets(self, module_name: str) -> List[Path]:
+        """Return files that must be writable to install a module."""
+        info = MODULE_REGISTRY[module_name]
+        targets = [_PROJECT_ROOT / info["local_path"], _MODULES_META_PATH]
+        for part in info.get("parts", []):
+            targets.append(_PROJECT_ROOT / part["local_path"])
+        return targets
+
+    def _first_unwritable_target(self, module_names: List[str]) -> Optional[Path]:
+        """Return the first target path that cannot be written, if any."""
+        for module_name in module_names:
+            for target in self._download_targets(module_name):
+                try:
+                    target.parent.mkdir(parents=True, exist_ok=True)
+                except OSError:
+                    return target.parent
+
+                if target.exists():
+                    if not os.access(target, os.W_OK):
+                        return target
+                elif not os.access(target.parent, os.W_OK):
+                    return target.parent
+        return None
+
+    def _cache_permission_message(self, blocked_path: Path) -> str:
+        """Build a user-facing repair message for root-owned cache files."""
+        user = os.environ.get("SUDO_USER") or os.environ.get("USER") or "$USER"
+        group = user if user != "$USER" else "$USER"
+        return (
+            "  Permission error: SunsetScan cannot write module cache files.\n"
+            f"  Blocked path: {blocked_path}\n"
+            "  This usually happens after running --setup or --download with sudo.\n"
+            "  Fix ownership, then run the download again:\n"
+            f"    sudo chown -R {user}:{group} {_CACHE_DIR}\n"
+            "    ./sunsetscan --download all"
+        )
+
+    def _print_cache_permission_error(self, blocked_path: Path, quiet: bool) -> None:
+        if not quiet:
+            print(self._cache_permission_message(blocked_path))
+
     def download(self, module_name: str, quiet: bool = False) -> bool:
         """Download and install a single module.
 
@@ -613,6 +658,16 @@ class ModuleManager:
             return False
 
         info = MODULE_REGISTRY[module_name]
+        blocked_path = self._first_unwritable_target([module_name])
+        if blocked_path:
+            self._print_cache_permission_error(blocked_path, quiet)
+            logger.error(
+                "Module cache is not writable for %s: %s",
+                module_name,
+                blocked_path,
+            )
+            return False
+
         if not quiet:
             print(f"Downloading {module_name} ({info['size_estimate']}) from {info['source']}...")
 
@@ -765,6 +820,16 @@ class ModuleManager:
             Number of successfully downloaded modules.
         """
         success = 0
+        pending = [
+            name for name, info in MODULE_REGISTRY.items()
+            if not self.is_installed(name)
+        ]
+        blocked_path = self._first_unwritable_target(pending)
+        if blocked_path:
+            self._print_cache_permission_error(blocked_path, quiet)
+            logger.error("Module cache is not writable: %s", blocked_path)
+            return 0
+
         for name, info in MODULE_REGISTRY.items():
             if not info["default"] and not self.is_installed(name):
                 if self.download(name, quiet=quiet):
@@ -781,6 +846,16 @@ class ModuleManager:
             Number of successfully downloaded modules.
         """
         success = 0
+        pending = [
+            name for name, info in MODULE_REGISTRY.items()
+            if info["default"] and not self.is_installed(name)
+        ]
+        blocked_path = self._first_unwritable_target(pending)
+        if blocked_path:
+            self._print_cache_permission_error(blocked_path, quiet)
+            logger.error("Module cache is not writable: %s", blocked_path)
+            return 0
+
         for name, info in MODULE_REGISTRY.items():
             if info["default"] and not self.is_installed(name):
                 if self.download(name, quiet=quiet):
