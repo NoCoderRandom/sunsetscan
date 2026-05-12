@@ -594,6 +594,7 @@
         <thead>
           <tr>
             <th>IP Address</th>
+            <th>Name</th>
             <th>Type</th>
             <th>Vendor</th>
             <th>Model</th>
@@ -605,8 +606,10 @@
         </thead>
         <tbody>
           {% for ip, did in device_identities_sorted %}
+          {% set inv_host = hosts.get(ip) %}
           <tr onclick="scrollToHost('{{ ip }}')" style="cursor:pointer;" title="Click to go to host section">
             <td style="font-family:monospace; font-weight:600;">{{ ip }}</td>
+            <td>{{ inv_host.hostname if inv_host and inv_host.hostname else '—' }}</td>
             <td>{{ did.device_type or '—' }}</td>
             <td style="font-weight:600;">{{ did.vendor or '—' }}</td>
             <td>{{ did.model or '—' }}</td>
@@ -686,11 +689,11 @@
       <div class="host-header" onclick="toggleHost('{{ host_ip|replace('.', '-') }}')">
         <div>
           <span class="host-ip">{{ host_ip }}</span>
+          {% if host.hostname %}<span class="host-name">{{ host.hostname }}</span>{% endif %}
           {% if device_identities and host_ip in device_identities %}
           {% set did = device_identities[host_ip] %}
           <span class="host-name">&bull; {{ did.vendor }}{% if did.vendor and did.model %} {% endif %}{{ did.model }}{% if did.device_type %} ({{ did.device_type }}){% endif %}</span>
           {% else %}
-          {% if host.hostname %}<span class="host-name">{{ host.hostname }}</span>{% endif %}
           {% if host.vendor %}<span class="host-name">&bull; {{ host.vendor }}</span>{% endif %}
           {% endif %}
         </div>
