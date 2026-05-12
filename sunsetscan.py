@@ -113,6 +113,15 @@ def check_privileges() -> bool:
         return False
 
 
+def _default_module_ready(module_name: str, module_manager: ModuleManager) -> bool:
+    """Return True when a default data module is usable for scans."""
+    if module_manager.is_installed(module_name):
+        return True
+    if module_name == "hardware-eol":
+        return HardwareEOLDatabase().available()
+    return False
+
+
 def check_scan_readiness() -> List[str]:
     """Check whether required data and tools are available before scanning.
 
@@ -153,7 +162,7 @@ def check_scan_readiness() -> List[str]:
         mm = ModuleManager()
         missing = [
             name for name, info in MODULE_REGISTRY.items()
-            if info.get("default") and not mm.is_installed(name)
+            if info.get("default") and not _default_module_ready(name, mm)
         ]
         if missing:
             warnings.append(
