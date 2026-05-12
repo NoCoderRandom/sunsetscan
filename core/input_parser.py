@@ -33,20 +33,20 @@ logger = logging.getLogger(__name__)
 
 def parse_target_input(target_str: str) -> List[str]:
     """Parse a target input string into nmap-compatible format.
-    
+
     Handles various formats:
     - 192.168.1.0/24 (CIDR)
     - 192.168.1.* (wildcard)
     - 192.168.1.1-100 (range)
     - 192.168.1.1,5,10 (list)
     - 192.168.1.1-50,100 (mixed)
-    
+
     Args:
         target_str: User input string for targets
-        
+
     Returns:
         List of nmap-compatible target specifications
-        
+
     Example:
         >>> parse_target_input("192.168.1.*")
         ['192.168.1.0/24']
@@ -55,13 +55,13 @@ def parse_target_input(target_str: str) -> List[str]:
     """
     if not target_str or not target_str.strip():
         return []
-    
+
     target_str = target_str.strip()
-    
+
     # Check if it's a hostname (contains letters and not an IP pattern)
     if _is_hostname(target_str):
         return [target_str]
-    
+
     # Check if it's already CIDR
     if "/" in target_str:
         try:
@@ -69,22 +69,22 @@ def parse_target_input(target_str: str) -> List[str]:
             return [target_str]
         except ValueError:
             pass
-    
+
     # Check for wildcards (*)
     if "*" in target_str:
         return expand_wildcard(target_str)
-    
+
     # Check for ranges or lists in last octet
     if _has_range_or_list(target_str):
         return _parse_range_or_list(target_str)
-    
+
     # Single IP
     try:
         ipaddress.ip_address(target_str)
         return [target_str]
     except ValueError:
         pass
-    
+
     # Return as-is if we can't parse it (nmap might understand it)
     logger.warning(f"Could not parse target '{target_str}', passing to nmap as-is")
     return [target_str]
@@ -92,10 +92,10 @@ def parse_target_input(target_str: str) -> List[str]:
 
 def _is_hostname(target: str) -> bool:
     """Check if target is a hostname rather than IP.
-    
+
     Args:
         target: String to check
-        
+
     Returns:
         True if it looks like a hostname
     """
@@ -109,10 +109,10 @@ def _is_hostname(target: str) -> bool:
 
 def _has_range_or_list(target: str) -> bool:
     """Check if target contains range (-) or list (,) notation.
-    
+
     Args:
         target: String to check
-        
+
     Returns:
         True if contains range or list
     """
@@ -127,13 +127,13 @@ def _has_range_or_list(target: str) -> bool:
 
 def expand_wildcard(target: str) -> List[str]:
     """Expand wildcard patterns to CIDR notation.
-    
+
     Args:
         target: Pattern like "192.168.1.*" or "192.168.*.*"
-        
+
     Returns:
         List of CIDR notations
-        
+
     Example:
         >>> expand_wildcard("192.168.1.*")
         ['192.168.1.0/24']
@@ -142,13 +142,13 @@ def expand_wildcard(target: str) -> List[str]:
     """
     if "*" not in target:
         return [target]
-    
+
     # Count wildcards
     wildcard_count = target.count("*")
-    
+
     # Replace wildcards with 0
     ip_with_zeros = target.replace("*", "0")
-    
+
     # Determine prefix based on wildcard count
     if wildcard_count == 1:
         # 192.168.1.* -> /24
@@ -166,13 +166,13 @@ def expand_wildcard(target: str) -> List[str]:
 
 def _parse_range_or_list(target: str) -> List[str]:
     """Parse range or list notation in last octet.
-    
+
     Args:
         target: String like "192.168.1.1-100" or "192.168.1.1,5,10"
-        
+
     Returns:
         List of nmap target strings
-        
+
     Example:
         >>> _parse_range_or_list("192.168.1.1-10")
         ['192.168.1.1-10']
@@ -182,12 +182,12 @@ def _parse_range_or_list(target: str) -> List[str]:
     parts = target.split(".")
     if len(parts) != 4:
         return [target]
-    
+
     base = ".".join(parts[:3]) + "."
     last_octet = parts[3]
-    
+
     results = []
-    
+
     # Handle comma-separated list
     if "," in last_octet:
         items = last_octet.split(",")
@@ -204,42 +204,42 @@ def _parse_range_or_list(target: str) -> List[str]:
         results.append(target)
     else:
         results.append(target)
-    
+
     return results
 
 
 def validate_target(target: str) -> Tuple[bool, Optional[str]]:
     """Validate if a target specification is valid.
-    
+
     Args:
         target: Target string to validate
-        
+
     Returns:
         Tuple of (is_valid, error_message)
     """
     if not target:
         return False, "Empty target"
-    
+
     # Try as IP address
     try:
         ipaddress.ip_address(target)
         return True, None
     except ValueError:
         pass
-    
+
     # Try as network
     try:
         ipaddress.ip_network(target, strict=False)
         return True, None
     except ValueError:
         pass
-    
+
     # Check for valid hostname format
     if _is_hostname(target):
         if re.match(r'^[a-zA-Z0-9][-a-zA-Z0-9.]*[a-zA-Z0-9]$', target):
             return True, None
         return False, "Invalid hostname format"
-    
+
     # Check for range/list format
     if _has_range_or_list(target):
         parts = target.split(".")
@@ -253,57 +253,68 @@ def validate_target(target: str) -> Tuple[bool, Optional[str]]:
                 except ValueError:
                     return False, f"Non-numeric octet: {parts[i]}"
             return True, None
-    
+
     # Wildcard check
     if "*" in target:
         parts = target.split(".")
         if len(parts) in [3, 4]:
             return True, None
-    
+
     return False, f"Unrecognized target format: {target}"
 
 
 def format_target_summary(targets: List[str]) -> str:
     """Create a human-readable summary of targets.
-    
+
     Args:
         targets: List of target specifications
-        
+
     Returns:
         Summary string
     """
     if not targets:
         return "No targets specified"
-    
+
     if len(targets) == 1:
         target = targets[0]
         try:
             network = ipaddress.ip_network(target, strict=False)
-            num_hosts = network.num_addresses - 2  # Subtract network and broadcast
-            return f"{target} ({num_hosts} hosts)"
+            num_hosts = _usable_host_count(network)
+            return f"{target} ({_format_host_count(num_hosts)})"
         except ValueError:
             return target
-    
+
     # Multiple targets
     total_hosts = 0
     for target in targets:
         try:
             network = ipaddress.ip_network(target, strict=False)
-            total_hosts += network.num_addresses - 2
+            total_hosts += _usable_host_count(network)
         except ValueError:
             total_hosts += 1
-    
+
     return f"{len(targets)} target ranges ({total_hosts}+ hosts)"
+
+
+def _usable_host_count(network) -> int:
+    """Return a display-safe host count for IPv4/IPv6 networks."""
+    if network.version == 4 and network.prefixlen < 31:
+        return max(network.num_addresses - 2, 0)
+    return network.num_addresses
+
+
+def _format_host_count(count: int) -> str:
+    return "1 host" if count == 1 else f"{count} hosts"
 
 
 def get_local_subnet_suggestion() -> str:
     """Get suggested local subnet for scanning.
-    
+
     Returns:
         Suggested subnet string
     """
     from core.network_utils import get_local_subnet
-    
+
     subnet = get_local_subnet()
     if subnet:
         return subnet
