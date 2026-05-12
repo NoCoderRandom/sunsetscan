@@ -13,7 +13,7 @@
 
 ---
 
-NetWatch is a local-network security auditing tool for **home network owners and IT staff** who want the depth of nmap without learning nmap syntax. Point it at your network and it finds every active device, fingerprints running software, checks against known vulnerability databases and end-of-life records, probes web interfaces for common weaknesses, tests for default credentials, and produces a clean HTML report with **plain-English explanations** and numbered steps to fix each finding. It is **entirely read-only and non-destructive** — nothing on your network is ever modified.
+NetWatch is a local-network security auditing tool for **home network owners and IT staff** who want the depth of nmap without learning nmap syntax. Point it at your network and it finds every active device, fingerprints running software, checks against known vulnerability databases and end-of-life records, probes web interfaces for common weaknesses, optionally performs a lockout-safe factory-default credential audit, and produces a clean HTML report with **plain-English explanations** and numbered steps to fix each finding. It is **entirely read-only and non-destructive** — nothing on your network is ever modified.
 
 ---
 
@@ -228,7 +228,7 @@ NetWatch runs 12 security checker modules during a full assessment:
 | **UPnP** | SSDP discovery, WAN port-mapping exposure on routers |
 | **mDNS** | Zeroconf/Bonjour device discovery, finds hosts that evade port scans |
 | **ARP** | ARP spoofing detection, MAC address change tracking (requires root) |
-| **Default credentials** | Factory-default passwords on routers, NAS, cameras, printers (opt-in) |
+| **Default credentials** | Opt-in factory-default audit using exact device/model matches, capped attempts, and delays |
 | **Insecure protocols** | Telnet, FTP, TFTP, rsh, rlogin, rexec flagged by severity |
 
 ### Vulnerability Intelligence
@@ -258,13 +258,13 @@ NetWatch includes 9 downloadable data modules that extend detection capabilities
 
 | Module | Source | What it adds |
 |---|---|---|
-| `credentials-mini` | danielmiessler/SecLists | Top 50 default credentials (default) |
-| `credentials-full` | ihebski/DefaultCreds-cheat-sheet | 2860+ vendor-specific credentials |
+| `credentials-mini` | danielmiessler/SecLists | Top 50 default credentials (downloadable reference data; not used by the safe audit unless explicitly enabled in settings) |
+| `credentials-full` | ihebski/DefaultCreds-cheat-sheet | 2860+ vendor-specific credentials (downloadable reference data; not used by the safe audit unless explicitly enabled in settings) |
 | `wappalyzer-mini` | enthec/webappanalyzer | Top 500 web technologies (default) |
 | `wappalyzer-full` | enthec/webappanalyzer | All 7515 web technologies |
 | `ja3-signatures` | salesforce/ja3 | TLS fingerprint database |
 | `snmp-community` | danielmiessler/SecLists | Extended SNMP community strings |
-| `camera-credentials` | many-passwords/many-passwords | IP camera/DVR/NVR default passwords |
+| `camera-credentials` | many-passwords/many-passwords | IP camera/DVR/NVR defaults (downloadable reference data; not used by the safe audit unless explicitly enabled in settings) |
 | `mac-oui` | IEEE Standards Association | MAC prefix vendor database (default) |
 | `hardware-eol` | NoCoderRandom/netwatch | Hardware lifecycle/EOL database (default; database license: CC BY-NC 4.0) |
 
@@ -322,10 +322,10 @@ Every device receives a risk score (0-100) based on the severity and count of fi
 | `--target TARGET` | IP, CIDR range, hostname, or range to scan | No |
 | `--profile PROFILE` | Scan profile: QUICK, FULL, STEALTH, PING, IOT, SMB (default: QUICK) | Varies |
 | `-i`, `--interactive` | Launch guided interactive mode | No |
-| `--full-assessment` | Complete assessment: all phases + auto HTML export | No |
+| `--full-assessment` | Complete assessment + auto HTML export; credential audit stays opt-in | No |
 | `--identify` | Run device identification only (skip security checks) | No |
 | `--nse` | Enable Nmap Scripting Engine for enhanced detection | No |
-| `--check-defaults` | Test for factory-default credentials (your own devices only) | No |
+| `--check-defaults` | Opt in to lockout-safe factory-default credential audit (owned devices only) | No |
 | `--save-baseline` | Save scan as trusted device baseline for rogue detection | No |
 | `--setup` | First-time setup wizard (dependencies + cache download) | No |
 | `--update-cache` | Manually refresh CVE and EOL data caches | No |
@@ -359,6 +359,24 @@ Every device receives a risk score (0-100) based on the severity and count of fi
 | **SMB** | `-T4 -sV -p 135,139,445,137,138 --script smb-security-mode,smb2-security-mode,smb-vuln-ms17-010 --open` | 1-3 min | Yes | Windows shares, EternalBlue check |
 
 > **Tip:** FULL and STEALTH automatically fall back to non-root flags when run without sudo. OS detection will be unavailable but port scanning and service detection still work.
+
+### Default Password Audit Safety
+
+Default-password testing is never enabled automatically. In CLI mode, add
+`--check-defaults`; in guided `-i` mode, choose the default password audit when
+prompted. NetWatch then applies a conservative policy:
+
+- no generic username/password spraying by default
+- only tests credentials that match the detected vendor and model/family
+- skips devices with unique label/PIN defaults, such as many HP printers
+- caps attempts to 2 per host and 1 per service by default
+- waits 2 seconds between credential-bearing attempts
+- stops immediately if a device returns lockout or rate-limit signals
+
+The built-in database is intentionally small and source-backed. Downloaded
+large credential modules are retained as reference data, but the safe audit
+does not use them unless `Settings.auth_allow_module_credentials` is explicitly
+enabled by a developer.
 
 ### Safe Mode and Validation Runs
 
@@ -652,7 +670,7 @@ pip install --upgrade pysnmp
 
 Running network scans against systems you do not own or have authorisation to test may be **illegal** regardless of intent. The authors accept no liability for misuse.
 
-NetWatch is **entirely non-destructive and read-only**. It does not exploit vulnerabilities, deliver payloads, or modify any configuration on any scanned device. The `--check-defaults` credential testing uses common factory defaults and does not brute-force accounts.
+NetWatch is **entirely non-destructive and read-only**. It does not exploit vulnerabilities, deliver payloads, or modify any configuration on any scanned device. The `--check-defaults` credential testing is opt-in, bounded, delayed, exact-model oriented, and stops on lockout/rate-limit signals; it is not a brute-force feature.
 
 ---
 

@@ -662,7 +662,7 @@ class NetWatch:
             if self.nse_scanner:
                 self.run_nse_scans(scan_result)
 
-            # Check for default credentials if enabled
+            # Check for default credentials only when explicitly enabled
             if self.auth_tester and self.auth_tester.enabled:
                 self.run_auth_tests(scan_result)
 
@@ -934,15 +934,30 @@ class NetWatch:
         if not self.auth_tester or not self.auth_tester.enabled:
             return
 
-        print("WARNING: Testing default credentials (only test your own devices!)")
+        self.console.print(
+            "[yellow]Default credential audit enabled: exact device/model "
+            "matches only, bounded attempts, delayed between tries.[/yellow]"
+        )
 
         for ip, host in scan_result.hosts.items():
             if not host.ports:
                 continue
 
-            # Detect device type from existing data
+            # Detect device identity from existing scan data before deciding
+            # whether any credential attempt is safe enough to make.
             device_type = None
+            model = None
+            try:
+                identity = self.device_identifier.identify_preliminary(ip, host)
+                if identity.confidence > 0:
+                    device_type = identity.vendor or identity.device_type or None
+                    model = identity.model or None
+            except Exception as e:
+                logger.debug(f"Pre-auth device identification failed for {ip}: {e}")
+
             for port in host.ports.values():
+                if device_type and model:
+                    break
                 if port.http_fingerprint and port.http_fingerprint.device_type:
                     device_type = port.http_fingerprint.device_type
                     break
@@ -959,7 +974,7 @@ class NetWatch:
 
             # Run auth tests
             auth_results = self.auth_tester.check_all_services(
-                ip, open_ports, device_type
+                ip, open_ports, device_type, model=model
             )
 
             if auth_results:
@@ -1800,13 +1815,12 @@ class NetWatch:
                     port = getattr(result, "port", port_num)
                     service = getattr(result, "service", "unknown")
                     username = getattr(result, "username", "unknown")
-                    password = getattr(result, "password", "unknown")
                     confidence = getattr(result, "confidence", AuthConfidence.FAILED)
                     notes = getattr(result, "notes", "")
 
                     if confidence in (AuthConfidence.CONFIRMED, AuthConfidence.LIKELY):
                         severity = Severity.CRITICAL
-                        title = f"Default credentials accepted: {username}/{password} on port {port}"
+                        title = f"Factory-default credentials accepted for {username!r} on port {port}"
                         explanation = (
                             "This device still uses its factory-default username and password. "
                             "This is one of the most dangerous misconfigurations possible — "
@@ -1831,7 +1845,7 @@ class NetWatch:
                             "treating this as a confirmed vulnerability."
                         )
                         recommendation = (
-                            f"1. Manually attempt to log in to {ip}:{port} with {username}/{password}.\n"
+                            f"1. Manually attempt to log in to {ip}:{port} with the documented factory default for {username!r}.\n"
                             "2. If login succeeds, change the password immediately.\n"
                             "3. If login fails, disregard this finding."
                         )
@@ -1853,7 +1867,7 @@ class NetWatch:
                         explanation=explanation,
                         recommendation=recommendation,
                         evidence=(
-                            f"Credentials tested: {username}:{password} → "
+                            f"Credentials tested: {username}:*** → "
                             f"{confidence.value}. {notes}"
                         ),
                         tags=tags,
@@ -1957,7 +1971,7 @@ class NetWatch:
         2. Port scanning on discovered hosts
         3. Banner grabbing
         4. NSE enhanced detection
-        5. Default credential testing
+        5. Optional default credential audit (--check-defaults)
         6. EOL status checking
         7. Security analysis (SSL/TLS, SSH, DNS, UPnP, CVE, JA3S)
         8. Auto-export to HTML with timestamp
@@ -1996,7 +2010,7 @@ class NetWatch:
             self.console.print("  - Port scan each host")
             self.console.print("  - Grab banners and identify services")
             self.console.print("  - Run NSE scripts (if enabled)")
-            self.console.print("  - Test for default passwords")
+            self.console.print("  - Default credential audit only if --check-defaults is enabled")
             self.console.print("  - Check EOL status")
             self.console.print("  - Export results to HTML")
             self.console.print(f"\n[bold red]Estimated time: 2-6 hours[/bold red]")
@@ -2406,7 +2420,7 @@ examples:
   %(prog)s --target 192.168.1.0/24 --profile IOT    IoT device scan
   %(prog)s --target 192.168.1.0/24 --profile SMB    SMB/Windows scan
   %(prog)s --target 192.168.1.1 --profile FULL --nse  Deep single-host scan
-  %(prog)s --target 192.168.1.0/24 --check-defaults Test default passwords
+  %(prog)s --target 192.168.1.0/24 --check-defaults Lockout-safe default password audit
   %(prog)s --target 192.168.1.0/24 --identify       Quick device inventory
   %(prog)s --target 192.168.1.0/24 --save-baseline  Save device baseline
   %(prog)s --instant                                 Instant scan of the local subnet (auto-detected)
@@ -2454,7 +2468,7 @@ examples:
     parser.add_argument(
         '--check-defaults',
         action='store_true',
-        help='Check for default passwords (use with caution, only on your own devices)'
+        help='Opt in to lockout-safe factory-default credential audit (owned devices only)'
     )
 
     parser.add_argument(
@@ -2466,7 +2480,7 @@ examples:
     parser.add_argument(
         '--full-assessment',
         action='store_true',
-        help='Run complete assessment: discovery, port scan, banners, EOL, auth tests, auto-export to HTML'
+        help='Run complete assessment: discovery, port scan, banners, EOL, security checks, auto-export to HTML'
     )
 
     parser.add_argument(
@@ -3170,14 +3184,12 @@ def main() -> int:
             print("Example: python netwatch.py --full-assessment --target 192.168.1.0/24")
             return 1
 
-        # Auto-enable NSE and auth testing for full assessment
+        # Auto-enable NSE for full assessment. Default-credential testing is
+        # intentionally opt-in because some devices lock accounts after failed
+        # login attempts.
         if not args.nse:
             print("[INFO] Auto-enabling NSE scripts for full assessment")
             args.nse = True
-        if not args.check_defaults:
-            print("[INFO] Auto-enabling default credential testing for full assessment")
-            print("[WARNING] Only test devices you own!")
-            args.check_defaults = True
 
         # Run full assessment
         app = NetWatch(args)

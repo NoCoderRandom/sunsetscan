@@ -22,7 +22,7 @@ python netwatch.py -i
 2. Discovery scan finds active hosts
 3. Choose action from menu:
    - Scan specific hosts in detail
-   - Check default credentials
+   - Optional lockout-safe default password audit
    - Grab banners/fingerprint devices
    - Check EOL status
    - Export results
@@ -43,7 +43,7 @@ python netwatch.py --target 192.168.1.0/24 --profile QUICK --nse
 # Scan specific host with full details
 python netwatch.py --target 192.168.1.115 --profile FULL --nse
 
-# Check for default passwords (your devices only!)
+# Opt in to lockout-safe default password audit (your devices only)
 python netwatch.py --target 192.168.1.115 --check-defaults
 
 # Quick ping sweep to find hosts
@@ -77,7 +77,7 @@ router.local            # Hostname
 | Flag | Description | Impact |
 |------|-------------|--------|
 | `--nse` | Enable NSE scripts | Better device ID, +3-5 min |
-| `--check-defaults` | Test default passwords | Security check, +2-3 min |
+| `--check-defaults` | Opt-in exact-model default password audit | Bounded security check |
 | `--verbose` | Debug logging | More output |
 | `--no-color` | Plain text output | Terminal compatibility |
 
@@ -89,7 +89,7 @@ router.local            # Hostname
 | QUICK | 2-3 min | 10 sec |
 | QUICK + NSE | 5-8 min | 30 sec |
 | FULL | 10-15 min | 1-2 min |
-| FULL + NSE + Auth | 20-30 min | 2-3 min |
+| FULL + NSE + password audit | 20-30 min | 2-3 min |
 
 ## Best Practices
 
@@ -108,7 +108,7 @@ router.local            # Hostname
    python netwatch.py --target 192.168.1.115 --profile FULL --nse
    ```
 
-4. **Test credentials only on your devices**
+4. **Run the default password audit only on your devices**
    ```bash
    python netwatch.py --target 192.168.1.115 --check-defaults
    ```
@@ -129,5 +129,5 @@ router.local            # Hostname
 ## Security Warnings
 
 - **Only scan networks you own or have permission to scan**
-- **Credential testing (--check-defaults) should only be used on your own devices**
+- **Credential testing (--check-defaults) is opt-in, exact-model, capped, delayed, and only for your own devices**
 - **Stealth scans may still be detected by IDS/IPS systems**

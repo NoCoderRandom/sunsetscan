@@ -12,6 +12,10 @@
   safe-mode nmap/masscan behavior, discovery-limited full-assessment port
   scans, timeout recovery with discovery-only reports, and report wording that
   separates network-level checks from per-device findings.
+- **May TUI/auth safety pass**: Rewired guided `-i` scans to the shared scanner
+  path and changed default credential testing to an opt-in, exact-model,
+  rate-limited audit with lockout detection. Full assessments no longer enable
+  credential checks automatically.
 
 ## Deferred
 
