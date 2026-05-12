@@ -372,6 +372,7 @@ python3 netwatch.py --full-assessment --target 192.168.1.0/24 --safe-mode
 In safe mode NetWatch:
 
 - discovers live hosts first and scans only those hosts during full assessments
+- applies the same safe scanner behavior from CLI, old menu, and guided `-i` mode
 - removes OS fingerprinting from broad scans
 - keeps broad STEALTH/FULL scans bounded with fast/top-port limits
 - skips all-port masscan sweeps for broad profiles

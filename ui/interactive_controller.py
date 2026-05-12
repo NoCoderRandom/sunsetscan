@@ -16,7 +16,8 @@ Example:
 """
 
 import logging
-from dataclasses import dataclass, field
+import os
+from dataclasses import dataclass, field, replace
 from typing import Dict, List, Optional, Any
 from datetime import datetime
 
@@ -25,15 +26,16 @@ from rich.table import Table
 from rich.panel import Panel
 from rich.prompt import Prompt, Confirm
 
-from config.settings import Settings, SCAN_PROFILES
+from config.settings import Settings
+from core.host_capability import detect_host_profile, safe_mode_overrides
 from core.input_parser import parse_target_input, format_target_summary, get_local_subnet_suggestion
-from core.scanner import NetworkScanner, ScanResult, HostInfo
+from core.scanner import ScanResult
+from core.port_scanner import PortScanOrchestrator
 from core.nse_scanner import NSEScanner
 from core.auth_tester import AuthTester
 from core.banner_grabber import BannerGrabber
 from core.scan_history import ScanHistory
 from eol.checker import EOLChecker
-from eol.cache import CacheManager
 from ui.display import Display
 from ui.export import ReportExporter
 
@@ -93,15 +95,45 @@ class InteractiveController:
         controller.run()
     """
 
-    def __init__(self, settings: Optional[Settings] = None):
+    def __init__(
+        self,
+        settings: Optional[Settings] = None,
+        *,
+        force_safe_mode: bool = False,
+        disable_safe_mode: bool = False,
+        no_color: bool = False,
+    ):
         """Initialize interactive controller.
 
         Args:
             settings: Application settings
+            force_safe_mode: Force safe-mode settings for all TUI scans
+            disable_safe_mode: Disable automatic safe-mode detection
+            no_color: Disable Rich terminal colors
         """
-        self.settings = settings or Settings()
-        self.console = Console()
-        self.display = Display(settings=self.settings, console=self.console)
+        self.host_profile = detect_host_profile() if settings is None else None
+        self._force_safe_mode = force_safe_mode
+        self._disable_safe_mode = disable_safe_mode
+        self._no_color = no_color
+
+        if settings is not None:
+            self.settings = settings
+            self._safe_mode_active = settings.safe_mode
+        else:
+            env_force_safe = bool(os.environ.get("NETWATCH_FORCE_SAFE_MODE"))
+            use_safe_mode = (
+                force_safe_mode
+                or env_force_safe
+                or bool(self.host_profile and self.host_profile.recommend_safe_mode)
+            ) and not disable_safe_mode
+            self.settings = (
+                Settings(**safe_mode_overrides(self.host_profile))
+                if use_safe_mode and self.host_profile
+                else Settings()
+            )
+            self._safe_mode_active = use_safe_mode
+
+        self.console = Console(color_system=None if no_color else "auto")
 
         # Storage
         self.discovered_hosts: Dict[str, DiscoveredHost] = {}
@@ -110,13 +142,29 @@ class InteractiveController:
         self._last_scan_result: Optional[ScanResult] = None
 
         # Components
-        self.scanner = NetworkScanner(settings=self.settings)
         self.nse_scanner: Optional[NSEScanner] = None
         self.auth_tester: Optional[AuthTester] = None
-        self.banner_grabber = BannerGrabber(settings=self.settings)
-        self.eol_checker = EOLChecker(settings=self.settings)
+        self._rebuild_settings_components()
 
         logger.debug("InteractiveController initialized")
+
+    def _rebuild_settings_components(self, preserve_optional: bool = False) -> None:
+        """Rebuild components that capture immutable Settings at construction."""
+        nse_enabled = bool(self.nse_scanner) if preserve_optional else False
+        auth_enabled = (
+            bool(self.auth_tester and self.auth_tester.enabled)
+            if preserve_optional else False
+        )
+
+        self.display = Display(settings=self.settings, console=self.console)
+        self.scanner = PortScanOrchestrator(settings=self.settings)
+        self.banner_grabber = BannerGrabber(settings=self.settings)
+        self.eol_checker = EOLChecker(settings=self.settings)
+        self.nse_scanner = NSEScanner(settings=self.settings) if nse_enabled else None
+        self.auth_tester = (
+            AuthTester(settings=self.settings, enabled=True)
+            if auth_enabled else None
+        )
 
     def run(self) -> int:
         """Run the interactive mode main loop.
@@ -163,6 +211,12 @@ class InteractiveController:
         self.console.print(f"\n{'='*70}")
         self.console.print(f"  NetWatch Interactive Mode v{self.settings.version}")
         self.console.print(f"{'='*70}\n")
+        if self.settings.safe_mode:
+            excluded = ", ".join(self.settings.excluded_hosts) or "none"
+            self.console.print(
+                "[yellow]Safe mode active: bounded scans, lower concurrency, "
+                f"excluded hosts: {excluded}[/yellow]\n"
+            )
         self.console.print("Discover your network and analyze devices interactively.\n")
 
     def get_target_from_user(self) -> bool:
@@ -577,7 +631,8 @@ Current Settings:
         elif choice == "3":
             timeout = Prompt.ask("Enter timeout (seconds)", default="3")
             try:
-                self.settings.banner_timeout = int(timeout)
+                self.settings = replace(self.settings, banner_timeout=int(timeout))
+                self._rebuild_settings_components(preserve_optional=True)
                 self.console.print(f"[green]Timeout set to {timeout}s[/green]")
             except ValueError:
                 self.console.print("[red]Invalid timeout value[/red]")
@@ -1079,11 +1134,13 @@ Device Types Found:
             import argparse
             args = argparse.Namespace(
                 target=self.current_target, profile="QUICK", verbose=False,
-                no_color=False, nse=True, check_defaults=True, interactive=False,
+                no_color=self._no_color, nse=True, check_defaults=True, interactive=False,
                 full_assessment=True, setup=False, update_cache=False,
                 save_baseline=False, cache_status=False, check_version=False,
                 update=False, history=False, diff=False, since=None,
                 quiet=False, db="normal", modules=False, download=None,
+                safe_mode=self._force_safe_mode or self.settings.safe_mode,
+                no_safe_mode=self._disable_safe_mode,
             )
             from netwatch import NetWatch
             app = NetWatch(args)

@@ -3142,7 +3142,11 @@ def main() -> int:
     # Check for interactive mode
     if args.interactive:
         from ui.interactive_controller import InteractiveController
-        controller = InteractiveController()
+        controller = InteractiveController(
+            force_safe_mode=args.safe_mode,
+            disable_safe_mode=args.no_safe_mode,
+            no_color=args.no_color,
+        )
         return controller.run()
 
     # Check for instant scan mode
