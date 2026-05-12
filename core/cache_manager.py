@@ -1,5 +1,5 @@
 """
-NetWatch Unified Cache Manager.
+SunsetScan Unified Cache Manager.
 
 Manages CVE data cache with TTL enforcement.
 All scans read ONLY from local cache — no external calls happen during scanning.
@@ -242,12 +242,12 @@ class UnifiedCacheManager:
 
         if cve_age is None:
             warnings.append(
-                "CVE data has never been downloaded. Run: python netwatch.py --setup"
+                "CVE data has never been downloaded. Run: python sunsetscan.py --setup"
             )
         elif not self.is_cve_cache_current():
             warnings.append(
                 f"CVE data is {cve_age} days old (max {CVE_TTL_DAYS}). "
-                "Run: python netwatch.py --update-cache"
+                "Run: python sunsetscan.py --update-cache"
             )
 
         return warnings

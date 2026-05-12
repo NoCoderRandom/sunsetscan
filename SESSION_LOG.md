@@ -1,4 +1,4 @@
-# NetWatch Session Log
+# SunsetScan Session Log
 
 Read this at the start of every session to understand where we left off.
 Also check: prompts/ directory for planned work.
@@ -36,7 +36,7 @@ Root causes:
 | `core/http_fingerprinter.py` | **DEVICE_SIGNATURES** — Added ASUS patterns (`Main_Login.asp`, `AiMesh router`), Synology patterns (`synoSDSjslib`, `webman/index.cgi`), QNAP patterns. Fixed ASUS Router Model regex. Fixed TP-Link/Netgear model regexes to avoid false positives. Fixed Synology Firmware regex (was matching CSS cache busters). |
 | `core/http_fingerprinter.py` | **`_analyze_response()`** — Vendor-specific body detections now override generic header detections. Model detection now checks vendor match. |
 | `core/banner_grabber.py` | **HTTP_PORTS** — Added 5000, 5001 for Synology DSM fingerprinting. |
-| `netwatch.py` | Fixed pluralization bug ("1 nass" → "1 nas"). |
+| `sunsetscan.py` | Fixed pluralization bug ("1 nass" → "1 nas"). |
 | `ui/templates/report.html.j2` | Added "Software" column to Open Ports table showing per-port HTTP fingerprint. Added hostname to topology cards when device identity exists. |
 
 ### Results after fix
@@ -69,7 +69,7 @@ device_type, confidence) per scanned host.
 ### Files modified
 | File | Change |
 |------|--------|
-| `netwatch.py` | Import DeviceIdentifier, instantiate in __init__, run identification loop after security checks in run_security_checks(), emit INFO finding per identified host, pass device_identities to export_html() calls |
+| `sunsetscan.py` | Import DeviceIdentifier, instantiate in __init__, run identification loop after security checks in run_security_checks(), emit INFO finding per identified host, pass device_identities to export_html() calls |
 | `core/module_manager.py` | Added `mac-oui` module to MODULE_REGISTRY (IEEE OUI CSV, 4MB, default=True), added `_parse_mac_oui()` parser, registered in `_PARSERS` dict |
 | `ui/export.py` | Added `device_identities` parameter to `export_html()`, `export_json()`, `_generate_html()`, `_render_jinja()`, and `export()`. Passes dict to Jinja template. Adds `device_identities` section to JSON export. |
 | `ui/templates/report.html.j2` | Added CSS for device identity display. Topology cards show device type/vendor/model when identified. New "Device Inventory" table section between topology and findings. Host headers show identified device name. Host meta section has styled identity badge with confidence. |
@@ -105,7 +105,7 @@ Added to `core/device_identifier.py`:
 
 ### Session 04: Terminal Display + Confidence Tuning + --identify
 
-Added/changed in `netwatch.py`:
+Added/changed in `sunsetscan.py`:
 - **`_print_device_id_table()`** — Rich Table with columns IP, Type, Vendor, Model, Version, Conf%. Color-coded: green >=70%, yellow 40-69%, dim <40%. Printed after device identification loop.
 - **Per-host check line enrichment** — "✓ 192.168.50.1 — Router — ASUS RT-AX88U" instead of "Checked 192.168.50.1". Uses `identify_preliminary()`.
 - **`--identify` CLI flag** — runs scan + banners + device identification only (no security checks). New `run_identify_only()` method. Added to `create_parser()` and `main()`.
@@ -202,7 +202,7 @@ Executed prompts 02 and 03 in sequence, then hardened the masscan integration.
 
 | Area | Change |
 |------|--------|
-| **Display refactor** | Moved `_print_device_id_table()` to `Display.show_device_inventory()` — shared by netwatch.py and interactive controller |
+| **Display refactor** | Moved `_print_device_id_table()` to `Display.show_device_inventory()` — shared by sunsetscan.py and interactive controller |
 | **Interactive menu** | Added `[8] Device Inventory` option with `_run_device_inventory()` handler |
 | **Scan summary stats** | `calculate_stats()` now includes `devices_identified`, `devices_total`, `device_types` Counter |
 | **Summary panel** | `show_summary()` displays "Devices identified: X/Y (types)" |
@@ -230,7 +230,7 @@ Executed prompts 02 and 03 in sequence, then hardened the masscan integration.
 | `core/device_identifier.py` | SSH banner returns list with Ubuntu version hint |
 | `core/port_scanner.py` | Root check, profile-port extraction, `-p` conflict fix, progress, stderr, timestamps |
 | `eol/product_map.py` | 11 new PRODUCT_MAP + 5 NOT_TRACKED entries |
-| `netwatch.py` | `import re`, SSH/HTTP CVE pipelines, device stats in calculate_stats and full assessment, display delegation, identity truncation |
+| `sunsetscan.py` | `import re`, SSH/HTTP CVE pipelines, device stats in calculate_stats and full assessment, display delegation, identity truncation |
 | `ui/display.py` | `show_device_inventory()` method, device stats in `show_summary()` |
 | `ui/interactive_controller.py` | `[8] Device Inventory` menu option + handler |
 | `README.md` | Device identification docs, `--identify` flag, evidence table, QUICK profile update |
@@ -248,7 +248,7 @@ All changes on top of v1.7.0 (commit 3d67efd). Ready to commit.
 ### What was done
 
 Built a complete **hybrid passive+active scanning pipeline** that combines
-background packet sniffing with NetWatch's existing active scanners, OUI
+background packet sniffing with SunsetScan's existing active scanners, OUI
 vendor lookup, and persistent device history into a single fused identity
 per device.
 
@@ -267,7 +267,7 @@ per device.
 
 | File | Change |
 |------|--------|
-| `netwatch.py` | Added imports for HybridScanner, FusedIdentity. Added `self.hybrid_scanner` and `self.last_hybrid_result` to `__init__`. Added Phase 0 (start passive capture) and Phase 8 (stop + fuse) to `run_full_assessment()`. Updated all phase numbers from /7 to /8. Added fused identity summary with source breakdown to output. |
+| `sunsetscan.py` | Added imports for HybridScanner, FusedIdentity. Added `self.hybrid_scanner` and `self.last_hybrid_result` to `__init__`. Added Phase 0 (start passive capture) and Phase 8 (stop + fuse) to `run_full_assessment()`. Updated all phase numbers from /7 to /8. Added fused identity summary with source breakdown to output. |
 | `core/__init__.py` | Added module docstrings and exports for all 6 new modules. |
 
 ### Pipeline flow
@@ -322,7 +322,7 @@ Passive sniffer requires root for raw socket capture. Next session should:
 ## Session — 2026-04-07: Safe Mode for Low-Power Hosts + Instant-Scan Auto-Detect
 
 ### Problem
-Running `sudo ./netwatch.py --full-assessment` on a Raspberry Pi 5 that also
+Running `sudo ./sunsetscan.py --full-assessment` on a Raspberry Pi 5 that also
 hosted Pi-hole killed the entire LAN — the laptop lost DNS too. Root causes:
 1. masscan at default rate exhausted the Pi's `nf_conntrack` table
 2. Parallel nmap workers + masscan starved Pi-hole's CPU → DNS timeouts
@@ -351,7 +351,7 @@ works on the local L2 segment — the only sensible target is the local subnet.
 | `core/scanner.py` | Added `_apply_safety()` chokepoint — strips `-O`/`-A` in safe mode and appends `--exclude` for excluded hosts. |
 | `core/network_utils.py` | New `is_local_subnet()` returning tri-state `Optional[bool]` (True/False/None for unknown). Validates input via `ipaddress.ip_address()` so bogus targets return None instead of False. |
 | `core/instant_scan.py` | Always resolves the local subnet first; warns and falls back if a non-local target is supplied. |
-| `netwatch.py` | Calls `detect_host_profile()` in `__init__`, builds Settings with overrides, prints `_announce_host_profile()` banner. New CLI flags `--safe-mode` / `--no-safe-mode`. Instant-scan menu item now skips the target prompt. Updated `--instant` help text. |
+| `sunsetscan.py` | Calls `detect_host_profile()` in `__init__`, builds Settings with overrides, prints `_announce_host_profile()` banner. New CLI flags `--safe-mode` / `--no-safe-mode`. Instant-scan menu item now skips the target prompt. Updated `--instant` help text. |
 
 ### Verified on the Pi
 User confirmed live output showing:
@@ -384,22 +384,22 @@ checkouts had picked up CRLF line endings.
 - TTY-aware coloring so `curl|bash` logs stay readable
 - Idempotent — reuses existing venv unless `--force`
 - Flags: `--force`, `--symlink`, `--no-system`, `--help`
-- Import sanity check covers all 12 modules NetWatch actually loads
+- Import sanity check covers all 12 modules SunsetScan actually loads
 
-**`netwatch`** (new launcher script, replaces ad-hoc invocation)
-- `readlink` loop resolves symlinks so `/usr/local/bin/netwatch` works
-- Always execs `$SCRIPT_DIR/venv/bin/python3 netwatch.py "$@"`
+**`sunsetscan`** (new launcher script, replaces ad-hoc invocation)
+- `readlink` loop resolves symlinks so `/usr/local/bin/sunsetscan` works
+- Always execs `$SCRIPT_DIR/venv/bin/python3 sunsetscan.py "$@"`
 - Prints a clear pointer to `install.sh` if the venv is missing
 
 **`bootstrap.sh`** (new, for `curl|bash` install)
 - Clones (or fast-forward pulls) the repo, then `exec bash install.sh "$@"`
 - Honors `INSTALL_DIR` / `BRANCH` / `REPO` env vars
 - One-liner:
-  `curl -fsSL https://raw.githubusercontent.com/NoCoderRandom/netwatch/main/bootstrap.sh | bash`
+  `curl -fsSL https://raw.githubusercontent.com/NoCoderRandom/sunsetscan/main/bootstrap.sh | bash`
 
 **`.gitattributes`** (new)
 - Forces LF on `*.sh`, `*.py`, `*.j2`, `*.yml`, `*.json`, `*.md`, `*.txt`,
-  and the `netwatch` launcher
+  and the `sunsetscan` launcher
 - Marks `*.html`, `*.png`, `*.jpg`, `*.gif`, `*.ico` as binary
 - Permanently prevents the `python3\r` shebang failure
 
@@ -415,7 +415,7 @@ Fresh install in `/tmp/nwtest` with `./install.sh --no-system`:
 - Created venv, pip-installed pysnmp 7.1.22, scapy 2.7.0, cryptography 46.0.6,
   paramiko 4.0.0, impacket 0.13.0, etc.
 - Import sanity check: all 12 modules ✓
-- Self-test: `netwatch 1.7.0` ✓
+- Self-test: `sunsetscan 1.7.0` ✓
 - Launcher works directly and via `/tmp` symlink (readlink loop verified) ✓
 
 ### Commit

@@ -1,5 +1,5 @@
 """
-NetWatch UPnP Exposure Checker.
+SunsetScan UPnP Exposure Checker.
 
 Discovers UPnP-enabled devices on the local network using SSDP
 (Simple Service Discovery Protocol) multicast and analyses the risk.

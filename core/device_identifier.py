@@ -1,5 +1,5 @@
 """
-NetWatch Device Identification Engine.
+SunsetScan Device Identification Engine.
 
 Fuses evidence from multiple detection sources (MAC OUI, nmap OS,
 HTTP fingerprinting, TLS certificates, SSH banners, UPnP, SNMP,

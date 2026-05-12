@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# NetWatch installer
+# SunsetScan installer
 #
 # Installs system tools (nmap, masscan, avahi-utils, git, python venv) via
 # the OS package manager, then creates a project-local Python virtual env in ./venv
@@ -13,7 +13,7 @@
 # Usage:
 #   ./install.sh                  # default install
 #   ./install.sh --force          # rebuild venv from scratch
-#   ./install.sh --symlink        # also install /usr/local/bin/netwatch
+#   ./install.sh --symlink        # also install /usr/local/bin/sunsetscan
 #   ./install.sh --no-system      # skip apt/dnf/etc (system tools already present)
 #   ./install.sh --help           # show this help
 #
@@ -81,12 +81,12 @@ fi
 SCRIPT_DIR="$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )"
 cd "$SCRIPT_DIR"
 
-[ -f "netwatch.py" ]      || die "netwatch.py not found in $SCRIPT_DIR. Run install.sh from inside the cloned repository."
+[ -f "sunsetscan.py" ]      || die "sunsetscan.py not found in $SCRIPT_DIR. Run install.sh from inside the cloned repository."
 [ -f "requirements.txt" ] || die "requirements.txt not found in $SCRIPT_DIR."
 
 echo
 echo "${BOLD}${BLUE}╔════════════════════════════════════════════╗${NC}"
-echo "${BOLD}${BLUE}║          NetWatch Installer                ║${NC}"
+echo "${BOLD}${BLUE}║          SunsetScan Installer                ║${NC}"
 echo "${BOLD}${BLUE}╚════════════════════════════════════════════╝${NC}"
 
 # ----------------------------------------------------------------------------
@@ -155,7 +155,7 @@ install_system_packages() {
     #   avahi-utils / avahi-tools — provides 'avahi-browse', used by
     #       core/active_mdns.py to piggyback on the system mDNS cache
     #       on Linux hosts running avahi-daemon (standard on Pi OS,
-    #       Debian, Ubuntu). Without it NetWatch falls back to the
+    #       Debian, Ubuntu). Without it SunsetScan falls back to the
     #       Python zeroconf library, which misses Bonjour Sleep Proxy
     #       forwarded records (e.g. sleeping Apple TVs).
     case "$PKG_MGR" in
@@ -189,7 +189,7 @@ install_system_packages() {
                 avahi-utils
             ;;
         brew)
-            # macOS ships its own mDNSResponder — no avahi needed. NetWatch
+            # macOS ships its own mDNSResponder — no avahi needed. SunsetScan
             # falls back to the Python zeroconf library on Darwin.
             brew install nmap masscan git python3
             ;;
@@ -224,7 +224,7 @@ PY_VERSION="$(python3 -c 'import sys; print("%d.%d" % sys.version_info[:2])')"
 PY_MAJOR="$(echo "$PY_VERSION" | cut -d. -f1)"
 PY_MINOR="$(echo "$PY_VERSION" | cut -d. -f2)"
 if [ "$PY_MAJOR" -lt 3 ] || { [ "$PY_MAJOR" -eq 3 ] && [ "$PY_MINOR" -lt 9 ]; }; then
-    die "Python $PY_VERSION found, but NetWatch needs Python 3.9 or newer."
+    die "Python $PY_VERSION found, but SunsetScan needs Python 3.9 or newer."
 fi
 
 ok "python3 $PY_VERSION"
@@ -282,7 +282,7 @@ else
     exit 1
 fi
 
-# Sanity check: every module NetWatch actually imports must load.
+# Sanity check: every module SunsetScan actually imports must load.
 "$VENV_PY" - <<'PYCHECK' || die "Import sanity check failed. Try: ./install.sh --force"
 import sys
 modules = [
@@ -309,18 +309,18 @@ ok "All required Python modules import OK"
 # ----------------------------------------------------------------------------
 step "5/6  Configuring launcher"
 
-LAUNCHER="$SCRIPT_DIR/netwatch"
+LAUNCHER="$SCRIPT_DIR/sunsetscan"
 [ -f "$LAUNCHER" ] || die "Launcher script $LAUNCHER missing from repository."
 
 chmod +x "$LAUNCHER"
-chmod +x "$SCRIPT_DIR/netwatch.py"
-ok "Launcher: $LAUNCHER (run as: ./netwatch  or  sudo ./netwatch)"
+chmod +x "$SCRIPT_DIR/sunsetscan.py"
+ok "Launcher: $LAUNCHER (run as: ./sunsetscan  or  sudo ./sunsetscan)"
 
 if [ "$SYMLINK" -eq 1 ]; then
-    if $SUDO ln -sf "$LAUNCHER" /usr/local/bin/netwatch; then
-        ok "Global symlink: /usr/local/bin/netwatch"
+    if $SUDO ln -sf "$LAUNCHER" /usr/local/bin/sunsetscan; then
+        ok "Global symlink: /usr/local/bin/sunsetscan"
     else
-        warn "Could not create /usr/local/bin/netwatch (permission denied)"
+        warn "Could not create /usr/local/bin/sunsetscan (permission denied)"
     fi
 fi
 
@@ -341,16 +341,16 @@ fi
 # Done
 # ----------------------------------------------------------------------------
 echo
-echo "${BOLD}${GREEN}NetWatch installed successfully.${NC}"
+echo "${BOLD}${GREEN}SunsetScan installed successfully.${NC}"
 echo
 echo "Next steps:"
 echo "  1. Download EOL/CVE/credential databases (one-time, ~1 minute):"
-echo "       sudo ./netwatch --setup"
+echo "       sudo ./sunsetscan --setup"
 echo "  2. Try an instant scan of your local network:"
-echo "       sudo ./netwatch --instant"
+echo "       sudo ./sunsetscan --instant"
 echo "  3. Or run a full security assessment:"
-echo "       sudo ./netwatch --full-assessment --target 192.168.1.0/24"
+echo "       sudo ./sunsetscan --full-assessment --target 192.168.1.0/24"
 echo
-echo "${DIM}On Raspberry Pi or hosts running Pi-hole, NetWatch automatically enables${NC}"
+echo "${DIM}On Raspberry Pi or hosts running Pi-hole, SunsetScan automatically enables${NC}"
 echo "${DIM}safe-mode scanning to avoid saturating the local DNS resolver.${NC}"
 echo

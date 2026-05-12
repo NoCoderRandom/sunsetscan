@@ -7,12 +7,12 @@ from core.module_manager import _parse_hardware_eol, _parse_hardware_eol_shard
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 HARDWARE_EOL_DIR = PROJECT_ROOT / "data" / "hardware_eol"
-INDEX_PATH = HARDWARE_EOL_DIR / "netwatch_hardware_eol_index.json.gz"
+INDEX_PATH = HARDWARE_EOL_DIR / "sunsetscan_hardware_eol_index.json.gz"
 
 
 def test_split_database_artifacts_are_compressed_and_consistent():
     assert INDEX_PATH.exists()
-    assert not (HARDWARE_EOL_DIR / "netwatch_hardware_eol_index.json").exists()
+    assert not (HARDWARE_EOL_DIR / "sunsetscan_hardware_eol_index.json").exists()
     assert not list((HARDWARE_EOL_DIR / "records").glob("*.json"))
 
     index = _parse_hardware_eol(INDEX_PATH.read_bytes())
@@ -62,15 +62,21 @@ def test_developer_split_index_preferred_over_legacy_cache_monolith(tmp_path, mo
     repo_dir.mkdir(parents=True)
 
     legacy_cache_monolith = cache_dir / "netwatch_hardware_eol.json"
-    developer_split_index = repo_dir / "netwatch_hardware_eol_index.json.gz"
+    developer_split_index = repo_dir / "sunsetscan_hardware_eol_index.json.gz"
     legacy_cache_monolith.write_text("{}", encoding="utf-8")
     developer_split_index.write_bytes(b"placeholder")
 
     monkeypatch.setattr(hardware_eol, "_DEFAULT_DB_PATH", legacy_cache_monolith)
     monkeypatch.setattr(hardware_eol, "_DEFAULT_INDEX_PATH", cache_dir / "missing_index.json")
+    monkeypatch.setattr(hardware_eol, "_LEGACY_DEFAULT_DB_PATH", legacy_cache_monolith)
+    monkeypatch.setattr(hardware_eol, "_LEGACY_DEFAULT_INDEX_PATH", cache_dir / "missing_legacy_index.json")
     monkeypatch.setattr(hardware_eol, "_DEVELOPER_INDEX_PATH", repo_dir / "missing_index.json")
     monkeypatch.setattr(hardware_eol, "_DEVELOPER_INDEX_GZ_PATH", developer_split_index)
     monkeypatch.setattr(hardware_eol, "_DEVELOPER_DB_PATH", repo_dir / "missing_monolith.json")
     monkeypatch.setattr(hardware_eol, "_DEVELOPER_DB_GZ_PATH", repo_dir / "missing_monolith.json.gz")
+    monkeypatch.setattr(hardware_eol, "_LEGACY_DEVELOPER_INDEX_PATH", repo_dir / "missing_legacy_index.json")
+    monkeypatch.setattr(hardware_eol, "_LEGACY_DEVELOPER_INDEX_GZ_PATH", repo_dir / "missing_legacy_index.json.gz")
+    monkeypatch.setattr(hardware_eol, "_LEGACY_DEVELOPER_DB_PATH", repo_dir / "missing_legacy_monolith.json")
+    monkeypatch.setattr(hardware_eol, "_LEGACY_DEVELOPER_DB_GZ_PATH", repo_dir / "missing_legacy_monolith.json.gz")
 
     assert HardwareEOLDatabase()._candidate_path() == developer_split_index

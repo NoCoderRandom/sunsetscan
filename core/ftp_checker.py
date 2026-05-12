@@ -1,5 +1,5 @@
 """
-NetWatch FTP Security Checker.
+SunsetScan FTP Security Checker.
 
 Performs targeted FTP checks on discovered FTP ports:
   - Anonymous login detection (CRITICAL)
@@ -85,7 +85,7 @@ def _test_anonymous_login(host: str, port: int, timeout: float) -> Tuple[bool, O
     try:
         ftp = ftplib.FTP()
         ftp.connect(host=host, port=port, timeout=timeout)
-        ftp.login(user="anonymous", passwd="netwatch@scan.local")
+        ftp.login(user="anonymous", passwd="sunsetscan@scan.local")
         welcome = ftp.getwelcome()
         ftp.quit()
         return True, welcome

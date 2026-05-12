@@ -1,5 +1,5 @@
 """
-NetWatch EOL Checker Module.
+SunsetScan EOL Checker Module.
 
 This module checks software End-of-Life status using locally cached data
 from endoflife.date. No live API calls are made during scans — all data
@@ -16,7 +16,7 @@ Exports:
 Example:
     from eol.checker import EOLChecker
     checker = EOLChecker()
-    
+
     status = checker.check_version("ubuntu", "20.04")
     print(f"Status: {status.level}, EOL Date: {status.eol_date}")
 """
@@ -49,7 +49,7 @@ class EOLStatusLevel(Enum):
 @dataclass
 class EOLStatus:
     """Result of an EOL check.
-    
+
     Attributes:
         product: Product name checked
         version: Version that was checked
@@ -68,16 +68,16 @@ class EOLStatus:
     latest_version: str = ""
     message: str = ""
     details: Dict[str, Any] = None
-    
+
     def __post_init__(self):
         if self.details is None:
             self.details = {}
-    
+
     @property
     def is_eol(self) -> bool:
         """Check if product has reached EOL."""
         return self.level == EOLStatusLevel.CRITICAL
-    
+
     @property
     def color(self) -> str:
         """Get color code for this status level."""
@@ -122,7 +122,7 @@ class EOLChecker:
         self.settings = settings or Settings()
         self.cache = cache or CacheManager(settings=self.settings)
         logger.debug("EOLChecker initialized")
-    
+
     def fetch_product_data(self, product: str) -> Optional[List[Dict]]:
         """Fetch EOL data for a product from local cache.
 
@@ -141,83 +141,83 @@ class EOLChecker:
             return cached_data
         logger.debug(f"No cached EOL data for {product} — run --setup to populate")
         return None
-    
+
     def parse_eol_date(self, date_str: Any) -> Optional[datetime]:
         """Parse EOL date from various formats.
-        
+
         Args:
             date_str: Date string or boolean from API
-            
+
         Returns:
             Parsed datetime or None
         """
         if date_str is None or date_str == "":
             return None
-        
+
         # Handle boolean (false means not EOL yet)
         if isinstance(date_str, bool):
             return None
-        
+
         date_formats = [
             "%Y-%m-%d",
             "%Y-%m",
             "%Y",
         ]
-        
+
         for fmt in date_formats:
             try:
                 return datetime.strptime(date_str, fmt)
             except ValueError:
                 continue
-        
+
         logger.warning(f"Could not parse EOL date: {date_str}")
         return None
-    
+
     def find_version_cycle(
-        self, 
-        cycles: List[Dict], 
+        self,
+        cycles: List[Dict],
         version: str
     ) -> Optional[Dict]:
         """Find the cycle data matching a specific version.
-        
+
         Args:
             cycles: List of version cycle data from API
             version: Version to match
-            
+
         Returns:
             Matching cycle data or None
         """
         if not version or not cycles:
             return None
-        
+
         # Normalize version for comparison
         try:
             ver = pkg_version.parse(version)
         except Exception:
             ver = None
-        
+
         for cycle in cycles:
             cycle_version = cycle.get('cycle', '')
-            
+
             # Direct string match
             if cycle_version == version:
                 return cycle
-            
+
             # Try to match major version (e.g., "20.04" matches "20.04.x")
             if version.startswith(cycle_version + '.') or cycle_version.startswith(version + '.'):
                 return cycle
-            
+
             # Semantic version matching
             if ver:
                 try:
                     cycle_ver = pkg_version.parse(cycle_version)
                     # Match if major.minor matches
-                    if (ver.major == cycle_ver.major and 
+                    if (ver.major == cycle_ver.major and
                         ver.minor == cycle_ver.minor):
                         return cycle
                 except Exception:
                     pass
-        
+
         # Fallback: find closest matching major version
         try:
             ver_major = version.split('.')[0]
@@ -227,20 +227,20 @@ class EOLChecker:
                     return cycle
         except Exception:
             pass
-        
+
         return None
-    
+
     def check_version(
-        self, 
-        product: str, 
+        self,
+        product: str,
         version: str
     ) -> EOLStatus:
         """Check EOL status for a specific product version.
-        
+
         Args:
             product: Product slug from endoflife.date
             version: Version string to check
-            
+
         Returns:
             EOLStatus with detailed information
         """
@@ -271,7 +271,7 @@ class EOLChecker:
                 level=EOLStatusLevel.UNKNOWN,
                 message=f"No EOL data available for {product}"
             )
-        
+
         # Find matching cycle
         cycle = self.find_version_cycle(cycles, version)
         if cycle is None:
@@ -282,10 +282,10 @@ class EOLChecker:
                 message=f"Version {version} not found in EOL database",
                 details={'available_cycles': [c.get('cycle') for c in cycles[:5]]}
             )
-        
+
         # Determine EOL status
         return self._evaluate_eol_status(product, version, cycle, cycles)
-    
+
     def _evaluate_eol_status(
         self,
         product: str,
@@ -294,32 +294,32 @@ class EOLChecker:
         all_cycles: List[Dict]
     ) -> EOLStatus:
         """Evaluate EOL status from cycle data.
-        
+
         Args:
             product: Product name
             version: Version string
             cycle: Matching cycle data
             all_cycles: All available cycles
-            
+
         Returns:
             Evaluated EOLStatus
         """
         # Get EOL date
         eol_raw = cycle.get('eol')
         eol_date = self.parse_eol_date(eol_raw)
-        
+
         # Get latest version info
         latest = cycle.get('latest', '')
         if not latest and all_cycles:
             # Try to find latest from all cycles
             latest = all_cycles[0].get('latest', '')
-        
+
         # Calculate days remaining/since EOL
         days_remaining = None
         if eol_date:
             delta = eol_date - datetime.now()
             days_remaining = delta.days
-        
+
         # Determine status level
         if eol_raw is False or eol_raw == "false":
             # Explicitly marked as not EOL
@@ -341,7 +341,7 @@ class EOLChecker:
         else:
             level = EOLStatusLevel.UNKNOWN
             message = f"Could not determine EOL status for {product} {version}"
-        
+
         return EOLStatus(
             product=product,
             version=version,
@@ -357,15 +357,15 @@ class EOLChecker:
                 'discontinued': cycle.get('discontinued'),
             }
         )
-    
+
     def check_banner(self, banner: str) -> EOLStatus:
         """Check EOL status from a service banner.
-        
+
         Automatically extracts product and version from banner text.
-        
+
         Args:
             banner: Raw service banner string
-            
+
         Returns:
             EOLStatus for detected product
         """
@@ -376,7 +376,7 @@ class EOLChecker:
                 level=EOLStatusLevel.UNKNOWN,
                 message="Empty banner"
             )
-        
+
         # Try to extract product name
         product_slug = get_product_slug(banner)
         if not product_slug:
@@ -386,7 +386,7 @@ class EOLChecker:
                 level=EOLStatusLevel.UNKNOWN,
                 message=f"Product not recognized in banner: {banner[:50]}..."
             )
-        
+
         # Try to extract version
         version = self._extract_version(banner)
         if not version:
@@ -396,38 +396,38 @@ class EOLChecker:
                 level=EOLStatusLevel.NOT_APPLICABLE,
                 message=f"Version not detectable from banner: {banner[:50]}..."
             )
-        
+
         return self.check_version(product_slug, version)
-    
+
     def _extract_version(self, text: str) -> Optional[str]:
         """Extract version number from text.
-        
+
         Args:
             text: Text containing version information
-            
+
         Returns:
             Extracted version string or None
         """
         if not text:
             return None
-        
+
         # Greedy pattern: matches "2.4.41", "1.18.0", "8.2p1"-style
         # tokens as well as "version 20.04.5" prefixed forms.  The first
         # capture group always contains the full dotted version.
         match = re.search(r'(?:version\s+)?(\d+\.\d+(?:\.\d+)?)', text)
         if match:
             return match.group(1)
-        
+
         return None
-    
+
     def get_product_cycles(self, product: str) -> Optional[List[Dict]]:
         """Get all version cycles for a product.
-        
+
         Args:
             product: Product slug
-            
+
         Returns:
             List of cycle data or None
         """
         return self.fetch_product_data(product)
-    
+

@@ -222,7 +222,10 @@ def write_json(path: Path, data: Any) -> None:
 
 
 def import_builder(scraper_root: Path):
-    builder_path = scraper_root / "scripts" / "build_netwatch_hardware_eol_db.py"
+    scripts_dir = scraper_root / "scripts"
+    builder_path = scripts_dir / "build_sunsetscan_hardware_eol_db.py"
+    if not builder_path.exists():
+        builder_path = scripts_dir / "build_netwatch_hardware_eol_db.py"
     spec = importlib.util.spec_from_file_location("nhedb_builder", builder_path)
     if spec is None or spec.loader is None:
         raise RuntimeError(f"could not import builder from {builder_path}")
@@ -1465,13 +1468,13 @@ def apply_lifecycle_review_override(
     lifecycle["reason"] = reason
     lifecycle["days_to_security_eol"] = None
 
-    record.setdefault("netwatch", {})["finding_title"] = (
+    record.setdefault("sunsetscan", {})["finding_title"] = (
         f"{record.get('vendor') or record.get('vendor_slug') or ''} "
         f"{record.get('model') or record.get('model_key') or ''} "
         "lifecycle review needed"
     ).strip()
     if hasattr(builder, "match_priority"):
-        record["netwatch"]["match_priority"] = builder.match_priority(
+        record["sunsetscan"]["match_priority"] = builder.match_priority(
             record.get("device_class") or "network_device",
             "lifecycle_review",
         )

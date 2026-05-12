@@ -1,8 +1,8 @@
 """
-NetWatch Module Manager.
+SunsetScan Module Manager.
 
 Central controller for downloadable data modules. Each module represents
-a dataset sourced from a maintained public repository or first-party NetWatch
+a dataset sourced from a maintained public repository or first-party SunsetScan
 artifact.
 
 CODE = logic only
@@ -16,12 +16,12 @@ Modules:
     ja3-signatures       TLS fingerprint database (from salesforce/ja3)
     snmp-community       Extended SNMP community strings (from SecLists)
     camera-credentials   IP camera default credentials (from many-passwords)
-    hardware-eol         Hardware lifecycle database (from NetWatch GitHub)
+    hardware-eol         Hardware lifecycle database (from SunsetScan GitHub)
 
 CLI:
-    python3 netwatch.py --modules          List all modules with status
-    python3 netwatch.py --download <name>  Download a specific module
-    python3 netwatch.py --download all     Download all optional modules
+    python3 sunsetscan.py --modules          List all modules with status
+    python3 sunsetscan.py --download <name>  Download a specific module
+    python3 sunsetscan.py --download all     Download all optional modules
 """
 
 import csv
@@ -122,9 +122,9 @@ MODULE_REGISTRY: Dict[str, Dict[str, Any]] = {
     },
     "hardware-eol": {
         "description": "Network hardware lifecycle/EOL database (CC BY-NC 4.0)",
-        "source": "NoCoderRandom/netwatch",
-        "url": "https://raw.githubusercontent.com/NoCoderRandom/netwatch/main/data/hardware_eol/netwatch_hardware_eol_index.json.gz",
-        "local_path": "data/cache/hardware_eol/netwatch_hardware_eol_index.json",
+        "source": "NoCoderRandom/sunsetscan",
+        "url": "https://raw.githubusercontent.com/NoCoderRandom/sunsetscan/main/data/hardware_eol/sunsetscan_hardware_eol_index.json.gz",
+        "local_path": "data/cache/hardware_eol/sunsetscan_hardware_eol_index.json",
         "size_estimate": "21MB download / split installed",
         "default": True,
         "parser": "_parse_hardware_eol",
@@ -132,27 +132,27 @@ MODULE_REGISTRY: Dict[str, Dict[str, Any]] = {
         "parts": [
             {
                 "category": "network_infrastructure",
-                "url": "https://raw.githubusercontent.com/NoCoderRandom/netwatch/main/data/hardware_eol/records/network_infrastructure.json.gz",
+                "url": "https://raw.githubusercontent.com/NoCoderRandom/sunsetscan/main/data/hardware_eol/records/network_infrastructure.json.gz",
                 "local_path": "data/cache/hardware_eol/records/network_infrastructure.json",
             },
             {
                 "category": "general_network_devices",
-                "url": "https://raw.githubusercontent.com/NoCoderRandom/netwatch/main/data/hardware_eol/records/general_network_devices.json.gz",
+                "url": "https://raw.githubusercontent.com/NoCoderRandom/sunsetscan/main/data/hardware_eol/records/general_network_devices.json.gz",
                 "local_path": "data/cache/hardware_eol/records/general_network_devices.json",
             },
             {
                 "category": "security_surveillance",
-                "url": "https://raw.githubusercontent.com/NoCoderRandom/netwatch/main/data/hardware_eol/records/security_surveillance.json.gz",
+                "url": "https://raw.githubusercontent.com/NoCoderRandom/sunsetscan/main/data/hardware_eol/records/security_surveillance.json.gz",
                 "local_path": "data/cache/hardware_eol/records/security_surveillance.json",
             },
             {
                 "category": "endpoints_peripherals",
-                "url": "https://raw.githubusercontent.com/NoCoderRandom/netwatch/main/data/hardware_eol/records/endpoints_peripherals.json.gz",
+                "url": "https://raw.githubusercontent.com/NoCoderRandom/sunsetscan/main/data/hardware_eol/records/endpoints_peripherals.json.gz",
                 "local_path": "data/cache/hardware_eol/records/endpoints_peripherals.json",
             },
             {
                 "category": "software_services_modules",
-                "url": "https://raw.githubusercontent.com/NoCoderRandom/netwatch/main/data/hardware_eol/records/software_services_modules.json.gz",
+                "url": "https://raw.githubusercontent.com/NoCoderRandom/sunsetscan/main/data/hardware_eol/records/software_services_modules.json.gz",
                 "local_path": "data/cache/hardware_eol/records/software_services_modules.json",
             },
         ],
@@ -179,7 +179,7 @@ _TOP_TECH_KEYWORDS = [
 
 
 # ---------------------------------------------------------------------------
-# Parser functions — convert raw download data to NetWatch JSON format
+# Parser functions — convert raw download data to SunsetScan JSON format
 # ---------------------------------------------------------------------------
 
 def _parse_credentials_mini(raw_text: str) -> List[Dict]:
@@ -413,7 +413,7 @@ def _decode_json_payload(raw_data) -> Any:
 
 
 def _parse_hardware_eol(raw_data) -> Dict:
-    """Parse a NetWatch hardware EOL monolith or split index artifact."""
+    """Parse a SunsetScan hardware EOL monolith or split index artifact."""
     try:
         data = _decode_json_payload(raw_data)
     except Exception as e:
@@ -563,7 +563,7 @@ class ModuleManager:
             from rich.table import Table
             console = Console()
 
-            table = Table(title="NetWatch Modules", show_header=True)
+            table = Table(title="SunsetScan Modules", show_header=True)
             table.add_column("Module", style="bold")
             table.add_column("Size", justify="right")
             table.add_column("Status", justify="center")
@@ -581,8 +581,8 @@ class ModuleManager:
                 table.add_row(name, info["size_estimate"], status, info["description"])
 
             console.print(table)
-            console.print("\nInstall: [bold]python3 netwatch.py --download <module>[/bold]")
-            console.print("Install all: [bold]python3 netwatch.py --download all[/bold]")
+            console.print("\nInstall: [bold]python3 sunsetscan.py --download <module>[/bold]")
+            console.print("Install all: [bold]python3 sunsetscan.py --download all[/bold]")
         except ImportError:
             # Fallback without rich
             print(f"{'Module':<24} {'Size':>6}  {'Status':<15} Description")
@@ -619,7 +619,7 @@ class ModuleManager:
         try:
             import requests
             session = requests.Session()
-            session.headers.update({"User-Agent": "NetWatch/1.6.0"})
+            session.headers.update({"User-Agent": "SunsetScan/2.0.0"})
 
             # Special handling for Wappalyzer (multiple files to merge)
             if module_name in ("wappalyzer-mini", "wappalyzer-full"):

@@ -93,7 +93,7 @@ TASK:
      https://endoflife.date/api/{slug}.json in a comment)
 
 3. CREATE SSH BANNER -> EOL PIPELINE
-   In netwatch.py, create _run_ssh_eol_pipeline():
+   In sunsetscan.py, create _run_ssh_eol_pipeline():
 
    After per-host security checks complete (but within the same host processing),
    iterate host_info.ports for SSH services and extract embedded OS info:
@@ -157,7 +157,7 @@ VERIFY:
   - python3 -m py_compile config/settings.py
   - python3 -m py_compile core/snmp_checker.py
   - python3 -m py_compile eol/product_map.py
-  - python3 -m py_compile netwatch.py
+  - python3 -m py_compile sunsetscan.py
   - python3 -c "from core.snmp_checker import parse_sysdescr; print(parse_sysdescr('FortiGate-60F v7.2.5,build1517,230830'))"
   - python3 -c "from core.snmp_checker import parse_sysdescr; print(parse_sysdescr('Huawei Versatile Routing Platform Software VRP V200R003C00'))"
   - python3 -c "from core.snmp_checker import parse_sysdescr; print(parse_sysdescr('Windows Server 2019 Standard'))"
@@ -166,7 +166,7 @@ FILES TO READ FIRST:
   - config/settings.py (lines 87-94 for SCAN_PROFILES, lines 96+ for SCAN_DESCRIPTIONS)
   - core/snmp_checker.py (lines 30-49 for _SYSDESCR_PATTERNS, lines 52-72 for parse_sysdescr)
   - eol/product_map.py (full file — PRODUCT_MAP and NOT_TRACKED_PRODUCTS)
-  - netwatch.py (lines 798-860 for _check_single_host, lines 860-932 for existing pipelines,
+  - sunsetscan.py (lines 798-860 for _check_single_host, lines 860-932 for existing pipelines,
     lines 916-932 for _run_cve_checks)
   - core/cve_checker.py (lines 185-217 for OSV_ECOSYSTEMS mapping)
   - README.md (search for "QUICK" to find the scan profiles table)

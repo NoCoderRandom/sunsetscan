@@ -1,5 +1,5 @@
 """
-NetWatch Passive Sniffer Module.
+SunsetScan Passive Sniffer Module.
 
 Runs a background packet capture using scapy to collect discovery protocol
 traffic that devices broadcast on the local network. Captures only:
@@ -141,7 +141,7 @@ class PassiveSniffer:
         self._thread = threading.Thread(
             target=self._capture_loop,
             daemon=True,
-            name="netwatch-passive-sniffer",
+            name="sunsetscan-passive-sniffer",
         )
         self._thread.start()
         self._started = True

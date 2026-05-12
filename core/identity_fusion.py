@@ -1,5 +1,5 @@
 """
-NetWatch Identity Fusion Engine.
+SunsetScan Identity Fusion Engine.
 
 Combines all data sources — passive sniffing, active scanning, OUI lookup,
 and persistent device history — into a single unified identity per MAC

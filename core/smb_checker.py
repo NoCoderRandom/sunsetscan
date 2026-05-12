@@ -1,5 +1,5 @@
 """
-NetWatch SMB Security Checker.
+SunsetScan SMB Security Checker.
 
 Deep SMB/CIFS analysis using impacket:
   - SMBv1 protocol detection (CRITICAL — EternalBlue attack surface)

@@ -1,5 +1,5 @@
 """
-NetWatch Scan History & Diff Module.
+SunsetScan Scan History & Diff Module.
 
 Saves compressed scan snapshots to data/history/ and can diff any two
 snapshots to show what changed between scans (new hosts, closed ports,

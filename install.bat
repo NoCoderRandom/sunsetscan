@@ -1,7 +1,7 @@
 @echo off
-REM NetWatch Installer Script for Windows
-REM 
-REM This script installs NetWatch and its Python dependencies.
+REM SunsetScan Installer Script for Windows
+REM
+REM This script installs SunsetScan and its Python dependencies.
 REM Note: nmap binary must be installed manually from https://nmap.org/download.html
 REM
 REM Usage: install.bat
@@ -26,7 +26,7 @@ REM ASCII Banner
 echo.
 echo %BLUE%%BOLD%==============================================================%RESET%
 echo %BLUE%%BOLD%                                                              %RESET%
-echo %BLUE%%BOLD%              NetWatch Installer                              %RESET%
+echo %BLUE%%BOLD%              SunsetScan Installer                              %RESET%
 echo %BLUE%%BOLD%              Network EOL Scanner Setup                       %RESET%
 echo %BLUE%%BOLD%                                                              %RESET%
 echo %BLUE%%BOLD%==============================================================%RESET%
@@ -160,7 +160,7 @@ nmap --version >nul 2>&1
 if errorlevel 1 (
     call :print_warn "nmap binary not found in PATH"
     echo.
-    echo %YELLOW%IMPORTANT: nmap binary is required for NetWatch to function.%RESET%
+    echo %YELLOW%IMPORTANT: nmap binary is required for SunsetScan to function.%RESET%
     echo.
     echo nmap must be installed manually on Windows.
     echo.
@@ -172,7 +172,7 @@ if errorlevel 1 (
     echo   3. Ensure nmap is added to your system PATH
     echo   4. Restart your terminal
     echo.
-    echo Note: NetWatch uses python-nmap which is a wrapper around the nmap binary.
+    echo Note: SunsetScan uses python-nmap which is a wrapper around the nmap binary.
     echo       Both the nmap binary AND the python-nmap Python package are required.
     echo.
     pause
@@ -269,13 +269,13 @@ REM STEP 9: Run self-test
 REM ============================================================================
 call :print_info "Step 9: Running self-test..."
 
-python netwatch.py --version >nul 2>&1
+python sunsetscan.py --version >nul 2>&1
 if errorlevel 1 (
     call :print_fail "Self-test failed"
     call :record_step 9 "Self-test" "FAIL" "self-test failed"
     goto :summary
 ) else (
-    for /f "usebackq" %%a in (`python netwatch.py --version 2^>^&1`) do set NW_VERSION=%%a
+    for /f "usebackq" %%a in (`python sunsetscan.py --version 2^>^&1`) do set NW_VERSION=%%a
     call :print_pass "Self-test passed: %NW_VERSION%"
     call :record_step 9 "Self-test" "PASS" "self-test OK"
 )
@@ -299,16 +299,16 @@ echo.
 if %FAIL_COUNT% GTR 0 (
     echo %RED%%BOLD%Installation completed with errors!%RESET%
 ) else (
-    echo %GREEN%%BOLD%NetWatch installation complete!%RESET%
+    echo %GREEN%%BOLD%SunsetScan installation complete!%RESET%
 )
 
 echo.
 echo Usage:
-echo   netwatch.py              Launch interactive menu
-echo   netwatch.py --help       Show help
-echo   netwatch.py --version    Show version
+echo   sunsetscan.py              Launch interactive menu
+echo   sunsetscan.py --help       Show help
+echo   sunsetscan.py --version    Show version
 echo.
-echo Run from install directory: python netwatch.py
+echo Run from install directory: python sunsetscan.py
 echo.
 echo %YELLOW%Note: For full scan capabilities, run as Administrator.%RESET%
 echo.

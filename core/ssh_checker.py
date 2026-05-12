@@ -1,5 +1,5 @@
 """
-NetWatch SSH Deep Analysis Module.
+SunsetScan SSH Deep Analysis Module.
 
 Uses paramiko to perform deep SSH inspection beyond what nmap reports:
   - Precise SSH version extraction from banner
@@ -206,7 +206,7 @@ def _get_ssh_algorithms_raw(
                 banner_data += chunk
 
             # Send our banner
-            sock.sendall(b"SSH-2.0-NetWatch_1.0\r\n")
+            sock.sendall(b"SSH-2.0-SunsetScan_1.0\r\n")
 
             # Send our KEXINIT
             sock.sendall(packet)

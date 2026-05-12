@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Split the NetWatch hardware EOL database into category shards.
+"""Split the SunsetScan hardware EOL database into category shards.
 
 The split artifact keeps global lookup indexes and model summaries in a small
 index file, while full record detail lives in a few compressed category files.
@@ -133,7 +133,7 @@ def split_database(database: dict[str, Any]) -> tuple[dict[str, Any], dict[str, 
     metadata["artifact_layout"] = {
         "format": "split",
         "version": 1,
-        "index_file": "netwatch_hardware_eol_index.json.gz",
+        "index_file": "sunsetscan_hardware_eol_index.json.gz",
         "category_count": len(CATEGORY_DEFINITIONS),
         "generated_at": datetime.now().isoformat(timespec="seconds"),
     }
@@ -186,8 +186,8 @@ def main() -> int:
     database = load_json(args.input)
     index, shards = split_database(database)
 
-    index_path = args.output_dir / "netwatch_hardware_eol_index.json.gz"
-    summary_path = args.summary or args.output_dir / "netwatch_hardware_eol_summary.json"
+    index_path = args.output_dir / "sunsetscan_hardware_eol_index.json.gz"
+    summary_path = args.summary or args.output_dir / "sunsetscan_hardware_eol_summary.json"
     if not args.no_backup:
         backup_existing(index_path)
         backup_existing(summary_path)

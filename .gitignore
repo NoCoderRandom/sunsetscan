@@ -9,7 +9,7 @@ venv/
 .venv/
 env/
 
-# NetWatch personal data — never commit
+# SunsetScan personal data — never commit
 data/cache/
 data/history/
 data/logs/
@@ -21,8 +21,9 @@ reports/
 # but do not commit expanded generated JSON databases.
 data/hardware_eol/*.json
 data/hardware_eol/records/*.json
+data/hardware_eol/sunsetscan_hardware_eol.json.gz
 data/hardware_eol/netwatch_hardware_eol.json.gz
-!data/hardware_eol/netwatch_hardware_eol_summary.json
+!data/hardware_eol/sunsetscan_hardware_eol_summary.json
 
 # Raw vendor lifecycle source files copied from nhedb-scraper for local analysis.
 # These may include vendor PDFs/exports and must never be committed or uploaded.
@@ -30,12 +31,13 @@ data/hardware_eol/raw_vendor_sources/
 data/hardware_eol/local_backups/
 data/hardware_eol/experiments/
 
-# NetWatch backups
+# SunsetScan backups
+sunsetscan_backup_*/
 netwatch_backup_*/
 
 # Scan output files
 *.html
-!NetWatch_Improvement_Master_Document.html
+!SunsetScan_Improvement_Master_Document.html
 
 # Logs and environment
 *.log
@@ -66,6 +68,8 @@ desktop.ini
 prompts/audit_fixes/
 HARDWARE_EOL_INTEGRATION_NOTES.md
 SESSION_NOTES.txt
+SunsetScan_Improvement_Master_Document.html
+SunsetScan_Improvement_Master_Document.docx
 NetWatch_Improvement_Master_Document.html
 NetWatch_Improvement_Master_Document.docx
 DOCUMENTATION.md

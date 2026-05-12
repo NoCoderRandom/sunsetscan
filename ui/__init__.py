@@ -1,5 +1,5 @@
 """
-NetWatch UI Module.
+SunsetScan UI Module.
 
 This package contains user interface components:
 - menu: Interactive menu system

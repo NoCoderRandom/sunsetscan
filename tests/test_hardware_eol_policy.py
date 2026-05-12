@@ -43,7 +43,7 @@ def _record(status, receives_updates, source_hint):
             "status_text": None,
             "source_hint": source_hint,
         },
-        "netwatch": {
+        "sunsetscan": {
             "match_priority": 90,
             "finding_title": "ASUS RT-AX92U no longer receives security updates",
         },
@@ -53,7 +53,7 @@ def _record(status, receives_updates, source_hint):
 def _database(record):
     return {
         "metadata": {
-            "schema": "netwatch.hardware_eol.v1",
+            "schema": "sunsetscan.hardware_eol.v1",
             "status_definitions": {},
         },
         "summary": {},
@@ -75,7 +75,7 @@ def _database(record):
                 "risk_counts": {record["lifecycle"]["risk"]: 1},
                 "earliest_security_eol": "2025-02-28",
                 "latest_security_eol": "2025-02-28",
-                "netwatch_note": "Test summary",
+                "sunsetscan_note": "Test summary",
             }
         ],
         "indexes": {
@@ -174,7 +174,7 @@ def test_hardware_lookup_loads_split_record_shard(tmp_path):
         }
     }
     index["record_locations"] = {record["id"]: "network_infrastructure"}
-    path = tmp_path / "netwatch_hardware_eol_index.json"
+    path = tmp_path / "sunsetscan_hardware_eol_index.json"
     path.write_text(json.dumps(index), encoding="utf-8")
 
     match = HardwareEOLDatabase(path).lookup("ASUS", "RT-AX92U")

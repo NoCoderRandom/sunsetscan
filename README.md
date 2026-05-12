@@ -1,8 +1,8 @@
-# NetWatch
+# SunsetScan
 
 **Network security auditing for humans — powered by nmap, built for everyone.**
 
-[![Version](https://img.shields.io/badge/version-v1.7.1-blue)]
+[![Version](https://img.shields.io/badge/version-v2.0.0-blue)]
 [![Python 3.9+](https://img.shields.io/badge/python-3.9%2B-blue?logo=python&logoColor=white)](https://www.python.org/downloads/)
 [![Platform](https://img.shields.io/badge/platform-Linux%20%7C%20WSL2-brightgreen?logo=linux)](https://github.com)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
@@ -11,9 +11,11 @@
 [![CVE data: OSV.dev](https://img.shields.io/badge/CVE%20data-OSV.dev-blueviolet)](https://osv.dev)
 [![EOL data: endoflife.date](https://img.shields.io/badge/EOL%20data-endoflife.date-yellow)](https://endoflife.date)
 
+Website: [sunsetscan.com](http://www.sunsetscan.com/)
+
 ---
 
-NetWatch is a local-network security auditing tool for **home network owners and IT staff** who want the depth of nmap without learning nmap syntax. Point it at your network and it finds every active device, fingerprints running software, checks against known vulnerability databases and end-of-life records, probes web interfaces for common weaknesses, optionally performs a lockout-safe factory-default credential audit, and produces a clean HTML report with **plain-English explanations** and numbered steps to fix each finding. It is **entirely read-only and non-destructive** — nothing on your network is ever modified.
+SunsetScan is a local-network security auditing tool for **home network owners and IT staff** who want the depth of nmap without learning nmap syntax. Point it at your network and it finds every active device, fingerprints running software, checks against known vulnerability databases and end-of-life records, probes web interfaces for common weaknesses, optionally performs a lockout-safe factory-default credential audit, and produces a clean HTML report with **plain-English explanations** and numbered steps to fix each finding. It is **entirely read-only and non-destructive** — nothing on your network is ever modified.
 
 ---
 
@@ -26,13 +28,13 @@ NetWatch is a local-network security auditing tool for **home network owners and
 | **macOS** | Partial | Core scanning works; some features (ARP, passive capture) may require extra setup |
 | **Windows** (native CMD/PowerShell) | Not supported | Missing raw sockets, `os.geteuid()`, `/proc`, `ip route`, and `termios` — use WSL2 instead |
 
-> **Why Linux?** NetWatch relies on raw sockets (ARP scanning, passive packet capture), Linux-specific APIs (`/proc`, `ip route`), and privilege checks (`os.geteuid()`) that are not available on native Windows. WSL2 provides a full Linux kernel and is the recommended path for Windows users.
+> **Why Linux?** SunsetScan relies on raw sockets (ARP scanning, passive packet capture), Linux-specific APIs (`/proc`, `ip route`), and privilege checks (`os.geteuid()`) that are not available on native Windows. WSL2 provides a full Linux kernel and is the recommended path for Windows users.
 
 ---
 
 ## Installation
 
-NetWatch ships with an installer that takes care of system tools (`nmap`, `masscan`, `git`, `python3-venv`), creates a project-local Python virtual environment, and installs all Python dependencies inside it. **You will never be asked to `pip install` anything as root** — that's important on modern Debian/Pi OS, see [Why a venv?](#why-a-venv) below.
+SunsetScan ships with an installer that takes care of system tools (`nmap`, `masscan`, `git`, `python3-venv`), creates a project-local Python virtual environment, and installs all Python dependencies inside it. **You will never be asked to `pip install` anything as root** — that's important on modern Debian/Pi OS, see [Why a venv?](#why-a-venv) below.
 
 ### Tier-1 platforms (fully tested)
 
@@ -46,16 +48,16 @@ Fedora, RHEL, CentOS, Rocky, Alma, Arch, Manjaro, openSUSE, macOS.
 
 #### 1. One-line bootstrap (recommended for new users)
 
-Clones the repo into `~/netwatch` and runs the installer:
+Clones the repo into `~/sunsetscan` and runs the installer:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/NoCoderRandom/netwatch/main/bootstrap.sh | bash
+curl -fsSL https://raw.githubusercontent.com/NoCoderRandom/sunsetscan/main/bootstrap.sh | bash
 ```
 
 Want it somewhere else? Set `INSTALL_DIR`:
 
 ```bash
-INSTALL_DIR=/opt/netwatch curl -fsSL https://raw.githubusercontent.com/NoCoderRandom/netwatch/main/bootstrap.sh | bash
+INSTALL_DIR=/opt/sunsetscan curl -fsSL https://raw.githubusercontent.com/NoCoderRandom/sunsetscan/main/bootstrap.sh | bash
 ```
 
 > **A note on `curl | bash`**: it's convenient but it does mean running a script you haven't read. If you'd rather inspect first, use option 2 or 3.
@@ -63,8 +65,8 @@ INSTALL_DIR=/opt/netwatch curl -fsSL https://raw.githubusercontent.com/NoCoderRa
 #### 2. Clone and install
 
 ```bash
-git clone https://github.com/NoCoderRandom/netwatch.git
-cd netwatch
+git clone https://github.com/NoCoderRandom/sunsetscan.git
+cd sunsetscan
 ./install.sh
 ```
 
@@ -72,9 +74,9 @@ cd netwatch
 
 ```bash
 sudo apt install -y nmap masscan git python3 python3-venv python3-pip libpcap-dev build-essential avahi-utils
-git clone https://github.com/NoCoderRandom/netwatch.git && cd netwatch
+git clone https://github.com/NoCoderRandom/sunsetscan.git && cd sunsetscan
 python3 -m venv venv && ./venv/bin/pip install -r requirements.txt
-./netwatch --version
+./sunsetscan --version
 ```
 
 (Substitute your distro's package manager for `apt` — `dnf`, `pacman`, `zypper`, or `brew`. The avahi package is `avahi-tools` on Fedora/RHEL, `avahi` on Arch, `avahi-utils` on openSUSE, and not needed on macOS.)
@@ -82,12 +84,12 @@ python3 -m venv venv && ./venv/bin/pip install -r requirements.txt
 ### After installing — first run
 
 ```bash
-sudo ./netwatch --setup            # download EOL/CVE/credential databases (once)
-sudo ./netwatch --instant          # ARP-only inventory of your local subnet
-sudo ./netwatch --full-assessment --target 192.168.1.0/24
+sudo ./sunsetscan --setup            # download EOL/CVE/credential databases (once)
+sudo ./sunsetscan --instant          # ARP-only inventory of your local subnet
+sudo ./sunsetscan --full-assessment --target 192.168.1.0/24
 ```
 
-The `./netwatch` launcher auto-activates the venv — you don't need to `source venv/bin/activate` ever. It also works correctly under `sudo`.
+The `./sunsetscan` launcher auto-activates the venv — you don't need to `source venv/bin/activate` ever. It also works correctly under `sudo`.
 
 ### Installer flags
 
@@ -95,7 +97,7 @@ The `./netwatch` launcher auto-activates the venv — you don't need to `source 
 |---|---|
 | (no flags) | Default install: system packages + venv + Python deps + self-test |
 | `--force` | Delete and rebuild the venv from scratch (use after upgrading Python) |
-| `--symlink` | Also install `/usr/local/bin/netwatch` so you can run `netwatch` from anywhere |
+| `--symlink` | Also install `/usr/local/bin/sunsetscan` so you can run `sunsetscan` from anywhere |
 | `--no-system` | Skip the apt/dnf/etc step (use if your system tools are already installed) |
 | `--help` | Show all options |
 
@@ -110,23 +112,23 @@ error: externally-managed-environment
 × This environment is externally managed
 ```
 
-Two of NetWatch's dependencies (`pysnmp` v6 in particular) need newer versions than the apt repositories ship, so a pure-apt install isn't possible. The installer's solution is the standard one: install system tools (nmap, masscan, libpcap, avahi-utils) via apt, and put NetWatch's Python dependencies in a project-local `./venv` directory. Nothing system-wide is touched, so PEP 668 doesn't apply, and uninstalling NetWatch is just `rm -rf ~/netwatch`.
+Two of SunsetScan's dependencies (`pysnmp` v6 in particular) need newer versions than the apt repositories ship, so a pure-apt install isn't possible. The installer's solution is the standard one: install system tools (nmap, masscan, libpcap, avahi-utils) via apt, and put SunsetScan's Python dependencies in a project-local `./venv` directory. Nothing system-wide is touched, so PEP 668 doesn't apply, and uninstalling SunsetScan is just `rm -rf ~/sunsetscan`.
 
-### Optional: keep NetWatch running in the background
+### Optional: keep SunsetScan running in the background
 
 A full assessment of a /24 subnet on a Raspberry Pi can take 10–30 minutes. Use `tmux` or `screen` so the scan survives an SSH disconnect:
 
 ```bash
 sudo apt install -y tmux
-tmux new -s netwatch
-sudo ./netwatch --full-assessment --target 192.168.1.0/24
-# Ctrl+B then D to detach. "tmux attach -t netwatch" to come back later.
+tmux new -s sunsetscan
+sudo ./sunsetscan --full-assessment --target 192.168.1.0/24
+# Ctrl+B then D to detach. "tmux attach -t sunsetscan" to come back later.
 ```
 
-### Updating NetWatch
+### Updating SunsetScan
 
 ```bash
-cd ~/netwatch
+cd ~/sunsetscan
 git pull
 ./install.sh                # idempotent — picks up any new dependencies
 ```
@@ -134,13 +136,13 @@ git pull
 ### Uninstalling
 
 ```bash
-rm -rf ~/netwatch
-sudo rm -f /usr/local/bin/netwatch    # only if you used --symlink
+rm -rf ~/sunsetscan
+sudo rm -f /usr/local/bin/sunsetscan    # only if you used --symlink
 ```
 
 ### WSL2 on Windows
 
-Windows is not directly supported (NetWatch needs raw sockets, `/proc`, and `os.geteuid`), but WSL2 works fine:
+Windows is not directly supported (SunsetScan needs raw sockets, `/proc`, and `os.geteuid`), but WSL2 works fine:
 
 ```powershell
 wsl --install -d Ubuntu     # in PowerShell, as Administrator
@@ -168,22 +170,22 @@ Restart, open **Ubuntu** from the Start menu, then follow the standard install a
 
 ```bash
 # Interactive mode (recommended for first-time users)
-sudo python3 netwatch.py -i
+sudo python3 sunsetscan.py -i
 
 # Full security assessment with HTML report
-sudo python3 netwatch.py --full-assessment --target 192.168.1.0/24
+sudo python3 sunsetscan.py --full-assessment --target 192.168.1.0/24
 
 # Quick scan of your network
-python3 netwatch.py --target 192.168.1.0/24
+python3 sunsetscan.py --target 192.168.1.0/24
 
 # IoT device scan (cameras, routers, smart devices)
-python3 netwatch.py --target 192.168.1.0/24 --profile IOT
+python3 sunsetscan.py --target 192.168.1.0/24 --profile IOT
 
 # Quick device inventory (no security checks)
-python3 netwatch.py --identify --target 192.168.1.0/24
+python3 sunsetscan.py --identify --target 192.168.1.0/24
 
 # Download all data modules for extended detection
-python3 netwatch.py --download all
+python3 sunsetscan.py --download all
 ```
 
 ---
@@ -214,7 +216,7 @@ python3 netwatch.py --download all
 - Pre-scan readiness check — warns if nmap is missing, CVE/EOL databases are empty, or default modules are not installed. Runs before every scan, does not block scanning.
 
 ### Security Checks
-NetWatch runs 12 security checker modules during a full assessment:
+SunsetScan runs 12 security checker modules during a full assessment:
 
 | Checker | What it finds |
 |---|---|
@@ -234,7 +236,7 @@ NetWatch runs 12 security checker modules during a full assessment:
 ### Vulnerability Intelligence
 - **CVE correlation** — maps detected service versions to known CVEs using OSV.dev
 - **EOL checking** — 150+ products checked against endoflife.date
-- **Hardware lifecycle checking** — downloadable NetWatch hardware EOL database
+- **Hardware lifecycle checking** — downloadable SunsetScan hardware EOL database
   flags routers, switches, NAS, cameras, printers, and access points with
   confirmed unsupported status or vendor lifecycle signals that need review
 - **JA3S TLS fingerprinting** — identifies server software from TLS handshake signatures
@@ -254,7 +256,7 @@ NetWatch runs 12 security checker modules during a full assessment:
 - Persistent MAC-to-identity mapping across scans
 
 ### Modular Data System
-NetWatch includes 9 downloadable data modules that extend detection capabilities:
+SunsetScan includes 9 downloadable data modules that extend detection capabilities:
 
 | Module | Source | What it adds |
 |---|---|---|
@@ -266,12 +268,12 @@ NetWatch includes 9 downloadable data modules that extend detection capabilities
 | `snmp-community` | danielmiessler/SecLists | Extended SNMP community strings |
 | `camera-credentials` | many-passwords/many-passwords | IP camera/DVR/NVR defaults (downloadable reference data; not used by the safe audit unless explicitly enabled in settings) |
 | `mac-oui` | IEEE Standards Association | MAC prefix vendor database (default) |
-| `hardware-eol` | NoCoderRandom/netwatch | Hardware lifecycle/EOL database (default; database license: CC BY-NC 4.0) |
+| `hardware-eol` | NoCoderRandom/sunsetscan | Hardware lifecycle/EOL database (default; database license: CC BY-NC 4.0) |
 
 ```bash
-netwatch --modules                # Show module status
-netwatch --download all           # Download everything
-netwatch --download ja3-signatures  # Download one module
+sunsetscan --modules                # Show module status
+sunsetscan --download all           # Download everything
+sunsetscan --download ja3-signatures  # Download one module
 ```
 
 ### Rogue Device Detection
@@ -336,7 +338,7 @@ Every device receives a risk score (0-100) based on the severity and count of fi
 | `--history` | Show scan history table and exit | No |
 | `--diff` | Diff last two saved scans and exit | No |
 | `--since DAYS` | With `--diff`: compare against scan at least N days old | No |
-| `--check-version` | Check for newer NetWatch release on GitHub | No |
+| `--check-version` | Check for newer SunsetScan release on GitHub | No |
 | `--update` | Pull latest code from GitHub and reinstall requirements | No |
 | `--verbose` | Enable debug logging | No |
 | `--no-color` | Disable colour output (useful for log files) | No |
@@ -364,7 +366,7 @@ Every device receives a risk score (0-100) based on the severity and count of fi
 
 Default-password testing is never enabled automatically. In CLI mode, add
 `--check-defaults`; in guided `-i` mode, choose the default password audit when
-prompted. NetWatch then applies a conservative policy:
+prompted. SunsetScan then applies a conservative policy:
 
 - no generic username/password spraying by default
 - only tests credentials that match the detected vendor and model/family
@@ -384,10 +386,10 @@ Safe mode is automatically recommended on low-power hosts, hosts that look like
 Pi-hole/gateway appliances, and Wi-Fi egress. It can also be forced with:
 
 ```bash
-python3 netwatch.py --full-assessment --target 192.168.1.0/24 --safe-mode
+python3 sunsetscan.py --full-assessment --target 192.168.1.0/24 --safe-mode
 ```
 
-In safe mode NetWatch:
+In safe mode SunsetScan:
 
 - discovers live hosts first and scans only those hosts during full assessments
 - applies the same safe scanner behavior from CLI, old menu, and guided `-i` mode
@@ -412,27 +414,27 @@ pcaps, and archives are ignored by git and should not be committed.
 Useful overrides:
 
 ```bash
-sudo NETWATCH_TARGETS="192.168.1.0/24" bash scripts/sudo_network_validation.sh
-sudo NETWATCH_PROFILES="PING QUICK FULL" bash scripts/sudo_network_validation.sh
-sudo NETWATCH_COMMAND_TIMEOUT=1200 bash scripts/sudo_network_validation.sh
+sudo SUNSETSCAN_TARGETS="192.168.1.0/24" bash scripts/sudo_network_validation.sh
+sudo SUNSETSCAN_PROFILES="PING QUICK FULL" bash scripts/sudo_network_validation.sh
+sudo SUNSETSCAN_COMMAND_TIMEOUT=1200 bash scripts/sudo_network_validation.sh
 ```
 
 ---
 
 ## Cache Management
 
-NetWatch never calls external APIs during a scan. All data is read from local cache files in `data/cache/`.
+SunsetScan never calls external APIs during a scan. All data is read from local cache files in `data/cache/`.
 
 | File | Contents | Refresh interval |
 |---|---|---|
 | `data/cache/cve_cache.json` | CVE data keyed by product:version | Every 7 days |
 | `data/cache/*.json` | EOL dates for 150+ products, stored per product | Every 30 days |
-| `data/cache/hardware_eol/netwatch_hardware_eol_index.json` plus `records/*.json` | Hardware lifecycle/EOL database | Every 30 days |
+| `data/cache/hardware_eol/sunsetscan_hardware_eol_index.json` plus `records/*.json` | Hardware lifecycle/EOL database | Every 30 days |
 | `data/cache/cache_meta.json` | Timestamps of last updates | Automatic |
 
 ```bash
-netwatch --cache-status     # See current cache state
-netwatch --update-cache     # Refresh stale caches
+sunsetscan --cache-status     # See current cache state
+sunsetscan --update-cache     # Refresh stale caches
 ```
 
 Scans work normally with stale or missing cache — you just may have outdated CVE data.
@@ -443,10 +445,10 @@ Scans work normally with stale or missing cache — you just may have outdated C
 
 ```bash
 # Step 1: Save baseline when all known devices are present
-sudo python3 netwatch.py --target 192.168.1.0/24 --save-baseline
+sudo python3 sunsetscan.py --target 192.168.1.0/24 --save-baseline
 
 # Step 2: Future scans automatically compare against baseline
-sudo python3 netwatch.py --target 192.168.1.0/24
+sudo python3 sunsetscan.py --target 192.168.1.0/24
 ```
 
 | Finding | Severity | Meaning |
@@ -476,7 +478,7 @@ Reports open in any browser with no internet required.
 
 ## Device Identification
 
-NetWatch automatically identifies network devices by combining evidence
+SunsetScan automatically identifies network devices by combining evidence
 from 14 different sources. Each source contributes a vendor, model,
 version, or device type with a confidence score. The fusion algorithm
 sums agreeing sources (with bonuses for multi-source agreement) and
@@ -487,7 +489,7 @@ penalizes conflicting evidence.
 To see what's on your network without running security checks:
 
 ```bash
-python3 netwatch.py --identify --target 192.168.1.0/24
+python3 sunsetscan.py --identify --target 192.168.1.0/24
 ```
 
 This runs a port scan with banner grabbing and prints a device
@@ -536,8 +538,8 @@ Identification results appear in:
 ## Project Structure
 
 ```
-netwatch/
-├── netwatch.py                    # Entry point — CLI, scan pipeline, setup wizard
+sunsetscan/
+├── sunsetscan.py                    # Entry point — CLI, scan pipeline, setup wizard
 ├── requirements.txt               # Python dependencies
 ├── install.sh                     # Automated installer for Linux/macOS
 ├── install.bat                    # Automated installer for Windows (basic)
@@ -635,28 +637,28 @@ FULL, STEALTH, and SMB profiles require elevated privileges. Without root, these
 
 ```bash
 # For full capabilities:
-sudo python3 netwatch.py --target 192.168.1.0/24 --profile FULL
+sudo python3 sunsetscan.py --target 192.168.1.0/24 --profile FULL
 ```
 
 **WSL2 suggests wrong network (172.x.x.x)**
 
-On WSL2, NetWatch detects the virtual adapter and falls back to `192.168.1.0/24`. If your home network uses a different subnet, specify it with `--target`:
+On WSL2, SunsetScan detects the virtual adapter and falls back to `192.168.1.0/24`. If your home network uses a different subnet, specify it with `--target`:
 
 ```bash
-python3 netwatch.py --target 192.168.0.0/24
+python3 sunsetscan.py --target 192.168.0.0/24
 ```
 
 **Cache warnings at scan start**
 
 ```
-WARNING: CVE data is 12 days old — run: python netwatch.py --update-cache
+WARNING: CVE data is 12 days old — run: python sunsetscan.py --update-cache
 ```
 
 Scans work fine with stale data. Run `--update-cache` to refresh.
 
 **SNMP checks not working**
 
-NetWatch supports both pysnmp v4 (synchronous) and v7 (async). If you see import errors, update pysnmp:
+SunsetScan supports both pysnmp v4 (synchronous) and v7 (async). If you see import errors, update pysnmp:
 
 ```bash
 pip install --upgrade pysnmp
@@ -666,19 +668,19 @@ pip install --upgrade pysnmp
 
 ## Disclaimer — Authorised Use Only
 
-> **NetWatch is a security auditing tool intended for use on networks and devices that you own or have explicit written permission to test.**
+> **SunsetScan is a security auditing tool intended for use on networks and devices that you own or have explicit written permission to test.**
 
 Running network scans against systems you do not own or have authorisation to test may be **illegal** regardless of intent. The authors accept no liability for misuse.
 
-NetWatch is **entirely non-destructive and read-only**. It does not exploit vulnerabilities, deliver payloads, or modify any configuration on any scanned device. The `--check-defaults` credential testing is opt-in, bounded, delayed, exact-model oriented, and stops on lockout/rate-limit signals; it is not a brute-force feature.
+SunsetScan is **entirely non-destructive and read-only**. It does not exploit vulnerabilities, deliver payloads, or modify any configuration on any scanned device. The `--check-defaults` credential testing is opt-in, bounded, delayed, exact-model oriented, and stops on lockout/rate-limit signals; it is not a brute-force feature.
 
 ---
 
 ## License
 
-The NetWatch repository and application code are licensed under the MIT License — Copyright 2024 NetWatch Contributors.
+The SunsetScan repository and application code are licensed under the MIT License — Copyright 2024 SunsetScan Contributors.
 
-Only the NetWatch hardware EOL database artifacts under `data/hardware_eol/` are licensed separately: This database is licensed under the Creative Commons Attribution-NonCommercial 4.0 International License (CC BY-NC 4.0). See [data/hardware_eol/LICENSE.md](data/hardware_eol/LICENSE.md).
+Only the SunsetScan hardware EOL database artifacts under `data/hardware_eol/` are licensed separately: This database is licensed under the Creative Commons Attribution-NonCommercial 4.0 International License (CC BY-NC 4.0). See [data/hardware_eol/LICENSE.md](data/hardware_eol/LICENSE.md).
 
 ---
 

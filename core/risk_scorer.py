@@ -1,5 +1,5 @@
 """
-NetWatch Device Risk Scorer.
+SunsetScan Device Risk Scorer.
 
 Calculates a 0-100 risk score for each scanned device based on its findings.
 Weights are loaded from data/risk_weights.json so they can be tuned without

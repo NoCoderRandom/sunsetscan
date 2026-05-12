@@ -7,7 +7,7 @@ Keep two separate layers in the hardware EOL database:
 
 1. Raw vendor meaning: the exact source term, date label, source URL, source
    type, and any original status text.
-2. NetWatch interpretation: the cautious normalized status NetWatch uses for
+2. SunsetScan interpretation: the cautious normalized status SunsetScan uses for
    findings, including confidence, review requirements, and conflict notes.
 
 Common vendor terms may mean different things:

@@ -1,5 +1,5 @@
 """
-NetWatch Hybrid Scanner Orchestrator.
+SunsetScan Hybrid Scanner Orchestrator.
 
 Coordinates the full hybrid scanning pipeline:
 
@@ -75,7 +75,7 @@ class HybridScanner:
         # Step 1: Start passive capture before active scanning
         hybrid.start_passive(interface="eth0")
 
-        # Step 2: Run your active scans (existing NetWatch pipeline)
+        # Step 2: Run your active scans (existing SunsetScan pipeline)
         # ... scanner.scan(...), run_security_checks(...) ...
 
         # Step 3: Stop capture and fuse all data
@@ -165,7 +165,7 @@ class HybridScanner:
         """Steps 4-6: Parse packets, fuse identities, update device map.
 
         Args:
-            scan_result:       The active scan result from NetWatch.
+            scan_result:       The active scan result from SunsetScan.
             active_identities: IP → DeviceIdentity from DeviceIdentifier.
                               If None, runs identification from scan_result.
 

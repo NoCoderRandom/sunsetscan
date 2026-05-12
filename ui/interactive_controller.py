@@ -1,7 +1,7 @@
 """
-NetWatch Interactive Controller Module.
+SunsetScan Interactive Controller Module.
 
-This module provides the main interactive mode for NetWatch,
+This module provides the main interactive mode for SunsetScan,
 allowing users to perform network discovery and then select
 specific actions on discovered hosts.
 
@@ -70,7 +70,7 @@ class DiscoveredHost:
 
 
 class InteractiveController:
-    """Interactive mode controller for NetWatch.
+    """Interactive mode controller for SunsetScan.
 
     Manages the interactive workflow:
     1. Get target range from user
@@ -120,7 +120,10 @@ class InteractiveController:
             self.settings = settings
             self._safe_mode_active = settings.safe_mode
         else:
-            env_force_safe = bool(os.environ.get("NETWATCH_FORCE_SAFE_MODE"))
+            env_force_safe = bool(
+                os.environ.get("SUNSETSCAN_FORCE_SAFE_MODE")
+                or os.environ.get("NETWATCH_FORCE_SAFE_MODE")
+            )
             use_safe_mode = (
                 force_safe_mode
                 or env_force_safe
@@ -209,7 +212,7 @@ class InteractiveController:
     def show_welcome(self) -> None:
         """Display welcome message."""
         self.console.print(f"\n{'='*70}")
-        self.console.print(f"  NetWatch Interactive Mode v{self.settings.version}")
+        self.console.print(f"  SunsetScan Interactive Mode v{self.settings.version}")
         self.console.print(f"{'='*70}\n")
         if self.settings.safe_mode:
             excluded = ", ".join(self.settings.excluded_hosts) or "none"
@@ -388,7 +391,7 @@ class InteractiveController:
 [6] Modules & Data       - Download data modules, update cache
 [7] Settings             - Configure scan options
 [8] Device Inventory     - Identify all devices on the network
-[0] Exit                 - Quit NetWatch
+[0] Exit                 - Quit SunsetScan
         """
 
         self.console.print(menu)
@@ -788,7 +791,7 @@ Current Settings:
 
         self.console.print(
             "\n[yellow]Default password audit: only test devices you own. "
-            "NetWatch uses exact model/vendor matches, capped attempts, and "
+            "SunsetScan uses exact model/vendor matches, capped attempts, and "
             "delays between tries.[/yellow]"
         )
         self.console.print(f"[blue]Checking default credentials on {len(ips)} host(s)...[/blue]\n")
@@ -1093,7 +1096,7 @@ Device Types Found:
         try:
             exporter = ReportExporter(settings=self.settings)
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            filename = f"netwatch_export_{timestamp}.{format_type}"
+            filename = f"sunsetscan_export_{timestamp}.{format_type}"
 
             if format_type == "html":
                 exporter.export_html(
@@ -1175,8 +1178,8 @@ Device Types Found:
                 safe_mode=self._force_safe_mode or self.settings.safe_mode,
                 no_safe_mode=self._disable_safe_mode,
             )
-            from netwatch import NetWatch
-            app = NetWatch(args)
+            from sunsetscan import SunsetScan
+            app = SunsetScan(args)
             app.run_full_assessment(self.current_target)
             self.console.print("[green]Full assessment complete.[/green]")
         except Exception as e:
@@ -1214,7 +1217,7 @@ Device Types Found:
             elif choice == "3":
                 mm.download_all()
             elif choice == "4":
-                from netwatch import run_update_cache
+                from sunsetscan import run_update_cache
                 run_update_cache()
             elif choice == "5":
                 from core.update_manager import UpdateManager

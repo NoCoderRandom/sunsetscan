@@ -1,7 +1,7 @@
 """
-NetWatch Host Capability Detection.
+SunsetScan Host Capability Detection.
 
-Detects characteristics of the host running NetWatch that should make the
+Detects characteristics of the host running SunsetScan that should make the
 scanner less aggressive:
 
   - Raspberry Pi / low-end ARM SBC
@@ -14,7 +14,7 @@ serial nmap (parallel_hosts=1), reduced worker threads, drop OS fingerprinting,
 and exclude the gateway + self IP from scans.
 
 This module performs detection only — it does NOT mutate global state. The
-caller (netwatch.py startup) decides whether to apply the recommended
+caller (sunsetscan.py startup) decides whether to apply the recommended
 overrides when constructing Settings.
 """
 

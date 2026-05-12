@@ -1,5 +1,5 @@
 """
-NetWatch Input Parser Module.
+SunsetScan Input Parser Module.
 
 This module parses various IP address and range formats into
 nmap-compatible target specifications.

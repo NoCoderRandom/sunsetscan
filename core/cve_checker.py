@@ -1,11 +1,11 @@
 """
-NetWatch CVE Checker Module.
+SunsetScan CVE Checker Module.
 
 Provides scan-time CVE lookups against the local cache ONLY.
 Never calls any external API during a scan.
 
 For building or refreshing the CVE cache, use CVECacheBuilder —
-which is called by `python netwatch.py --setup` and `--update-cache`.
+which is called by `python sunsetscan.py --setup` and `--update-cache`.
 
 Data sources (cache-build time only):
     PRIMARY:   OSV.dev batch API (no key, no rate limits)
@@ -153,11 +153,11 @@ class CVEChecker:
         """Return a warning string if the CVE cache is stale or missing."""
         age = self.cache.get_cve_cache_age_days()
         if age is None:
-            return "CVE cache not found — run: python netwatch.py --setup"
+            return "CVE cache not found — run: python sunsetscan.py --setup"
         if not self.cache.is_cve_cache_current():
             return (
                 f"CVE data is {age} days old — "
-                "run: python netwatch.py --update-cache"
+                "run: python sunsetscan.py --update-cache"
             )
         return None
 
@@ -182,7 +182,7 @@ class CVECacheBuilder:
     NVD_URL = "https://services.nvd.nist.gov/rest/json/cves/2.0"
     NVD_DELAY_SECONDS = 6
 
-    # Maps NetWatch product slugs to (OSV ecosystem, package name) tuples.
+    # Maps SunsetScan product slugs to (OSV ecosystem, package name) tuples.
     # Multiple entries per product = we try the first one that returns results.
     OSV_ECOSYSTEMS: Dict[str, List[Tuple[str, str]]] = {
         "openssh": [("Alpine", "openssh"), ("Debian", "openssh")],
@@ -221,7 +221,7 @@ class CVECacheBuilder:
         self.session = requests.Session()
         self.session.headers.update({
             "Content-Type": "application/json",
-            "User-Agent": "NetWatch/1.1.0 (+https://github.com/netwatch)",
+            "User-Agent": "SunsetScan/1.1.0 (+https://github.com/sunsetscan)",
         })
 
     def build_cache(
@@ -399,7 +399,7 @@ class CVECacheBuilder:
                 self.NVD_URL,
                 params={"cveId": cve_id},
                 timeout=30,
-                headers={"User-Agent": "NetWatch/1.1.0"},
+                headers={"User-Agent": "SunsetScan/1.1.0"},
             )
             response.raise_for_status()
             data = response.json()

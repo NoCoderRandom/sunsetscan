@@ -1,7 +1,7 @@
 """
-NetWatch hardware end-of-life lookup.
+SunsetScan hardware end-of-life lookup.
 
-This module reads the hardware lifecycle database installed by the NetWatch
+This module reads the hardware lifecycle database installed by the SunsetScan
 module manager in data/cache/hardware_eol/. It is separate from the software
 EOL checker because the source data is vendor hardware lifecycle data, not
 endoflife.date cycles.
@@ -18,12 +18,19 @@ from typing import Any, Dict, List, Optional, Tuple
 logger = logging.getLogger(__name__)
 
 _PROJECT_ROOT = Path(__file__).parent.parent
-_DEFAULT_DB_PATH = _PROJECT_ROOT / "data" / "cache" / "hardware_eol" / "netwatch_hardware_eol.json"
-_DEFAULT_INDEX_PATH = _PROJECT_ROOT / "data" / "cache" / "hardware_eol" / "netwatch_hardware_eol_index.json"
-_DEVELOPER_DB_PATH = _PROJECT_ROOT / "data" / "hardware_eol" / "netwatch_hardware_eol.json"
-_DEVELOPER_DB_GZ_PATH = _PROJECT_ROOT / "data" / "hardware_eol" / "netwatch_hardware_eol.json.gz"
-_DEVELOPER_INDEX_PATH = _PROJECT_ROOT / "data" / "hardware_eol" / "netwatch_hardware_eol_index.json"
-_DEVELOPER_INDEX_GZ_PATH = _PROJECT_ROOT / "data" / "hardware_eol" / "netwatch_hardware_eol_index.json.gz"
+_DEFAULT_DB_PATH = _PROJECT_ROOT / "data" / "cache" / "hardware_eol" / "sunsetscan_hardware_eol.json"
+_DEFAULT_INDEX_PATH = _PROJECT_ROOT / "data" / "cache" / "hardware_eol" / "sunsetscan_hardware_eol_index.json"
+_DEVELOPER_DB_PATH = _PROJECT_ROOT / "data" / "hardware_eol" / "sunsetscan_hardware_eol.json"
+_DEVELOPER_DB_GZ_PATH = _PROJECT_ROOT / "data" / "hardware_eol" / "sunsetscan_hardware_eol.json.gz"
+_DEVELOPER_INDEX_PATH = _PROJECT_ROOT / "data" / "hardware_eol" / "sunsetscan_hardware_eol_index.json"
+_DEVELOPER_INDEX_GZ_PATH = _PROJECT_ROOT / "data" / "hardware_eol" / "sunsetscan_hardware_eol_index.json.gz"
+
+_LEGACY_DEFAULT_DB_PATH = _PROJECT_ROOT / "data" / "cache" / "hardware_eol" / "netwatch_hardware_eol.json"
+_LEGACY_DEFAULT_INDEX_PATH = _PROJECT_ROOT / "data" / "cache" / "hardware_eol" / "netwatch_hardware_eol_index.json"
+_LEGACY_DEVELOPER_DB_PATH = _PROJECT_ROOT / "data" / "hardware_eol" / "netwatch_hardware_eol.json"
+_LEGACY_DEVELOPER_DB_GZ_PATH = _PROJECT_ROOT / "data" / "hardware_eol" / "netwatch_hardware_eol.json.gz"
+_LEGACY_DEVELOPER_INDEX_PATH = _PROJECT_ROOT / "data" / "hardware_eol" / "netwatch_hardware_eol_index.json"
+_LEGACY_DEVELOPER_INDEX_GZ_PATH = _PROJECT_ROOT / "data" / "hardware_eol" / "netwatch_hardware_eol_index.json.gz"
 
 
 def normalize_key(value: Any) -> str:
@@ -115,7 +122,11 @@ class HardwareEOLMatch:
             if lifecycle.get("reason"):
                 return str(lifecycle["reason"])
         if self.model_summary:
-            return str(self.model_summary.get("netwatch_note") or "")
+            return str(
+                self.model_summary.get("sunsetscan_note")
+                or self.model_summary.get("netwatch_note")
+                or ""
+            )
         return ""
 
     @property
@@ -166,7 +177,7 @@ class HardwareEOLDatabase:
     ) -> Optional[HardwareEOLMatch]:
         """Look up hardware lifecycle data for a detected vendor/model.
 
-        Returns a match only when NetWatch should emit a finding: unsupported
+        Returns a match only when SunsetScan should emit a finding: unsupported
         hardware, mixed lifecycle status, or a vendor lifecycle signal that
         needs manual review.
         """
@@ -289,9 +300,15 @@ class HardwareEOLDatabase:
             _DEFAULT_INDEX_PATH,
             _DEVELOPER_INDEX_PATH,
             _DEVELOPER_INDEX_GZ_PATH,
+            _LEGACY_DEFAULT_INDEX_PATH,
+            _LEGACY_DEVELOPER_INDEX_PATH,
+            _LEGACY_DEVELOPER_INDEX_GZ_PATH,
             _DEFAULT_DB_PATH,
             _DEVELOPER_DB_PATH,
             _DEVELOPER_DB_GZ_PATH,
+            _LEGACY_DEFAULT_DB_PATH,
+            _LEGACY_DEVELOPER_DB_PATH,
+            _LEGACY_DEVELOPER_DB_GZ_PATH,
         )
         for candidate in candidates:
             if candidate.exists():
@@ -672,9 +689,9 @@ class HardwareEOLDatabase:
         summary: Optional[Dict[str, Any]],
     ) -> str:
         if record:
-            netwatch = record.get("netwatch") or {}
-            if netwatch.get("finding_title"):
-                return str(netwatch["finding_title"])
+            sunsetscan = record.get("sunsetscan") or record.get("netwatch") or {}
+            if sunsetscan.get("finding_title"):
+                return str(sunsetscan["finding_title"])
         display_vendor = (summary or {}).get("vendor") or vendor
         display_model = (summary or {}).get("model") or model
         if (summary or {}).get("overall_status") == "lifecycle_review":

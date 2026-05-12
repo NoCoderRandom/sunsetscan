@@ -1,5 +1,5 @@
 """
-NetWatch Default Credentials Checker Module.
+SunsetScan Default Credentials Checker Module.
 
 This module checks if devices are using default credentials.
 WARNING: Only use on devices you own or have explicit permission to test.

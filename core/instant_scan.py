@@ -1,5 +1,5 @@
 """
-NetWatch Instant Scan Module.
+SunsetScan Instant Scan Module.
 
 Ultra-fast Fing-style network discovery. Uses only lightweight protocols:
   - ARP sweep (host + MAC discovery)

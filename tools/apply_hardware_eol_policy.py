@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
-"""Apply NetWatch's cautious hardware EOL interpretation policy.
+"""Apply SunsetScan's cautious hardware EOL interpretation policy.
 
 The raw database can contain official vendor lifecycle signals that are useful
 but ambiguous. For example, "EOL", "discontinued", and "replacement available"
 do not always prove that firmware/security updates have stopped. This tool
 keeps the raw source data but downgrades known ambiguous source classes to
-`lifecycle_review` so NetWatch does not overclaim.
+`lifecycle_review` so SunsetScan does not overclaim.
 """
 
 from __future__ import annotations
@@ -115,7 +115,7 @@ def apply_policy(database: dict[str, Any]) -> list[dict[str, Any]]:
 
         vendor = record.get("vendor") or record.get("vendor_slug") or ""
         model = record.get("model") or record.get("model_key") or ""
-        record.setdefault("netwatch", {})["finding_title"] = (
+        record.setdefault("sunsetscan", {})["finding_title"] = (
             f"{vendor} {model} lifecycle review needed".strip()
         )
         changed.append(record)
@@ -191,7 +191,11 @@ def rebuild_model_summaries(database: dict[str, Any]) -> None:
             item["device_type"] for item in items if item.get("device_type")
         )
         old = old_summaries.get(key, {})
-        note = old.get("netwatch_note") or "Lifecycle status is unknown."
+        note = (
+            old.get("sunsetscan_note")
+            or old.get("netwatch_note")
+            or "Lifecycle status is unknown."
+        )
         if overall_status == "lifecycle_review":
             note = (
                 "Lifecycle source needs review before claiming security updates "
@@ -221,7 +225,7 @@ def rebuild_model_summaries(database: dict[str, Any]) -> None:
                 "risk_counts": dict(sorted(risks.items())),
                 "earliest_security_eol": support_dates[0] if support_dates else None,
                 "latest_security_eol": support_dates[-1] if support_dates else None,
-                "netwatch_note": note,
+                "sunsetscan_note": note,
             }
         )
 

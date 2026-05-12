@@ -1,7 +1,7 @@
-# NetWatch Dependencies
+# SunsetScan Dependencies
 #
 # Install with: pip install -r requirements.txt
-# First-time setup: python netwatch.py --setup
+# First-time setup: python sunsetscan.py --setup
 #
 # Python version required: >= 3.9
 
