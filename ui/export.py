@@ -23,6 +23,7 @@ Exports:
 
 import json
 import logging
+import ipaddress
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -32,6 +33,45 @@ from core.scanner import ScanResult, HostInfo
 from eol.checker import EOLStatus, EOLStatusLevel
 
 logger = logging.getLogger(__name__)
+
+
+def _ip_sort_key(value: str) -> tuple:
+    """Sort IP-like strings numerically, with non-IP labels after real IPs."""
+    try:
+        ip = ipaddress.ip_address(str(value))
+        return (0, ip.version, int(ip))
+    except ValueError:
+        return (1, str(value))
+
+
+def _port_sort_key(item: tuple) -> tuple:
+    """Sort port dictionary items by numeric port, then protocol."""
+    port_num, port = item
+    value = getattr(port, "port", port_num)
+    try:
+        numeric = int(value)
+    except (TypeError, ValueError):
+        numeric = 0
+    return (numeric, str(getattr(port, "protocol", "")), str(port_num))
+
+
+def _finding_sort_key(finding) -> tuple:
+    """Sort findings by severity, then numeric IP, then port/category/title."""
+    severity = getattr(finding, "severity", None)
+    severity_order = getattr(severity, "order", 99)
+    return (
+        severity_order,
+        _ip_sort_key(getattr(finding, "host", "")),
+        int(getattr(finding, "port", 0) or 0),
+        str(getattr(finding, "category", "")),
+        str(getattr(finding, "title", "")),
+    )
+
+
+def _risk_sort_key(item: tuple) -> tuple:
+    """Sort risk cards by highest score, then numeric IP for stable reading."""
+    ip, risk = item
+    return (-int(getattr(risk, "score", 0) or 0), _ip_sort_key(ip))
 
 
 def _get_jinja_env():
@@ -126,7 +166,7 @@ class ReportExporter:
                 }
 
             # Host details
-            for ip, host in scan_result.hosts.items():
+            for ip, host in sorted(scan_result.hosts.items(), key=lambda item: _ip_sort_key(item[0])):
                 host_data = {
                     "ip": host.ip,
                     "hostname": host.hostname,
@@ -138,7 +178,7 @@ class ReportExporter:
                     "ports": [],
                 }
 
-                for port_num, port in sorted(host.ports.items()):
+                for port_num, port in sorted(host.ports.items(), key=_port_sort_key):
                     port_data = {
                         "port": port.port,
                         "protocol": port.protocol,
@@ -242,6 +282,14 @@ class ReportExporter:
 
         hosts_up = sum(1 for h in scan_result.hosts.values() if h.state == "up")
         total_open = sum(len(h.ports) for h in scan_result.hosts.values())
+        hosts_sorted = sorted(
+            scan_result.hosts.items(),
+            key=lambda item: _ip_sort_key(item[0]),
+        )
+        ports_by_host = {
+            ip: sorted(host.ports.items(), key=_port_sort_key)
+            for ip, host in hosts_sorted
+        }
 
         # Build finding counts and per-host lookups
         from core.findings import Severity
@@ -253,10 +301,10 @@ class ReportExporter:
         counts: Dict[str, int] = {s.value: 0 for s in Severity}
 
         if findings is not None:
-            all_findings_sorted = findings.get_all()
+            all_findings_sorted = sorted(findings.get_all(sort=False), key=_finding_sort_key)
             counts = findings.counts()
-            for host_ip in scan_result.hosts:
-                hf = findings.get_for_host(host_ip)
+            for host_ip, _host in hosts_sorted:
+                hf = sorted(findings.get_for_host(host_ip), key=_finding_sort_key)
                 findings_by_host[host_ip] = hf
                 hc = {s.value: 0 for s in Severity}
                 for f in hf:
@@ -266,7 +314,7 @@ class ReportExporter:
                 worst_severity[host_ip] = ws.value if ws else "INFO"
         else:
             # No findings registry — populate per-host empty
-            for host_ip in scan_result.hosts:
+            for host_ip, _host in hosts_sorted:
                 findings_by_host[host_ip] = []
                 host_finding_counts[host_ip] = {s.value: 0 for s in Severity}
                 worst_severity[host_ip] = "INFO"
@@ -314,23 +362,31 @@ class ReportExporter:
 
         # Build device identity proxies for template
         did_for_template = {}
+        device_identities_sorted = []
         if device_identities:
-            for ip, did in device_identities.items():
-                did_for_template[ip] = did.to_dict() if hasattr(did, 'to_dict') else did
+            for ip, did in sorted(device_identities.items(), key=lambda item: _ip_sort_key(item[0])):
+                did_value = did.to_dict() if hasattr(did, 'to_dict') else did
+                did_for_template[ip] = did_value
+                device_identities_sorted.append((ip, did_value))
+        risk_scores_sorted = sorted((risk_scores or {}).items(), key=_risk_sort_key)
 
         return template.render(
             metadata=metadata,
             counts=counts,
             hosts=scan_result.hosts,
+            hosts_sorted=hosts_sorted,
+            ports_by_host=ports_by_host,
             all_findings=wrapped_findings,
             findings_by_host=wrapped_by_host,
             host_finding_counts=host_finding_counts,
             worst_severity=worst_severity,
             eol_data=eol_data or {},
             risk_scores=risk_scores or {},
+            risk_scores_sorted=risk_scores_sorted,
             scan_diff=scan_diff,
             executive_summary=executive_summary,
             device_identities=did_for_template,
+            device_identities_sorted=device_identities_sorted,
         )
 
     def _build_executive_summary(self, counts: dict, scan_result, risk_scores,
@@ -343,6 +399,8 @@ class ReportExporter:
         m = counts.get("MEDIUM", 0)
         lo = counts.get("LOW", 0)
 
+        actionable_total = c + h + m + lo
+
         # Determine network posture
         if c > 0:
             headline = f"Immediate action required — {c} critical issue(s) detected"
@@ -353,24 +411,42 @@ class ReportExporter:
         elif m > 0:
             headline = f"Moderate security posture — {m} medium-risk issue(s) identified"
             posture = "medium"
-        elif total > 0:
+        elif lo > 0:
             headline = "Good security posture — only minor issues found"
             posture = "low"
+        elif total > 0:
+            headline = "No actionable issues found — informational checks recorded"
+            posture = "clean"
         else:
             headline = "Network appears secure — no significant issues found"
             posture = "clean"
 
         # Device breakdown
         device_list = []
-        for ip, host in scan_result.hosts.items():
+        for ip, host in sorted(scan_result.hosts.items(), key=lambda item: _ip_sort_key(item[0])):
             if host.state == "up":
                 label = host.vendor or host.os_guess or ip
                 device_list.append(f"{ip} ({label})" if label != ip else ip)
 
+        device_finding_count = total
+        network_finding_count = 0
+        if findings is not None:
+            known_hosts = set(scan_result.hosts.keys())
+            all_findings = findings.get_all(sort=False)
+            device_finding_count = sum(1 for f in all_findings if f.host in known_hosts)
+            network_finding_count = total - device_finding_count
+
         overview = (
             f"NetWatch scanned {hosts_up} active device(s) on {scan_result.target} "
-            f"using the {scan_result.profile} profile and found {total} security finding(s). "
+            f"using the {scan_result.profile} profile"
         )
+        if device_finding_count:
+            overview += f" and found {device_finding_count} device finding(s)"
+        else:
+            overview += " and found no device findings"
+        if network_finding_count:
+            overview += f"; {network_finding_count} network-level check(s) were recorded"
+        overview += ". "
         if device_list:
             overview += f"Devices online: {', '.join(device_list[:5])}"
             if len(device_list) > 5:
@@ -386,6 +462,10 @@ class ReportExporter:
             top_issues.append(f"{m} medium-severity finding(s) — schedule for next maintenance window")
         if lo > 0:
             top_issues.append(f"{lo} low-severity finding(s) — address when convenient")
+        if actionable_total == 0 and network_finding_count:
+            top_issues.append(
+                f"{network_finding_count} informational network-level check(s) recorded"
+            )
 
         # Highlight specific critical/high finding types
         if findings is not None:

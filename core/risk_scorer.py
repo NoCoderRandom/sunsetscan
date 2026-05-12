@@ -133,6 +133,8 @@ class RiskScorer:
         """
         host_findings: Dict[str, List[Finding]] = {}
         for f in registry.get_all(sort=False):
+            if f.host in ("", "local", "network"):
+                continue
             host_findings.setdefault(f.host, []).append(f)
 
         results = {}

@@ -123,12 +123,39 @@ MODULE_REGISTRY: Dict[str, Dict[str, Any]] = {
     "hardware-eol": {
         "description": "Network hardware lifecycle/EOL database (CC BY-NC 4.0)",
         "source": "NoCoderRandom/netwatch",
-        "url": "https://raw.githubusercontent.com/NoCoderRandom/netwatch/main/data/hardware_eol/netwatch_hardware_eol.json.gz",
-        "local_path": "data/cache/hardware_eol/netwatch_hardware_eol.json",
-        "size_estimate": "11MB download / 95MB installed",
+        "url": "https://raw.githubusercontent.com/NoCoderRandom/netwatch/main/data/hardware_eol/netwatch_hardware_eol_index.json.gz",
+        "local_path": "data/cache/hardware_eol/netwatch_hardware_eol_index.json",
+        "size_estimate": "21MB download / split installed",
         "default": True,
         "parser": "_parse_hardware_eol",
         "binary": True,
+        "parts": [
+            {
+                "category": "network_infrastructure",
+                "url": "https://raw.githubusercontent.com/NoCoderRandom/netwatch/main/data/hardware_eol/records/network_infrastructure.json.gz",
+                "local_path": "data/cache/hardware_eol/records/network_infrastructure.json",
+            },
+            {
+                "category": "general_network_devices",
+                "url": "https://raw.githubusercontent.com/NoCoderRandom/netwatch/main/data/hardware_eol/records/general_network_devices.json.gz",
+                "local_path": "data/cache/hardware_eol/records/general_network_devices.json",
+            },
+            {
+                "category": "security_surveillance",
+                "url": "https://raw.githubusercontent.com/NoCoderRandom/netwatch/main/data/hardware_eol/records/security_surveillance.json.gz",
+                "local_path": "data/cache/hardware_eol/records/security_surveillance.json",
+            },
+            {
+                "category": "endpoints_peripherals",
+                "url": "https://raw.githubusercontent.com/NoCoderRandom/netwatch/main/data/hardware_eol/records/endpoints_peripherals.json.gz",
+                "local_path": "data/cache/hardware_eol/records/endpoints_peripherals.json",
+            },
+            {
+                "category": "software_services_modules",
+                "url": "https://raw.githubusercontent.com/NoCoderRandom/netwatch/main/data/hardware_eol/records/software_services_modules.json.gz",
+                "local_path": "data/cache/hardware_eol/records/software_services_modules.json",
+            },
+        ],
         "license": "CC BY-NC 4.0",
         "license_url": "https://creativecommons.org/licenses/by-nc/4.0/",
     },
@@ -374,21 +401,53 @@ def _parse_mac_oui(raw_text: str) -> Dict:
     return oui_map
 
 
-def _parse_hardware_eol(raw_data) -> Dict:
-    """Parse the compressed NetWatch hardware EOL database artifact."""
-    try:
-        if isinstance(raw_data, bytes):
+def _decode_json_payload(raw_data) -> Any:
+    if isinstance(raw_data, bytes):
+        try:
             raw_text = gzip.decompress(raw_data).decode("utf-8")
-        else:
-            raw_text = raw_data
-        data = json.loads(raw_text)
+        except OSError:
+            raw_text = raw_data.decode("utf-8")
+    else:
+        raw_text = raw_data
+    return json.loads(raw_text)
+
+
+def _parse_hardware_eol(raw_data) -> Dict:
+    """Parse a NetWatch hardware EOL monolith or split index artifact."""
+    try:
+        data = _decode_json_payload(raw_data)
     except Exception as e:
         logger.warning(f"hardware-eol parse error: {e}")
         return {}
 
-    required = ("metadata", "summary", "indexes", "records", "model_summaries")
-    if not all(key in data for key in required):
+    monolith_required = ("metadata", "summary", "indexes", "records", "model_summaries")
+    split_required = (
+        "metadata",
+        "summary",
+        "indexes",
+        "model_summaries",
+        "record_shards",
+        "record_locations",
+    )
+    if not (
+        all(key in data for key in monolith_required)
+        or all(key in data for key in split_required)
+    ):
         logger.warning("hardware-eol parse error: missing required database sections")
+        return {}
+    return data
+
+
+def _parse_hardware_eol_shard(raw_data) -> Dict:
+    """Parse one split hardware EOL record shard."""
+    try:
+        data = _decode_json_payload(raw_data)
+    except Exception as e:
+        logger.warning(f"hardware-eol shard parse error: {e}")
+        return {}
+
+    if "records" not in data or "category" not in data:
+        logger.warning("hardware-eol shard parse error: missing required shard sections")
         return {}
     return data
 
@@ -466,6 +525,14 @@ class ModuleManager:
         if not info:
             return False
         path = _PROJECT_ROOT / info["local_path"]
+        if info.get("parts"):
+            if not (path.exists() and path.stat().st_size > 0):
+                return False
+            for part in info["parts"]:
+                part_path = _PROJECT_ROOT / part["local_path"]
+                if not (part_path.exists() and part_path.stat().st_size > 0):
+                    return False
+            return True
         return path.exists() and path.stat().st_size > 0
 
     def get_installed_at(self, module_name: str) -> Optional[str]:
@@ -563,6 +630,8 @@ class ModuleManager:
                     return False
                 parser = _PARSERS[info["parser"]]
                 parsed = parser(data)
+            elif module_name == "hardware-eol" and info.get("parts"):
+                parsed = self._download_hardware_eol(session, info, quiet=quiet)
             else:
                 resp = session.get(info["url"], timeout=30)
                 if resp.status_code != 200:
@@ -636,6 +705,58 @@ class ModuleManager:
             except Exception:
                 continue
         return merged
+
+    def _download_hardware_eol(self, session, info: Dict[str, Any], quiet: bool = False) -> Dict:
+        """Download the split hardware EOL index and record shards."""
+        resp = session.get(info["url"], timeout=30)
+        if resp.status_code != 200:
+            if not quiet:
+                print(f"  Download failed: HTTP {resp.status_code}")
+            return {}
+
+        parser = _PARSERS[info["parser"]]
+        parsed = parser(resp.content)
+        if not parsed:
+            return {}
+
+        index_base = Path(info["local_path"]).parent
+        record_shards = parsed.setdefault("record_shards", {})
+        shard_parser = _parse_hardware_eol_shard
+
+        for part in info.get("parts", []):
+            category = part["category"]
+            if not quiet:
+                print(f"  Downloading shard: {category}")
+            shard_resp = session.get(part["url"], timeout=60)
+            if shard_resp.status_code != 200:
+                if not quiet:
+                    print(f"  Shard download failed: {category} HTTP {shard_resp.status_code}")
+                return {}
+
+            shard = shard_parser(shard_resp.content)
+            if not shard:
+                return {}
+            if shard.get("category") and shard["category"] != category:
+                logger.warning(
+                    "hardware-eol shard category mismatch: expected %s, got %s",
+                    category,
+                    shard.get("category"),
+                )
+
+            target = _PROJECT_ROOT / part["local_path"]
+            target.parent.mkdir(parents=True, exist_ok=True)
+            with open(target, "w", encoding="utf-8") as f:
+                json.dump(shard, f, separators=(",", ":"))
+
+            shard_info = record_shards.setdefault(category, {})
+            try:
+                local_rel = Path(part["local_path"]).relative_to(index_base)
+            except ValueError:
+                local_rel = Path(part["local_path"]).name
+            shard_info["path"] = local_rel.as_posix() if isinstance(local_rel, Path) else str(local_rel)
+            shard_info["installed_size_bytes"] = target.stat().st_size
+
+        return parsed
 
     def download_all(self, quiet: bool = False) -> int:
         """Download all missing modules.

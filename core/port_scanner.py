@@ -246,6 +246,13 @@ class PortScanOrchestrator:
         if profile == "PING":
             return self._nmap.scan(target, profile)
 
+        if self._settings.safe_mode and _extract_profile_ports(profile) is None:
+            logger.info(
+                "Safe mode: skipping all-port masscan for %s; using bounded nmap",
+                profile,
+            )
+            return self._nmap.scan(target, profile)
+
         return self._scan_masscan_nmap_parallel(target, profile)
 
     @staticmethod
@@ -357,9 +364,12 @@ class PortScanOrchestrator:
             logger.info("masscan found no open ports — falling back to nmap")
             return self._nmap.scan(target, profile)
 
-        # Single host — no benefit from parallel, use existing method
+        # Single host — no benefit from parallel. Use the ports we already
+        # discovered instead of running masscan a second time.
         if len(discovered) <= 1:
-            return self._scan_masscan_nmap(target, profile)
+            ip, ports = next(iter(discovered.items()))
+            nmap_args = self._build_nmap_args(profile, ports)
+            return self._nmap.scan(ip, profile, arguments=nmap_args)
 
         def _scan_host(ip: str, ports: List[int]) -> ScanResult:
             nmap_args = self._build_nmap_args(profile, ports)
@@ -402,7 +412,6 @@ class PortScanOrchestrator:
                     logger.warning(f"parallel nmap failed for {ip}: {e}")
 
         combined.end_time = datetime.now()
-        combined.duration = (combined.end_time - start_time).total_seconds()
         return combined
 
     # ---- Convenience methods (mirror NetworkScanner) ----

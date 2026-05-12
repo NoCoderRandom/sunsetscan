@@ -1,3 +1,5 @@
+import json
+
 from core.hardware_eol import HardwareEOLDatabase
 from tools.apply_hardware_eol_policy import apply_policy, rebuild_model_summaries, rebuild_summary
 
@@ -142,3 +144,41 @@ def test_hardware_lookup_keeps_strong_unsupported_match(tmp_path):
     assert match.receives_security_updates is False
     assert match.review_required is False
     assert "no longer receives security updates" in match.finding_title
+
+
+def test_hardware_lookup_loads_split_record_shard(tmp_path):
+    record = _record("unsupported", False, "Cisco RawData extracted records")
+    db = _database(record)
+    rebuild_model_summaries(db)
+    rebuild_summary(db)
+
+    records_dir = tmp_path / "records"
+    records_dir.mkdir()
+    shard_path = records_dir / "network_infrastructure.json"
+    shard_path.write_text(
+        json.dumps(
+            {
+                "category": "network_infrastructure",
+                "records": [record],
+                "indexes": {"by_id": {record["id"]: 0}},
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    index = {key: value for key, value in db.items() if key != "records"}
+    index["record_shards"] = {
+        "network_infrastructure": {
+            "path": "records/network_infrastructure.json",
+            "record_count": 1,
+        }
+    }
+    index["record_locations"] = {record["id"]: "network_infrastructure"}
+    path = tmp_path / "netwatch_hardware_eol_index.json"
+    path.write_text(json.dumps(index), encoding="utf-8")
+
+    match = HardwareEOLDatabase(path).lookup("ASUS", "RT-AX92U")
+
+    assert match is not None
+    assert match.status == "unsupported"
+    assert [item["id"] for item in match.records] == [record["id"]]

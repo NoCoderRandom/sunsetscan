@@ -2,7 +2,7 @@
 
 **Network security auditing for humans — powered by nmap, built for everyone.**
 
-[![Version](https://img.shields.io/badge/version-v1.7.0-blue)]
+[![Version](https://img.shields.io/badge/version-v1.7.1-blue)]
 [![Python 3.9+](https://img.shields.io/badge/python-3.9%2B-blue?logo=python&logoColor=white)](https://www.python.org/downloads/)
 [![Platform](https://img.shields.io/badge/platform-Linux%20%7C%20WSL2-brightgreen?logo=linux)](https://github.com)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
@@ -199,11 +199,16 @@ python3 netwatch.py --download all
 
 ### Port and Service Scanning
 - Six scan profiles: QUICK, FULL, STEALTH, PING, IOT, SMB
+- Full assessments discover active hosts first, then service-scan only those
+  discovered hosts instead of blindly scanning every address in the target CIDR
 - Concurrent banner grabbing across all open ports (50-thread pool)
 - OS fingerprinting with confidence percentage
 - NSE (Nmap Scripting Engine) integration for enhanced device detection
 - HTTP fingerprinting to identify routers, cameras, NAS devices, printers, and IoT
 - Automatic root-privilege fallback: FULL/STEALTH profiles gracefully degrade when run without sudo
+- Safe mode for low-power hosts, Wi-Fi, WSL/NAT, and validation runs: caps
+  workers, skips broad all-port masscan sweeps, bounds nmap port sets, and
+  applies per-command scan timeouts
 - Parallel security analysis — all per-host checks (SSL, SSH, FTP, SMB, SNMP, Web) run concurrently across hosts and within each host using thread pools
 - Phase 7 security analysis completes in under 10 seconds regardless of network size
 - Pre-scan readiness check — warns if nmap is missing, CVE/EOL databases are empty, or default modules are not installed. Runs before every scan, does not block scanning.
@@ -289,6 +294,10 @@ Every device receives a risk score (0-100) based on the severity and count of fi
 - **Professional HTML report** — severity dashboard, per-host sections, finding cards with plain-English explanations, prioritised recommendations
 - **JSON export** — machine-readable structured output
 - Reports are fully self-contained — one HTML file, no external dependencies
+- Narrow profiles such as SMB still keep discovered hosts visible in the report
+  even when no matching service ports are open
+- Network-level checks such as DNS, UPnP, and scan runtime notes are separated
+  from per-device findings; device risk scores are only shown for actual hosts
 - All findings colour-coded: Critical, High, Medium, Low, Info
 
 ### Scan History and Diffing
@@ -332,6 +341,8 @@ Every device receives a risk score (0-100) based on the severity and count of fi
 | `--verbose` | Enable debug logging | No |
 | `--no-color` | Disable colour output (useful for log files) | No |
 | `--quiet` | Suppress progress bars (findings still shown) | No |
+| `--safe-mode` | Force gentler scanning: bounded nmap, lower masscan use, fewer workers, skip heavy probes | No |
+| `--no-safe-mode` | Disable automatic safe mode | No |
 | `--version` | Show version number and exit | No |
 
 ---
@@ -349,6 +360,44 @@ Every device receives a risk score (0-100) based on the severity and count of fi
 
 > **Tip:** FULL and STEALTH automatically fall back to non-root flags when run without sudo. OS detection will be unavailable but port scanning and service detection still work.
 
+### Safe Mode and Validation Runs
+
+Safe mode is automatically recommended on low-power hosts, hosts that look like
+Pi-hole/gateway appliances, and Wi-Fi egress. It can also be forced with:
+
+```bash
+python3 netwatch.py --full-assessment --target 192.168.1.0/24 --safe-mode
+```
+
+In safe mode NetWatch:
+
+- discovers live hosts first and scans only those hosts during full assessments
+- removes OS fingerprinting from broad scans
+- keeps broad STEALTH/FULL scans bounded with fast/top-port limits
+- skips all-port masscan sweeps for broad profiles
+- lowers worker counts and skips heavy TLS probes
+- applies a per-nmap timeout so one profile cannot stall indefinitely
+
+For root-assisted regression testing across all modes, use the validation
+collector:
+
+```bash
+sudo bash scripts/sudo_network_validation.sh
+```
+
+By default it tests `192.168.1.0/24` and `10.0.0.0/24` across PING, QUICK,
+SMB, STEALTH, and FULL, copies generated HTML reports into the validation
+directory, and writes a compressed archive under `reports/`. Reports, logs,
+pcaps, and archives are ignored by git and should not be committed.
+
+Useful overrides:
+
+```bash
+sudo NETWATCH_TARGETS="192.168.1.0/24" bash scripts/sudo_network_validation.sh
+sudo NETWATCH_PROFILES="PING QUICK FULL" bash scripts/sudo_network_validation.sh
+sudo NETWATCH_COMMAND_TIMEOUT=1200 bash scripts/sudo_network_validation.sh
+```
+
 ---
 
 ## Cache Management
@@ -359,7 +408,7 @@ NetWatch never calls external APIs during a scan. All data is read from local ca
 |---|---|---|
 | `data/cache/cve_cache.json` | CVE data keyed by product:version | Every 7 days |
 | `data/cache/*.json` | EOL dates for 150+ products, stored per product | Every 30 days |
-| `data/cache/hardware_eol/netwatch_hardware_eol.json` | Hardware lifecycle/EOL database | Every 30 days |
+| `data/cache/hardware_eol/netwatch_hardware_eol_index.json` plus `records/*.json` | Hardware lifecycle/EOL database | Every 30 days |
 | `data/cache/cache_meta.json` | Timestamps of last updates | Automatic |
 
 ```bash
