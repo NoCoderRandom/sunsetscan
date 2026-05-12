@@ -247,7 +247,7 @@ ASCII_BANNER = """
 |   SUNSETSCAN                                                         |
 |                                                                      |
 |   Network EOL Scanner & Security Assessment Tool                     |
-|   Version {version:<58}|
+|   Version {version:<59}|
 |                                                                      |
 +----------------------------------------------------------------------+
 """
