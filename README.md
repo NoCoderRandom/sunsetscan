@@ -83,12 +83,12 @@ python3 -m venv venv && ./venv/bin/pip install -r requirements.txt
 ### After installing — first run
 
 ```bash
-sudo ./sunsetscan --setup            # download EOL/CVE/credential databases (once)
+./sunsetscan --setup                 # download EOL/CVE/credential databases (once)
 sudo ./sunsetscan --instant          # ARP-only inventory of your local subnet
 sudo ./sunsetscan --full-assessment --target 192.168.1.0/24
 ```
 
-The `./sunsetscan` launcher auto-activates the venv — you don't need to `source venv/bin/activate` ever. It also works correctly under `sudo`.
+The `./sunsetscan` launcher auto-activates the venv — you don't need to `source venv/bin/activate` ever. Use `sudo` for scans that need raw sockets, but run `--setup`, `--download`, and `--update-cache` as your normal user so cache files stay writable from the TUI.
 
 ### Installer flags
 
@@ -654,6 +654,18 @@ WARNING: CVE data is 12 days old — run: python sunsetscan.py --update-cache
 ```
 
 Scans work fine with stale data. Run `--update-cache` to refresh.
+
+**Permission denied while downloading modules**
+
+If module downloads fail with `Permission denied: .../data/cache/...`, the
+cache was probably created by `sudo`. Fix the ownership once, then run setup
+and module downloads as your normal user:
+
+```bash
+cd ~/sunsetscan
+sudo chown -R "$USER:$USER" data/cache
+./sunsetscan --download all
+```
 
 **SNMP checks not working**
 

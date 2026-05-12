@@ -345,7 +345,7 @@ echo "${BOLD}${GREEN}SunsetScan installed successfully.${NC}"
 echo
 echo "Next steps:"
 echo "  1. Download EOL/CVE/credential databases (one-time, ~1 minute):"
-echo "       sudo ./sunsetscan --setup"
+echo "       ./sunsetscan --setup"
 echo "  2. Try an instant scan of your local network:"
 echo "       sudo ./sunsetscan --instant"
 echo "  3. Or run a full security assessment:"
