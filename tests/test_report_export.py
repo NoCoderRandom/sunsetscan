@@ -29,6 +29,21 @@ def test_html_report_includes_no_action_recommendations_section(tmp_path):
     assert "No critical, high, or medium remediation actions were found" in html
 
 
+def test_html_report_uses_sunsetscan_branding_and_local_lifecycle_footer(tmp_path):
+    scan = ScanResult(target="192.168.1.0/24", profile="QUICK")
+    scan.hosts["192.168.1.1"] = HostInfo(ip="192.168.1.1", state="up")
+
+    path = tmp_path / "report.html"
+    assert ReportExporter().export_html(scan, str(path))
+
+    html = path.read_text(encoding="utf-8")
+    assert "Sunset<span>Scan</span> Security Report" in html
+    assert "Network Security &amp; Lifecycle Assessment Tool" in html
+    assert "Lifecycle data from local SunsetScan caches" in html
+    assert "Net<span>Watch</span>" not in html
+    assert "endoflife.date" not in html
+
+
 def test_html_report_orders_hosts_and_ports_numerically(tmp_path):
     scan = ScanResult(target="192.168.1.0/24", profile="QUICK")
     scan.hosts["192.168.1.10"] = HostInfo(ip="192.168.1.10", state="up")
