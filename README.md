@@ -9,7 +9,6 @@
 [![Hardware DB License: CC BY-NC 4.0](https://img.shields.io/badge/hardware%20DB-CC%20BY--NC%204.0-lightgrey)](data/hardware_eol/LICENSE.md)
 [![Requires: nmap](https://img.shields.io/badge/requires-nmap-orange)](https://nmap.org)
 [![CVE data: OSV.dev](https://img.shields.io/badge/CVE%20data-OSV.dev-blueviolet)](https://osv.dev)
-[![EOL data: endoflife.date](https://img.shields.io/badge/EOL%20data-endoflife.date-yellow)](https://endoflife.date)
 
 Website: [sunsetscan.com](http://www.sunsetscan.com/)
 
@@ -235,12 +234,12 @@ SunsetScan runs 12 security checker modules during a full assessment:
 
 ### Vulnerability Intelligence
 - **CVE correlation** — maps detected service versions to known CVEs using OSV.dev
-- **EOL checking** — 150+ products checked against endoflife.date
+- **Software EOL checking** — local cached lifecycle data for 150+ software products
 - **Hardware lifecycle checking** — downloadable SunsetScan hardware EOL database
   flags routers, switches, NAS, cameras, printers, and access points with
   confirmed unsupported status or vendor lifecycle signals that need review
 - **JA3S TLS fingerprinting** — identifies server software from TLS handshake signatures
-- Fully offline during scans — no external API calls are made during scanning. endoflife.date, OSV.dev, and GitHub module sources are only contacted by `--setup`, `--update-cache`, and `--download`. Scans work without any internet connection as long as caches are populated.
+- Fully offline during scans — no external API calls are made during scanning. Software EOL, CVE, and GitHub module sources are only contacted by `--setup`, `--update-cache`, and `--download`. Scans work without any internet connection as long as caches are populated.
 - Weekly CVE refresh, monthly EOL refresh — controlled by you
 
 ### Device Identification
@@ -588,7 +587,7 @@ sunsetscan/
 ├── eol/
 │   ├── checker.py                 # EOL API queries and version comparison
 │   ├── cache.py                   # Per-product JSON cache
-│   └── product_map.py             # 150+ software name -> endoflife.date slug mappings
+│   └── product_map.py             # 150+ software name -> lifecycle cache slug mappings
 │
 ├── ui/
 │   ├── menu.py                    # Old-style numbered menu (no-args mode)
@@ -688,7 +687,6 @@ Only the SunsetScan hardware EOL database artifacts under `data/hardware_eol/` a
 
 - [nmap](https://nmap.org) — scanning engine
 - [python-nmap](https://pypi.org/project/python-nmap/) — Python nmap interface
-- [endoflife.date](https://endoflife.date) — EOL data API
 - [OSV.dev](https://osv.dev) — vulnerability database
 - [Rich](https://rich.readthedocs.io) — terminal formatting
 - [Jinja2](https://jinja.palletsprojects.com) — HTML report templating
