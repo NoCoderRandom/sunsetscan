@@ -14,8 +14,13 @@ data/cache/
 data/history/
 data/logs/
 data/baseline.json
+data/baseline*.json
 data/arp_baseline.json
+data/arp_baseline*.json
+data/device_map.json
+data/device_map*.json
 reports/
+pitests/
 
 # Hardware EOL source artifact: keep the compressed downloadable module in git,
 # but do not commit expanded generated JSON databases.
@@ -43,6 +48,14 @@ netwatch_backup_*/
 *.log
 .env
 .env.*
+*.db
+*.sqlite
+*.sqlite3
+*.pcap
+*.pcapng
+*.cap
+*.har
+cookies.txt
 
 # OS files
 .DS_Store
@@ -60,11 +73,26 @@ desktop.ini
 *.tmp
 .claude
 .claude/
+.ruff_cache/
+.mypy_cache/
+.pyre/
+.pytype/
+.coverage
+coverage/
+htmlcov/
+*.prof
 
 # Personal planning and development files — never commit
 .codex
 .codex/
 .codex_backups/
+SESSION_LOG.md
+SESSION_*.md
+*.session.log
+*.session.json
+*.prompt
+*.prompts
+prompts/
 prompts/audit_fixes/
 HARDWARE_EOL_INTEGRATION_NOTES.md
 SESSION_NOTES.txt
