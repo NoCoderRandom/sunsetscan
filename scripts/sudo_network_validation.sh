@@ -6,7 +6,7 @@
 #   sudo bash scripts/sudo_network_validation.sh
 #
 # Optional environment overrides:
-#   sudo SUNSETSCAN_TARGETS="192.168.1.0/24 192.168.50.0/24" bash scripts/sudo_network_validation.sh
+#   sudo SUNSETSCAN_TARGETS="192.168.1.0/24 10.0.0.0/24" bash scripts/sudo_network_validation.sh
 #   sudo SUNSETSCAN_PROFILES="PING QUICK SMB STEALTH FULL" bash scripts/sudo_network_validation.sh
 #   sudo SUNSETSCAN_PASSIVE_SECONDS=60 bash scripts/sudo_network_validation.sh
 #   sudo SUNSETSCAN_COMMAND_TIMEOUT=1800 bash scripts/sudo_network_validation.sh
@@ -32,7 +32,7 @@ OUT_BASE="${SUNSETSCAN_OUT_DIR:-${PROJECT_ROOT}/reports/sudo_validation_${TS}}"
 RUNNER_LOG="${OUT_BASE}/runner.log"
 RUN_MARKER="${OUT_BASE}/run_started.marker"
 
-TARGETS="${SUNSETSCAN_TARGETS:-192.168.1.0/24 192.168.50.0/24}"
+TARGETS="${SUNSETSCAN_TARGETS:-192.168.1.0/24}"
 PROFILES="${SUNSETSCAN_PROFILES:-PING QUICK SMB STEALTH FULL}"
 PASSIVE_SECONDS="${SUNSETSCAN_PASSIVE_SECONDS:-45}"
 SAFE_FLAG="${SUNSETSCAN_SAFE_FLAG:---safe-mode}"

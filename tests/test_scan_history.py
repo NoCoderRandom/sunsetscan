@@ -34,8 +34,8 @@ def test_diff_last_two_uses_latest_matching_target_and_profile(tmp_path):
     )
     _write_snapshot(
         tmp_path,
-        "fifty_interleaved",
-        _snapshot("2026-05-11T10:01:00+00:00", "192.168.50.0/24", "QUICK", ["192.168.50.1"]),
+        "other_interleaved",
+        _snapshot("2026-05-11T10:01:00+00:00", "10.0.0.0/24", "QUICK", ["10.0.0.1"]),
     )
     _write_snapshot(
         tmp_path,

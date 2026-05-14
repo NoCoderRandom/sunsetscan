@@ -405,8 +405,8 @@ collector:
 sudo bash scripts/sudo_network_validation.sh
 ```
 
-By default it tests `192.168.1.0/24` and `192.168.50.0/24` across PING, QUICK,
-SMB, STEALTH, and FULL, copies generated HTML reports into the validation
+By default it tests `192.168.1.0/24` across PING, QUICK, SMB, STEALTH, and
+FULL, copies generated HTML reports into the validation
 directory, and writes a compressed archive under `reports/`. Reports, logs,
 pcaps, and archives are ignored by git and should not be committed.
 

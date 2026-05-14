@@ -42,11 +42,11 @@ def test_tui_full_assessment_preserves_safe_mode_flags(monkeypatch):
     monkeypatch.setattr(sunsetscan, "SunsetScan", FakeSunsetScan)
     monkeypatch.setattr("ui.interactive_controller.Confirm.ask", lambda *a, **k: True)
     controller = InteractiveController(settings=Settings(safe_mode=True), no_color=True)
-    controller.current_target = "192.168.50.0/24"
+    controller.current_target = "10.0.0.0/24"
 
     controller.run_full_assessment()
 
-    assert captured["target"] == "192.168.50.0/24"
+    assert captured["target"] == "10.0.0.0/24"
     assert captured["args"].safe_mode is True
     assert captured["args"].no_safe_mode is False
     assert captured["args"].nse is True

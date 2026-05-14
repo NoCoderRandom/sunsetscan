@@ -21,7 +21,7 @@ def test_device_risk_scores_skip_network_level_findings():
         Finding(
             severity=Severity.HIGH,
             title="SMB signing disabled",
-            host="192.168.50.61",
+            host="10.0.0.61",
             category="SMB",
             description="SMB signing is not required.",
             explanation="Traffic can be modified.",
@@ -34,4 +34,4 @@ def test_device_risk_scores_skip_network_level_findings():
     scores = RiskScorer().score_all(registry)
 
     assert "local" not in scores
-    assert list(scores) == ["192.168.50.61"]
+    assert list(scores) == ["10.0.0.61"]
