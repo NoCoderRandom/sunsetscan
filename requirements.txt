@@ -9,7 +9,7 @@
 python-nmap==0.7.1
 
 # HTTP client for EOL/CVE API queries and web interface checks
-requests==2.31.0
+requests==2.33.0
 
 # Terminal formatting and UI components
 rich==13.7.0
