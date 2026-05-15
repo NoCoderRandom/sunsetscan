@@ -2,7 +2,7 @@
 
 **Network security auditing for humans — powered by nmap, built for everyone.**
 
-[![Version](https://img.shields.io/badge/version-v2.0.0-blue)]
+[![Version](https://img.shields.io/badge/version-v2.1.0-blue)]
 [![Python 3.9+](https://img.shields.io/badge/python-3.9%2B-blue?logo=python&logoColor=white)](https://www.python.org/downloads/)
 [![Platform](https://img.shields.io/badge/platform-Linux%20%7C%20WSL2-brightgreen?logo=linux)](https://github.com)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
@@ -43,9 +43,21 @@ Debian, Ubuntu, Raspberry Pi OS (Bookworm and newer), Linux Mint, Pop!_OS.
 
 Fedora, RHEL, CentOS, Rocky, Alma, Arch, Manjaro, openSUSE, macOS.
 
-### Three ways to install — pick one
+### Four ways to install — pick one
 
-#### 1. One-line bootstrap (recommended for new users)
+#### 1. Debian/Ubuntu package
+
+Recommended for Debian, Ubuntu, Raspberry Pi OS, Linux Mint, and Pop!_OS:
+
+```bash
+curl -LO https://github.com/NoCoderRandom/sunsetscan/releases/download/v2.1.0/sunsetscan_2.1.0-1_all.deb
+curl -LO https://github.com/NoCoderRandom/sunsetscan/releases/download/v2.1.0/sunsetscan_2.1.0-1_all.deb.sha256
+sha256sum -c sunsetscan_2.1.0-1_all.deb.sha256
+sudo apt install ./sunsetscan_2.1.0-1_all.deb
+sunsetscan --version
+```
+
+#### 2. One-line bootstrap
 
 Clones the repo into `~/sunsetscan` and runs the installer:
 
@@ -59,9 +71,9 @@ Want it somewhere else? Set `INSTALL_DIR`:
 INSTALL_DIR=/opt/sunsetscan curl -fsSL https://raw.githubusercontent.com/NoCoderRandom/sunsetscan/main/bootstrap.sh | bash
 ```
 
-> **A note on `curl | bash`**: it's convenient but it does mean running a script you haven't read. If you'd rather inspect first, use option 2 or 3.
+> **A note on `curl | bash`**: it's convenient but it does mean running a script you haven't read. If you'd rather inspect first, use option 3 or 4.
 
-#### 2. Clone and install
+#### 3. Clone and install
 
 ```bash
 git clone https://github.com/NoCoderRandom/sunsetscan.git
@@ -69,7 +81,7 @@ cd sunsetscan
 ./install.sh
 ```
 
-#### 3. Manual install (full control, four commands)
+#### 4. Manual install (full control, four commands)
 
 ```bash
 sudo apt install -y nmap masscan git python3 python3-venv python3-pip libpcap-dev build-essential avahi-utils

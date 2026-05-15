@@ -43,7 +43,7 @@ class Settings:
         nmap_scan_timeout_seconds: Maximum runtime for one nmap invocation
     """
     tool_name: str = "SunsetScan"
-    version: str = "2.0.0"
+    version: str = "2.1.0"
     banner_timeout: int = 3
     cache_ttl_hours: int = 24       # legacy — used by eol/cache.py
     cve_cache_ttl_days: int = 7     # CVE data refreshed weekly

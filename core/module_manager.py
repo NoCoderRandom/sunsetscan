@@ -44,6 +44,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
+from config.settings import Settings
+
 logger = logging.getLogger(__name__)
 
 _PROJECT_ROOT = Path(__file__).parent.parent
@@ -775,7 +777,7 @@ class ModuleManager:
         try:
             import requests
             session = requests.Session()
-            session.headers.update({"User-Agent": "SunsetScan/2.0.0"})
+            session.headers.update({"User-Agent": f"SunsetScan/{Settings().version}"})
 
             # Special handling for Wappalyzer (multiple files to merge)
             if module_name in ("wappalyzer-mini", "wappalyzer-full"):
