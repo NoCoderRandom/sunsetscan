@@ -63,6 +63,10 @@ headers into a stable record schema before building indexes:
 All matching and summary logic uses these canonical fields, not vendor-specific
 raw column names.
 
+Vendor-specific lifecycle definitions and non-English term translations are
+tracked separately in `docs/hardware_eol_vendor_term_definitions.md`. That file
+is an interpretation sidecar only and does not add fields to database records.
+
 SunsetScan applies a cautious interpretation policy after the raw database is
 built. For local review, this can still produce a monolithic JSON/GZip:
 
@@ -74,11 +78,13 @@ python3 tools/apply_hardware_eol_policy.py \
   --output-summary data/hardware_eol/sunsetscan_hardware_eol_summary.json
 ```
 
-The policy preserves official vendor source data but downgrades ambiguous
-EOL/discontinued/end-of-sale signals to `lifecycle_review` unless the source
-explicitly proves that security, firmware, vulnerability, or support updates
-have stopped. This avoids false hard warnings when a vendor EOL list conflicts
-with product-specific firmware releases.
+The policy preserves official vendor source data and imports manufacturer
+EOL/discontinued/end-of-sale signals as vendor-declared lifecycle evidence.
+When the source does not explicitly prove that security, firmware,
+vulnerability, or support updates have stopped, the normalized status remains
+`lifecycle_review`; lookup text can still call it vendor-declared EOL. This
+avoids false hard warnings when a vendor EOL list conflicts with
+product-specific firmware releases.
 
 New raw vendor source folders can then be imported with the conservative
 table importer:
@@ -160,39 +166,56 @@ instead of saying security updates have definitely stopped.
 
 ## SunsetScan Distribution
 
-SunsetScan distributes the database as a split compressed module:
+SunsetScan distributes the database as smart-pack compressed modules:
 
-- source index artifact in the repo:
-  `data/hardware_eol/sunsetscan_hardware_eol_index.json.gz`
-- source record shards in the repo: `data/hardware_eol/records/*.json.gz`
-- installed cache index path:
-  `data/cache/hardware_eol/sunsetscan_hardware_eol_index.json`
-- installed record shards: `data/cache/hardware_eol/records/*.json`
-- module name: `hardware-eol`
+- default source manifest artifact in the repo:
+  `data/hardware_eol/manifest.json.gz`
+- default source smart-pack indexes:
+  `data/hardware_eol/indexes/*.json.gz`
+- default source smart-pack record shards:
+  `data/hardware_eol/records/<pack>/*.json.gz`
+- installed cache manifest path:
+  `data/cache/hardware_eol/manifest.json`
+- installed smart-pack indexes:
+  `data/cache/hardware_eol/indexes/*.json`
+- installed smart-pack record shards:
+  `data/cache/hardware_eol/records/<pack>/*.json`
+- default module name: `hardware-eol-home`
+- full smart-pack module name: `hardware-eol-full`
+- legacy compatibility module name: `hardware-eol`
 - license: CC BY-NC 4.0, see `data/hardware_eol/LICENSE.md`
 
 The old monolithic `sunsetscan_hardware_eol.json.gz` artifact is obsolete and is
-not published by current SunsetScan builds. Current downloads use the split index
-and shard files above.
+not published by current SunsetScan builds. Current default downloads use the
+smart-pack manifest, selected compact indexes, and selected shard files above.
+The legacy split index remains available through `hardware-eol` for
+compatibility.
 
-As of the 2026-05-10 build, the split database contains 59,969 records across
-61 vendors and 47,341 model summaries. The five committed compressed shards are
-network infrastructure, general network devices, security/surveillance,
-endpoints/peripherals, and software/services/modules. The expanded JSON,
-local backups, raw vendor source copies, and validation artifacts are local
-working files only and must not be committed.
+As of the 2026-05-15 promoted local smart-pack candidate, the canonical database
+contains 64,245 records across 122 vendors and 51,452 model summaries. The
+smart-pack record split is:
+
+- `home`: 14,676 records
+- `office`: 4,263 records
+- `enterprise`: 39,466 records
+- `industrial_ot`: 1,308 records
+- `service_provider`: 4,532 records
+
+The expanded JSON, local backups, raw vendor source copies, and validation
+artifacts are local working files only and must not be committed.
 
 Users install or refresh it through the existing module system:
 
 ```bash
-python3 sunsetscan.py --download hardware-eol
+python3 sunsetscan.py --download hardware-eol-home
+python3 sunsetscan.py --download hardware-eol-full
 python3 sunsetscan.py --setup
 python3 sunsetscan.py --update-cache
 ```
 
 The expanded full JSON is intentionally not committed. Scans read the installed
-index, then lazily load only the record shard needed for a matched model; scans
-do not contact GitHub.
+manifest and selected pack indexes, then lazily load only the record shard
+needed for a matched model; scans do not contact GitHub.
 
 ## License
 

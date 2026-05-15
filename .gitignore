@@ -30,6 +30,11 @@ data/hardware_eol/sunsetscan_hardware_eol.json.gz
 data/hardware_eol/netwatch_hardware_eol.json.gz
 !data/hardware_eol/sunsetscan_hardware_eol_summary.json
 
+# Generated expanded smart-pack JSON should stay local; compressed smart-pack
+# release artifacts are intentionally versioned.
+data/hardware_eol/indexes/*.json
+data/hardware_eol/records/**/*.json
+
 # Raw vendor lifecycle source files copied from nhedb-scraper for local analysis.
 # These may include vendor PDFs/exports and must never be committed or uploaded.
 data/hardware_eol/raw_vendor_sources/
@@ -95,6 +100,10 @@ SESSION_*.md
 prompts/
 prompts/audit_fixes/
 HARDWARE_EOL_INTEGRATION_NOTES.md
+HARDWARE_EOL_*.md
+docs/hardware_eol_resume_*.md
+docs/hardware_eol_safe_build_plan_*.md
+docs/hardware_eol_vendor_term_definitions.md
 SESSION_NOTES.txt
 SunsetScan_Improvement_Master_Document.html
 SunsetScan_Improvement_Master_Document.docx

@@ -10,6 +10,9 @@ Keep two separate layers in the hardware EOL database:
 2. SunsetScan interpretation: the cautious normalized status SunsetScan uses for
    findings, including confidence, review requirements, and conflict notes.
 
+Vendor-specific definitions and translations belong in
+`docs/hardware_eol_vendor_term_definitions.md`, not in new database fields.
+
 Common vendor terms may mean different things:
 
 - End of sale / discontinued: product is no longer sold or manufactured.
@@ -25,8 +28,10 @@ Policy direction:
 
 - Only mark `receives_security_updates = false` when the source explicitly
   proves security, firmware, vulnerability, or support updates have ended.
-- If a model is merely listed as EOL/discontinued, prefer a `lifecycle_review`
-  style interpretation with lower severity.
+- If a model is listed by the manufacturer as EOL/discontinued, import it as
+  vendor-declared lifecycle evidence. Prefer a `lifecycle_review` style
+  interpretation with lower severity when the source does not give a support or
+  security-update end date.
 - If official sources conflict, for example an EOL list exists but a newer
   firmware page shows security updates after that date, mark review/conflict
   rather than confirmed unsupported.

@@ -117,7 +117,7 @@ def _default_module_ready(module_name: str, module_manager: ModuleManager) -> bo
     """Return True when a default data module is usable for scans."""
     if module_manager.is_installed(module_name):
         return True
-    if module_name == "hardware-eol":
+    if module_name.startswith("hardware-eol"):
         return HardwareEOLDatabase().available()
     return False
 
@@ -591,7 +591,7 @@ class SunsetScan:
         self.console.print()
         if Confirm.ask("Download a module?", default=False):
             name = Prompt.ask(
-                "Module name (or 'all', e.g. hardware-eol)",
+                "Module name (or 'all', e.g. hardware-eol-home)",
                 default="all"
             )
             if name.lower() == "all":
@@ -1238,6 +1238,17 @@ class SunsetScan:
                         hardware_version=hardware_version,
                     )
                 )
+            else:
+                hint = self.hardware_eol.missing_profile_hint(vendor)
+                if hint:
+                    findings.append(
+                        self._hardware_eol_profile_hint_to_finding(
+                            ip=ip,
+                            vendor=vendor,
+                            model=model,
+                            hint=hint,
+                        )
+                    )
 
         return findings
 
@@ -1415,6 +1426,54 @@ class SunsetScan:
             ),
             tags=tags,
             confidence=confidence,
+        )
+
+    @staticmethod
+    def _hardware_eol_profile_hint_to_finding(
+        ip: str,
+        vendor: str,
+        model: str,
+        hint: Dict[str, Any],
+    ) -> Finding:
+        """Create an informational coverage finding for missing smart-pack data."""
+        profile = str(hint.get("recommended_profile") or "hardware-eol-full")
+        missing_pack = str(hint.get("missing_pack") or "unknown")
+        installed = ", ".join(hint.get("installed_packs") or []) or "none"
+        known = ", ".join(hint.get("known_packs") or []) or missing_pack
+        label = " ".join(part for part in (vendor, model) if part).strip() or "Detected device"
+        return Finding(
+            severity=Severity.INFO,
+            title=f"Hardware EOL coverage may need {profile}",
+            host=ip,
+            port=0,
+            protocol="",
+            category="Hardware Lifecycle Coverage",
+            description=(
+                f"{label} did not match the installed hardware EOL pack, but "
+                f"vendor-pack hints show related lifecycle records in pack(s): {known}."
+            ),
+            explanation=(
+                "This is not an end-of-life finding. It only means the installed "
+                "hardware EOL profile may be narrower than the detected device "
+                "vendor, so SunsetScan could not check the full local lifecycle "
+                "database for this model."
+            ),
+            recommendation=(
+                f"Install or refresh the broader profile with: "
+                f"python3 sunsetscan.py --download {profile}"
+            ),
+            evidence=(
+                f"Installed hardware EOL packs: {installed}; missing pack: "
+                f"{missing_pack}; detected vendor/model: {vendor} {model}".strip()
+            ),
+            tags=[
+                "hardware-eol",
+                "hardware-eol-coverage",
+                "missing-hardware-eol-pack",
+                f"missing-pack:{missing_pack}",
+                f"profile:{profile}",
+            ],
+            confidence=Confidence.UNCONFIRMED,
         )
 
     # Patterns to extract SSH daemon product + version from banners
@@ -2437,7 +2496,9 @@ examples:
   %(prog)s --target 192.168.1.0/24 --save-baseline  Save device baseline
   %(prog)s --instant                                 Instant scan of the local subnet (auto-detected)
   %(prog)s --modules                                List data modules
-  %(prog)s --download all                           Download all modules
+  %(prog)s --download all                           Download all modules plus full hardware EOL profile
+  %(prog)s --download hardware-eol-home             Download home/SOHO hardware EOL profile
+  %(prog)s --download hardware-eol-full             Download full smart-pack hardware EOL profile
   %(prog)s --history                                View past scans
   %(prog)s --diff                                   Compare last two scans
   %(prog)s --diff --since 7                         Compare against scan 7+ days ago
@@ -2595,7 +2656,7 @@ examples:
         '--download',
         metavar='MODULE',
         default=None,
-        help='Download a data module (e.g. credentials-full, snmp-community, hardware-eol, or "all")'
+        help='Download a data module/profile (e.g. credentials-full, snmp-community, hardware-eol-home, hardware-eol, or "all")'
     )
 
     parser.add_argument(

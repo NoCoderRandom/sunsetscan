@@ -127,6 +127,26 @@ def test_hardware_lookup_returns_lifecycle_review_match(tmp_path):
     assert "lifecycle review needed" in match.finding_title
 
 
+def test_hardware_lookup_names_vendor_declared_eol_review(tmp_path):
+    record = _record("lifecycle_review", None, "Example official EOL product list")
+    record["source"]["status_text"] = "EOL product list"
+    record["lifecycle"]["risk"] = "low"
+    record["lifecycle"]["reason"] = "Vendor declares EOL; support date unknown."
+    db = _database(record)
+    rebuild_model_summaries(db)
+    rebuild_summary(db)
+
+    path = tmp_path / "hardware_eol.json"
+    path.write_text(json.dumps(db), encoding="utf-8")
+
+    match = HardwareEOLDatabase(path).lookup("ASUS", "RT-AX92U")
+
+    assert match is not None
+    assert match.status == "lifecycle_review"
+    assert match.receives_security_updates is None
+    assert "vendor-declared EOL; review needed" in match.finding_title
+
+
 def test_hardware_lookup_keeps_strong_unsupported_match(tmp_path):
     db = _database(_record("unsupported", False, "Cisco RawData extracted records"))
     rebuild_model_summaries(db)
@@ -140,6 +160,34 @@ def test_hardware_lookup_keeps_strong_unsupported_match(tmp_path):
     match = HardwareEOLDatabase(path).lookup("ASUS", "RT-AX92U")
 
     assert match is not None
+    assert match.status == "unsupported"
+    assert match.receives_security_updates is False
+    assert match.review_required is False
+    assert "no longer receives security updates" in match.finding_title
+
+
+def test_hardware_lookup_matches_original_name_alias_with_english_status_text(tmp_path):
+    original_name = "\u5bb6\u5ead\u7f51\u5173"
+    record = _record("unsupported", False, "Example raw lifecycle table import")
+    record["source"]["status_text"] = "End of support"
+    record["match"]["aliases"].append(original_name)
+    record["match"]["alias_keys"].append(original_name)
+
+    db = _database(record)
+    db["indexes"]["by_alias_key"] = {
+        original_name: [record["id"]],
+        f"asus|{original_name}": [record["id"]],
+    }
+    rebuild_model_summaries(db)
+    rebuild_summary(db)
+
+    path = tmp_path / "hardware_eol.json"
+    path.write_text(json.dumps(db), encoding="utf-8")
+
+    match = HardwareEOLDatabase(path).lookup("ASUS", original_name)
+
+    assert match is not None
+    assert match.match_type == "alias"
     assert match.status == "unsupported"
     assert match.receives_security_updates is False
     assert match.review_required is False

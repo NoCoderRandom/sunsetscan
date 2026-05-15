@@ -24,7 +24,7 @@ def test_hardware_eol_readiness_accepts_bundled_database(monkeypatch):
         lambda: FakeHardwareEOLDatabase(available=True),
     )
 
-    assert sunsetscan._default_module_ready("hardware-eol", FakeModuleManager()) is True
+    assert sunsetscan._default_module_ready("hardware-eol-home", FakeModuleManager()) is True
 
 
 def test_missing_non_hardware_default_module_is_not_ready():

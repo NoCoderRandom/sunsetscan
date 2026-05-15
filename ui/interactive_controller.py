@@ -1195,8 +1195,8 @@ Device Types Found:
 
             menu = """
 [1] Show module status   - List all data modules
-[2] Download a module    - Download a specific module, e.g. hardware-eol
-[3] Download all modules - Download everything
+[2] Download a module    - Download a module/profile, e.g. hardware-eol-home
+[3] Download all modules - Download everything plus full hardware EOL
 [4] Update caches        - Refresh CVE/EOL data and installed modules
 [5] Cache status         - Show cache age and entries
 [0] Back to main menu
@@ -1212,7 +1212,7 @@ Device Types Found:
             if choice == "1":
                 mm.show_modules()
             elif choice == "2":
-                name = Prompt.ask("Module name", default="hardware-eol")
+                name = Prompt.ask("Module name", default="hardware-eol-home")
                 mm.download(name)
             elif choice == "3":
                 mm.download_all()

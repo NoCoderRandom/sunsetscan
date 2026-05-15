@@ -16,16 +16,26 @@ Modules:
     ja3-signatures       TLS fingerprint database (from salesforce/ja3)
     snmp-community       Extended SNMP community strings (from SecLists)
     camera-credentials   IP camera default credentials (from many-passwords)
-    hardware-eol         Hardware lifecycle database (from SunsetScan GitHub)
+    hardware-eol-home    Default smart-pack home hardware lifecycle profile
+    hardware-eol         Legacy full hardware lifecycle database compatibility module
+    hardware-eol-office  Smart-pack home plus small-office profile
+    hardware-eol-enterprise
+                         Smart-pack home, office, and enterprise profile
+    hardware-eol-industrial
+                         Smart-pack home, office, and industrial/OT profile
+    hardware-eol-service-provider
+                         Smart-pack home, office, enterprise, and provider profile
+    hardware-eol-full    Full smart-pack hardware lifecycle profile
 
 CLI:
     python3 sunsetscan.py --modules          List all modules with status
     python3 sunsetscan.py --download <name>  Download a specific module
-    python3 sunsetscan.py --download all     Download all optional modules
+    python3 sunsetscan.py --download all     Download all modules with full hardware EOL profile
 """
 
 import csv
 import gzip
+import hashlib
 import io
 import json
 import logging
@@ -42,6 +52,33 @@ _MODULES_META_PATH = _CACHE_DIR / "modules.json"
 
 # TTL for downloaded module data (days)
 MODULE_TTL_DAYS = 30
+
+_HARDWARE_EOL_BASE_URL = "https://raw.githubusercontent.com/NoCoderRandom/sunsetscan/main/data/hardware_eol"
+_HARDWARE_EOL_MANIFEST_URL = f"{_HARDWARE_EOL_BASE_URL}/manifest.json.gz"
+_HARDWARE_EOL_CACHE_ROOT = "data/cache/hardware_eol"
+
+
+def _hardware_eol_profile(
+    *,
+    description: str,
+    packs: List[str],
+    size_estimate: str,
+    default: bool = False,
+) -> Dict[str, Any]:
+    return {
+        "description": description,
+        "source": "NoCoderRandom/sunsetscan",
+        "url": _HARDWARE_EOL_MANIFEST_URL,
+        "local_path": f"{_HARDWARE_EOL_CACHE_ROOT}/manifest.json",
+        "size_estimate": size_estimate,
+        "default": default,
+        "parser": "_parse_hardware_eol_manifest",
+        "binary": True,
+        "hardware_profile": True,
+        "packs": packs,
+        "license": "CC BY-NC 4.0",
+        "license_url": "https://creativecommons.org/licenses/by-nc/4.0/",
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -122,12 +159,12 @@ MODULE_REGISTRY: Dict[str, Dict[str, Any]] = {
         "parser": "_parse_mac_oui",
     },
     "hardware-eol": {
-        "description": "Network hardware lifecycle/EOL database (CC BY-NC 4.0)",
+        "description": "Legacy full network hardware lifecycle/EOL database compatibility module (CC BY-NC 4.0)",
         "source": "NoCoderRandom/sunsetscan",
         "url": "https://raw.githubusercontent.com/NoCoderRandom/sunsetscan/main/data/hardware_eol/sunsetscan_hardware_eol_index.json.gz",
         "local_path": "data/cache/hardware_eol/sunsetscan_hardware_eol_index.json",
         "size_estimate": "21MB download / split installed",
-        "default": True,
+        "default": False,
         "parser": "_parse_hardware_eol",
         "binary": True,
         "parts": [
@@ -160,6 +197,37 @@ MODULE_REGISTRY: Dict[str, Dict[str, Any]] = {
         "license": "CC BY-NC 4.0",
         "license_url": "https://creativecommons.org/licenses/by-nc/4.0/",
     },
+    "hardware-eol-home": _hardware_eol_profile(
+        description="Home/SOHO hardware lifecycle/EOL database profile (CC BY-NC 4.0)",
+        packs=["home"],
+        size_estimate="~5MB download / smart-pack installed",
+        default=True,
+    ),
+    "hardware-eol-office": _hardware_eol_profile(
+        description="Home plus small-office hardware lifecycle/EOL profile (CC BY-NC 4.0)",
+        packs=["home", "office"],
+        size_estimate="~6.5MB download / smart-pack installed",
+    ),
+    "hardware-eol-enterprise": _hardware_eol_profile(
+        description="Home, office, and enterprise hardware lifecycle/EOL profile (CC BY-NC 4.0)",
+        packs=["home", "office", "enterprise"],
+        size_estimate="~20MB download / smart-pack installed",
+    ),
+    "hardware-eol-industrial": _hardware_eol_profile(
+        description="Home, office, and industrial/OT hardware lifecycle/EOL profile (CC BY-NC 4.0)",
+        packs=["home", "office", "industrial_ot"],
+        size_estimate="~7MB download / smart-pack installed",
+    ),
+    "hardware-eol-service-provider": _hardware_eol_profile(
+        description="Home, office, enterprise, and service-provider lifecycle/EOL profile (CC BY-NC 4.0)",
+        packs=["home", "office", "enterprise", "service_provider"],
+        size_estimate="~22MB download / smart-pack installed",
+    ),
+    "hardware-eol-full": _hardware_eol_profile(
+        description="Full smart-pack hardware lifecycle/EOL database profile (CC BY-NC 4.0)",
+        packs=["home", "office", "enterprise", "industrial_ot", "service_provider"],
+        size_estimate="~22MB download / smart-pack installed",
+    ),
 }
 
 # Top 500 web technologies by usage frequency (used for wappalyzer-mini)
@@ -453,13 +521,38 @@ def _parse_hardware_eol_shard(raw_data) -> Dict:
     return data
 
 
+def _parse_hardware_eol_manifest(raw_data) -> Dict:
+    """Parse a smart-pack hardware EOL manifest artifact."""
+    try:
+        data = _decode_json_payload(raw_data)
+    except Exception as e:
+        logger.warning(f"hardware-eol manifest parse error: {e}")
+        return {}
+
+    if "packs" not in data or "profiles" not in data or "metadata" not in data:
+        logger.warning("hardware-eol manifest parse error: missing required sections")
+        return {}
+    return data
+
+
 def _entry_count(parsed: Any, module_name: str = "") -> int:
     """Return a human-useful entry count for module metadata/output."""
-    if module_name == "hardware-eol" and isinstance(parsed, dict):
+    if module_name.startswith("hardware-eol") and isinstance(parsed, dict):
         summary = parsed.get("summary") or {}
         count = summary.get("total_records")
         if isinstance(count, int):
             return count
+        packs = parsed.get("packs") or {}
+        if isinstance(packs, dict):
+            total = 0
+            selected_packs = (MODULE_REGISTRY.get(module_name) or {}).get("packs") or packs.keys()
+            for pack_name in selected_packs:
+                pack = packs.get(pack_name)
+                count = pack.get("record_count") if isinstance(pack, dict) else None
+                if isinstance(count, int):
+                    total += count
+            if total:
+                return total
     if isinstance(parsed, (list, dict)):
         return len(parsed)
     return 0
@@ -476,6 +569,7 @@ _PARSERS = {
     "_parse_camera_credentials": _parse_camera_credentials,
     "_parse_mac_oui": _parse_mac_oui,
     "_parse_hardware_eol": _parse_hardware_eol,
+    "_parse_hardware_eol_manifest": _parse_hardware_eol_manifest,
 }
 
 
@@ -528,6 +622,8 @@ class ModuleManager:
         info = MODULE_REGISTRY.get(module_name)
         if not info:
             return False
+        if info.get("hardware_profile"):
+            return self._hardware_profile_installed(info)
         path = _PROJECT_ROOT / info["local_path"]
         if info.get("parts"):
             if not (path.exists() and path.stat().st_size > 0):
@@ -604,6 +700,11 @@ class ModuleManager:
         """Return files that must be writable to install a module."""
         info = MODULE_REGISTRY[module_name]
         targets = [_PROJECT_ROOT / info["local_path"], _MODULES_META_PATH]
+        if info.get("hardware_profile"):
+            for pack in info.get("packs", []):
+                targets.append(_PROJECT_ROOT / _HARDWARE_EOL_CACHE_ROOT / "indexes" / f"{pack}.json")
+                targets.append(_PROJECT_ROOT / _HARDWARE_EOL_CACHE_ROOT / "records" / pack)
+            return targets
         for part in info.get("parts", []):
             targets.append(_PROJECT_ROOT / part["local_path"])
         return targets
@@ -685,6 +786,8 @@ class ModuleManager:
                     return False
                 parser = _PARSERS[info["parser"]]
                 parsed = parser(data)
+            elif info.get("hardware_profile"):
+                parsed = self._download_hardware_eol_profile(session, info, quiet=quiet)
             elif module_name == "hardware-eol" and info.get("parts"):
                 parsed = self._download_hardware_eol(session, info, quiet=quiet)
             else:
@@ -813,6 +916,141 @@ class ModuleManager:
 
         return parsed
 
+    def _hardware_profile_installed(self, info: Dict[str, Any]) -> bool:
+        """Return True when a smart hardware EOL profile is installed locally."""
+        manifest_path = _PROJECT_ROOT / info["local_path"]
+        if not (manifest_path.exists() and manifest_path.stat().st_size > 0):
+            return False
+        try:
+            with open(manifest_path, "r", encoding="utf-8") as f:
+                manifest = json.load(f)
+        except Exception:
+            return False
+
+        packs = manifest.get("packs") or {}
+        for pack in info.get("packs", []):
+            pack_info = packs.get(pack)
+            if not isinstance(pack_info, dict):
+                return False
+            index_path = self._hardware_manifest_file(manifest_path, pack_info.get("index"))
+            if not (index_path and index_path.exists() and index_path.stat().st_size > 0):
+                return False
+            shards = pack_info.get("shards") or {}
+            for shard_info in shards.values():
+                shard_path = self._hardware_manifest_file(manifest_path, shard_info)
+                if not (shard_path and shard_path.exists() and shard_path.stat().st_size > 0):
+                    return False
+        return True
+
+    def _download_hardware_eol_profile(self, session, info: Dict[str, Any], quiet: bool = False) -> Dict:
+        """Download a smart hardware EOL profile manifest, pack indexes, and shards."""
+        resp = session.get(info["url"], timeout=30)
+        if resp.status_code != 200:
+            if not quiet:
+                print(f"  Download failed: HTTP {resp.status_code}")
+            return {}
+
+        manifest = _parse_hardware_eol_manifest(resp.content)
+        if not manifest:
+            return {}
+
+        manifest_base_url = str(info["url"]).rsplit("/", 1)[0] + "/"
+        manifest_path = _PROJECT_ROOT / info["local_path"]
+        selected_packs = info.get("packs") or []
+        available_packs = manifest.get("packs") or {}
+        pending_writes: List[Tuple[Path, Dict[str, Any]]] = []
+
+        for pack in selected_packs:
+            pack_info = available_packs.get(pack)
+            if not isinstance(pack_info, dict):
+                if not quiet:
+                    print(f"  Missing hardware EOL pack in manifest: {pack}")
+                return {}
+
+            if not quiet:
+                print(f"  Downloading hardware EOL pack: {pack}")
+
+            index_info = pack_info.get("index") or {}
+            index = self._download_manifest_json(
+                session,
+                manifest_base_url,
+                index_info,
+                parser=_parse_hardware_eol,
+                timeout=30,
+            )
+            if not index:
+                return {}
+            index_target = self._hardware_manifest_file(manifest_path, index_info)
+            if not index_target:
+                return {}
+            pending_writes.append((index_target, index))
+
+            for category, shard_info in (pack_info.get("shards") or {}).items():
+                shard = self._download_manifest_json(
+                    session,
+                    manifest_base_url,
+                    shard_info,
+                    parser=_parse_hardware_eol_shard,
+                    timeout=60,
+                )
+                if not shard:
+                    return {}
+                if shard.get("category") and shard["category"] != category:
+                    logger.warning(
+                        "hardware-eol smart shard category mismatch: expected %s, got %s",
+                        category,
+                        shard.get("category"),
+                    )
+                shard_target = self._hardware_manifest_file(manifest_path, shard_info)
+                if not shard_target:
+                    return {}
+                pending_writes.append((shard_target, shard))
+
+        for target, data in pending_writes:
+            target.parent.mkdir(parents=True, exist_ok=True)
+            with open(target, "w", encoding="utf-8") as f:
+                json.dump(data, f, separators=(",", ":"))
+
+        return manifest
+
+    def _download_manifest_json(
+        self,
+        session,
+        manifest_base_url: str,
+        file_info: Dict[str, Any],
+        *,
+        parser,
+        timeout: int,
+    ) -> Dict[str, Any]:
+        path = str(file_info.get("path") or "")
+        if not path:
+            return {}
+        url = path if path.startswith(("http://", "https://")) else manifest_base_url + path
+        resp = session.get(url, timeout=timeout)
+        if resp.status_code != 200:
+            return {}
+        expected_hash = file_info.get("sha256")
+        if expected_hash:
+            digest = hashlib.sha256(resp.content).hexdigest()
+            if digest != expected_hash:
+                logger.warning("hardware-eol download hash mismatch for %s", path)
+                return {}
+        return parser(resp.content)
+
+    @staticmethod
+    def _hardware_manifest_file(manifest_path: Path, file_info: Any) -> Optional[Path]:
+        if not isinstance(file_info, dict):
+            return None
+        rel_path = str(file_info.get("path") or "")
+        if not rel_path:
+            return None
+        path = Path(rel_path)
+        if path.is_absolute():
+            return path
+        if path.suffix == ".gz":
+            path = path.with_suffix("")
+        return manifest_path.parent / path
+
     def download_all(self, quiet: bool = False) -> int:
         """Download all missing modules.
 
@@ -820,8 +1058,13 @@ class ModuleManager:
             Number of successfully downloaded modules.
         """
         success = 0
+        candidates = [
+            (name, info) for name, info in MODULE_REGISTRY.items()
+            if not info.get("hardware_profile") and name != "hardware-eol"
+        ]
+        candidates.append(("hardware-eol-full", MODULE_REGISTRY["hardware-eol-full"]))
         pending = [
-            name for name, info in MODULE_REGISTRY.items()
+            name for name, info in candidates
             if not self.is_installed(name)
         ]
         blocked_path = self._first_unwritable_target(pending)
@@ -830,7 +1073,7 @@ class ModuleManager:
             logger.error("Module cache is not writable: %s", blocked_path)
             return 0
 
-        for name, info in MODULE_REGISTRY.items():
+        for name, info in candidates:
             if not info["default"] and not self.is_installed(name):
                 if self.download(name, quiet=quiet):
                     success += 1

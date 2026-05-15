@@ -235,9 +235,14 @@ SunsetScan runs 12 security checker modules during a full assessment:
 ### Vulnerability Intelligence
 - **CVE correlation** — maps detected service versions to known CVEs using OSV.dev
 - **Software EOL checking** — local cached lifecycle data for 150+ software products
-- **Hardware lifecycle checking** — downloadable SunsetScan hardware EOL database
-  flags routers, switches, NAS, cameras, printers, and access points with
-  confirmed unsupported status or vendor lifecycle signals that need review
+- **Hardware lifecycle checking** — expanded SunsetScan hardware EOL database
+  with 64,245 lifecycle records, 51,452 model summaries, and 122 represented
+  vendors. It flags routers, switches, NAS, cameras, printers, access points,
+  industrial/OT gear, and service-provider equipment with confirmed unsupported
+  status or vendor lifecycle signals that need review.
+- **Smart hardware EOL profiles** — home users get the smaller
+  `hardware-eol-home` default profile, while office, enterprise, industrial,
+  service-provider, and full profiles are available for broader scans.
 - **JA3S TLS fingerprinting** — identifies server software from TLS handshake signatures
 - Fully offline during scans — no external API calls are made during scanning. Software EOL, CVE, and GitHub module sources are only contacted by `--setup`, `--update-cache`, and `--download`. Scans work without any internet connection as long as caches are populated.
 - Weekly CVE refresh, monthly EOL refresh — controlled by you
@@ -255,7 +260,12 @@ SunsetScan runs 12 security checker modules during a full assessment:
 - Persistent MAC-to-identity mapping across scans
 
 ### Modular Data System
-SunsetScan includes 9 downloadable data modules that extend detection capabilities:
+SunsetScan includes downloadable data modules and hardware EOL profiles that extend detection capabilities:
+
+The hardware lifecycle database is now split into smart downloadable profiles:
+`hardware-eol-home` is the default install, while `hardware-eol-full` provides
+complete coverage. The full canonical build currently contains 64,245 records
+across 122 vendors, but home users only need the smaller home profile.
 
 | Module | Source | What it adds |
 |---|---|---|
@@ -267,12 +277,20 @@ SunsetScan includes 9 downloadable data modules that extend detection capabiliti
 | `snmp-community` | danielmiessler/SecLists | Extended SNMP community strings |
 | `camera-credentials` | many-passwords/many-passwords | IP camera/DVR/NVR defaults (downloadable reference data; not used by the safe audit unless explicitly enabled in settings) |
 | `mac-oui` | IEEE Standards Association | MAC prefix vendor database (default) |
-| `hardware-eol` | NoCoderRandom/sunsetscan | Hardware lifecycle/EOL database (default; database license: CC BY-NC 4.0) |
+| `hardware-eol-home` | NoCoderRandom/sunsetscan | Home/SOHO hardware lifecycle/EOL profile (default; database license: CC BY-NC 4.0) |
+| `hardware-eol-office` | NoCoderRandom/sunsetscan | Home plus small-office hardware lifecycle/EOL profile |
+| `hardware-eol-enterprise` | NoCoderRandom/sunsetscan | Home, office, and enterprise/campus/datacenter hardware lifecycle/EOL profile |
+| `hardware-eol-industrial` | NoCoderRandom/sunsetscan | Home, office, and industrial/OT hardware lifecycle/EOL profile |
+| `hardware-eol-service-provider` | NoCoderRandom/sunsetscan | Home, office, enterprise, and service-provider hardware lifecycle/EOL profile |
+| `hardware-eol-full` | NoCoderRandom/sunsetscan | Complete smart-pack hardware lifecycle/EOL profile |
+| `hardware-eol` | NoCoderRandom/sunsetscan | Legacy full split hardware lifecycle/EOL compatibility module |
 
 ```bash
-sunsetscan --modules                # Show module status
-sunsetscan --download all           # Download everything
-sunsetscan --download ja3-signatures  # Download one module
+sunsetscan --modules                  # Show module status
+sunsetscan --download all             # Download all modules, using the full hardware EOL smart profile
+sunsetscan --download ja3-signatures  # Download one data module
+sunsetscan --download hardware-eol-home  # Download a smaller hardware EOL profile
+sunsetscan --download hardware-eol-full  # Download every hardware EOL smart pack
 ```
 
 ### Rogue Device Detection
@@ -429,6 +447,7 @@ SunsetScan never calls external APIs during a scan. All data is read from local 
 | `data/cache/cve_cache.json` | CVE data keyed by product:version | Every 7 days |
 | `data/cache/*.json` | EOL dates for 150+ products, stored per product | Every 30 days |
 | `data/cache/hardware_eol/sunsetscan_hardware_eol_index.json` plus `records/*.json` | Hardware lifecycle/EOL database | Every 30 days |
+| `data/cache/hardware_eol/manifest.json`, `indexes/*.json`, and `records/<pack>/*.json` | Smart-pack hardware lifecycle/EOL profiles | Every 30 days |
 | `data/cache/cache_meta.json` | Timestamps of last updates | Automatic |
 
 ```bash

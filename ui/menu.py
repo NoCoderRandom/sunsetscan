@@ -299,8 +299,9 @@ and produces a professional HTML security report.
   sunsetscan --target 192.168.1.0/24 --profile IOT   IoT device scan
   sunsetscan --instant                               Instant device scan
   sunsetscan --modules                               Show data modules
-  sunsetscan --download all                          Download all modules
-  sunsetscan --download hardware-eol                 Download hardware EOL DB
+  sunsetscan --download all                          Download all modules + full hardware EOL
+  sunsetscan --download hardware-eol-home            Download home/SOHO hardware EOL profile
+  sunsetscan --download hardware-eol-full            Download full hardware EOL profile
   sunsetscan --history                               View past scans
   sunsetscan --diff                                  Compare last two scans
   sunsetscan -i                                      Interactive mode

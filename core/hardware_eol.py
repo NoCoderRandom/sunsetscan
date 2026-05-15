@@ -11,6 +11,7 @@ import gzip
 import json
 import logging
 import re
+import unicodedata
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
@@ -20,10 +21,14 @@ logger = logging.getLogger(__name__)
 _PROJECT_ROOT = Path(__file__).parent.parent
 _DEFAULT_DB_PATH = _PROJECT_ROOT / "data" / "cache" / "hardware_eol" / "sunsetscan_hardware_eol.json"
 _DEFAULT_INDEX_PATH = _PROJECT_ROOT / "data" / "cache" / "hardware_eol" / "sunsetscan_hardware_eol_index.json"
+_DEFAULT_MANIFEST_PATH = _PROJECT_ROOT / "data" / "cache" / "hardware_eol" / "manifest.json"
+_DEFAULT_MANIFEST_GZ_PATH = _PROJECT_ROOT / "data" / "cache" / "hardware_eol" / "manifest.json.gz"
 _DEVELOPER_DB_PATH = _PROJECT_ROOT / "data" / "hardware_eol" / "sunsetscan_hardware_eol.json"
 _DEVELOPER_DB_GZ_PATH = _PROJECT_ROOT / "data" / "hardware_eol" / "sunsetscan_hardware_eol.json.gz"
 _DEVELOPER_INDEX_PATH = _PROJECT_ROOT / "data" / "hardware_eol" / "sunsetscan_hardware_eol_index.json"
 _DEVELOPER_INDEX_GZ_PATH = _PROJECT_ROOT / "data" / "hardware_eol" / "sunsetscan_hardware_eol_index.json.gz"
+_DEVELOPER_MANIFEST_PATH = _PROJECT_ROOT / "data" / "hardware_eol" / "manifest.json"
+_DEVELOPER_MANIFEST_GZ_PATH = _PROJECT_ROOT / "data" / "hardware_eol" / "manifest.json.gz"
 
 _LEGACY_DEFAULT_DB_PATH = _PROJECT_ROOT / "data" / "cache" / "hardware_eol" / "netwatch_hardware_eol.json"
 _LEGACY_DEFAULT_INDEX_PATH = _PROJECT_ROOT / "data" / "cache" / "hardware_eol" / "netwatch_hardware_eol_index.json"
@@ -37,7 +42,33 @@ def normalize_key(value: Any) -> str:
     """Normalize a vendor, model, part, or alias value for database lookup."""
     if value is None:
         return ""
-    return re.sub(r"[^a-z0-9]+", " ", str(value).lower()).strip()
+    text = unicodedata.normalize("NFKC", str(value)).casefold()
+    text = text.replace("&", " and ")
+    text = text.replace("+", " plus ")
+    text = text.replace("@", " at ")
+    text = re.sub(r"[\u2010-\u2015]", "-", text)
+    chars = [char if char.isalnum() else " " for char in text]
+    return re.sub(r"\s+", " ", "".join(chars)).strip()
+
+
+def _legacy_normalize_key(value: Any) -> str:
+    if value is None:
+        return ""
+    text = str(value).lower()
+    text = text.replace("&", " and ")
+    text = text.replace("+", " plus ")
+    text = text.replace("@", " at ")
+    text = re.sub(r"[\u2010-\u2015]", "-", text)
+    text = re.sub(r"[^a-z0-9]+", " ", text)
+    return re.sub(r"\s+", " ", text).strip()
+
+
+def _lookup_key_variants(value: Any) -> List[str]:
+    variants: List[str] = []
+    for key in (normalize_key(value), _legacy_normalize_key(value)):
+        if key and key not in variants:
+            variants.append(key)
+    return variants
 
 
 def _normalize_version_key(value: Any) -> str:
@@ -45,6 +76,33 @@ def _normalize_version_key(value: Any) -> str:
     if len(key) > 1 and key[0] == "v" and key[1].isdigit():
         return key[1:].strip()
     return key
+
+
+def _review_title_suffix(records: List[Dict[str, Any]]) -> str:
+    evidence = " ".join(
+        str((record.get("source") or {}).get(key) or "")
+        for record in records
+        for key in ("status_text", "source_hint")
+    )
+    normalized = normalize_key(evidence)
+    if any(
+        needle in normalized
+        for needle in (
+            "end of support",
+            "end of service",
+            "end of updates",
+            "support ended",
+            "updates ended",
+        )
+    ):
+        return "vendor-declared support/update end; review needed"
+    if "end of life" in normalized or re.search(r"\beol\b", normalized):
+        return "vendor-declared EOL; review needed"
+    if "discontinued" in normalized:
+        return "vendor-declared discontinued; review needed"
+    if "end of sale" in normalized or re.search(r"\beos\b", normalized):
+        return "vendor-declared end of sale; review needed"
+    return "lifecycle review needed"
 
 
 @dataclass
@@ -155,6 +213,8 @@ class HardwareEOLDatabase:
         self._record_locations: Dict[str, str] = {}
         self._record_shards: Dict[str, Any] = {}
         self._shard_cache: Dict[str, Dict[str, Any]] = {}
+        self._installed_packs: set[str] = set()
+        self._vendor_pack_hints: Dict[str, Any] = {}
 
     def available(self) -> bool:
         """Return True if a hardware lifecycle database file exists."""
@@ -163,9 +223,12 @@ class HardwareEOLDatabase:
     def canonical_vendor(self, vendor: str) -> str:
         """Normalize and canonicalize a vendor through indexes.vendor_aliases."""
         self._ensure_loaded()
-        vendor_key = normalize_key(vendor)
         aliases = self._indexes.get("vendor_aliases") or {}
-        return aliases.get(vendor_key, vendor_key)
+        vendor_keys = _lookup_key_variants(vendor)
+        for vendor_key in vendor_keys:
+            if vendor_key in aliases:
+                return aliases[vendor_key]
+        return vendor_keys[0] if vendor_keys else ""
 
     def lookup(
         self,
@@ -189,11 +252,18 @@ class HardwareEOLDatabase:
             return None
 
         vendor_key = self.canonical_vendor(vendor)
-        model_key = normalize_key(model)
-        if not model_key:
+        model_keys = _lookup_key_variants(model)
+        if not model_keys:
             return None
 
-        record_ids, match_type = self._lookup_record_ids(vendor_key, model_key)
+        record_ids: List[str] = []
+        match_type = ""
+        model_key = model_keys[0]
+        for candidate_model_key in model_keys:
+            record_ids, match_type = self._lookup_record_ids(vendor_key, candidate_model_key)
+            if record_ids:
+                model_key = candidate_model_key
+                break
         if not record_ids:
             return None
 
@@ -243,6 +313,36 @@ class HardwareEOLDatabase:
             summary=None,
         )
 
+    def missing_profile_hint(self, vendor: str) -> Optional[Dict[str, Any]]:
+        """Return smart-pack profile guidance for a vendor outside installed packs."""
+        self._ensure_loaded()
+        if not vendor or not self._vendor_pack_hints:
+            return None
+
+        for vendor_key in _lookup_key_variants(vendor):
+            hint = self._vendor_pack_hints.get(vendor_key)
+            if not isinstance(hint, dict):
+                continue
+            packs = hint.get("packs") or {}
+            if not isinstance(packs, dict):
+                continue
+            missing = {
+                str(pack): count
+                for pack, count in packs.items()
+                if str(pack) not in self._installed_packs
+            }
+            if not missing:
+                return None
+            primary_missing = max(missing, key=lambda pack: missing[pack])
+            return {
+                "vendor_slug": vendor_key,
+                "missing_pack": primary_missing,
+                "recommended_profile": self._profile_for_pack(primary_missing),
+                "known_packs": sorted(packs),
+                "installed_packs": sorted(self._installed_packs),
+            }
+        return None
+
     # ------------------------------------------------------------------
 
     def _ensure_loaded(self) -> None:
@@ -263,6 +363,10 @@ class HardwareEOLDatabase:
             return
 
         self._db_path = db_path
+        if self._is_smart_pack_manifest(self._db):
+            self._load_smart_pack_manifest(db_path, self._db)
+            return
+
         self._indexes = self._db.get("indexes") or {}
         self._records = self._db.get("records") or []
         self._record_positions = self._indexes.get("by_id") or {}
@@ -274,6 +378,8 @@ class HardwareEOLDatabase:
             }
         self._record_locations = self._db.get("record_locations") or {}
         self._record_shards = self._db.get("record_shards") or {}
+        self._installed_packs = set()
+        self._vendor_pack_hints = {}
         self._summary_by_key = {}
         for summary in self._db.get("model_summaries") or []:
             vendor_slug = summary.get("vendor_slug") or ""
@@ -297,7 +403,11 @@ class HardwareEOLDatabase:
             return self.path
 
         candidates = (
+            _DEFAULT_MANIFEST_PATH,
+            _DEFAULT_MANIFEST_GZ_PATH,
             _DEFAULT_INDEX_PATH,
+            _DEVELOPER_MANIFEST_PATH,
+            _DEVELOPER_MANIFEST_GZ_PATH,
             _DEVELOPER_INDEX_PATH,
             _DEVELOPER_INDEX_GZ_PATH,
             _LEGACY_DEFAULT_INDEX_PATH,
@@ -322,6 +432,174 @@ class HardwareEOLDatabase:
                 return json.load(f)
         with path.open("r", encoding="utf-8") as f:
             return json.load(f)
+
+    @staticmethod
+    def _is_smart_pack_manifest(database: Dict[str, Any]) -> bool:
+        return (
+            isinstance(database, dict)
+            and isinstance(database.get("packs"), dict)
+            and isinstance(database.get("profiles"), dict)
+            and "indexes" not in database
+        )
+
+    def _load_smart_pack_manifest(self, manifest_path: Path, manifest: Dict[str, Any]) -> None:
+        """Load all installed smart-pack indexes as one logical lookup database."""
+        pack_indexes: List[Tuple[str, Path, Dict[str, Any]]] = []
+        for pack, info in sorted((manifest.get("packs") or {}).items()):
+            if not isinstance(info, dict):
+                continue
+            index_path = self._resolve_manifest_file(manifest_path, info.get("index"))
+            if not index_path.exists():
+                continue
+            try:
+                index = self._load_json_file(index_path)
+            except Exception as e:
+                logger.warning("Could not load hardware EOL pack index %s: %s", index_path, e)
+                continue
+            if index.get("record_shards") and index.get("record_locations"):
+                pack_indexes.append((str(pack), index_path, index))
+
+        if not pack_indexes:
+            logger.debug("Hardware EOL smart manifest has no installed packs: %s", manifest_path)
+            self._db = {}
+            return
+
+        merged_indexes: Dict[str, Any] = {"vendor_aliases": {}}
+        merged_summaries: List[Dict[str, Any]] = []
+        merged_shards: Dict[str, Any] = {}
+        merged_locations: Dict[str, str] = {}
+        total_records = 0
+        installed_packs = {pack for pack, _, _ in pack_indexes}
+
+        for pack, index_path, index in pack_indexes:
+            self._merge_lookup_indexes(merged_indexes, index.get("indexes") or {})
+            merged_summaries.extend(index.get("model_summaries") or [])
+            for category, shard_info in (index.get("record_shards") or {}).items():
+                shard_key = f"{pack}/{category}"
+                merged_info = dict(shard_info)
+                shard_path = self._resolve_pack_file(index_path, merged_info.get("path"))
+                merged_info["path"] = str(shard_path)
+                merged_info["pack"] = pack
+                merged_info["category"] = category
+                merged_shards[shard_key] = merged_info
+            for record_id, category in (index.get("record_locations") or {}).items():
+                merged_locations[str(record_id)] = f"{pack}/{category}"
+            total_records += int((index.get("summary") or {}).get("total_records") or 0)
+
+        for name, value in list(merged_indexes.items()):
+            if name in {"vendor_aliases", "by_id"} or not isinstance(value, dict):
+                continue
+            merged_indexes[name] = {
+                key: sorted(dict.fromkeys(ids))
+                for key, ids in sorted(value.items())
+            }
+        merged_indexes["vendor_aliases"] = dict(sorted(merged_indexes["vendor_aliases"].items()))
+
+        self._db = {
+            "metadata": {
+                "schema": (manifest.get("metadata") or {}).get("source_schema")
+                or "sunsetscan.hardware_eol.v1",
+                "artifact_layout": {
+                    "format": "smart_packs",
+                    "pack_count": len(pack_indexes),
+                    "manifest": str(manifest_path),
+                },
+            },
+            "summary": {
+                "total_records": total_records or len(merged_locations),
+                "total_model_summaries": len(merged_summaries),
+            },
+            "indexes": merged_indexes,
+            "model_summaries": merged_summaries,
+            "record_shards": merged_shards,
+            "record_locations": merged_locations,
+        }
+        self._db_path = manifest_path
+        self._indexes = merged_indexes
+        self._records = []
+        self._record_positions = {}
+        self._record_locations = merged_locations
+        self._record_shards = merged_shards
+        self._installed_packs = installed_packs
+        self._vendor_pack_hints = manifest.get("vendor_pack_hints") or {}
+        self._summary_by_key = {}
+        for summary in merged_summaries:
+            vendor_slug = summary.get("vendor_slug") or ""
+            model_key = summary.get("model_key") or ""
+            if vendor_slug and model_key:
+                self._summary_by_key[f"{vendor_slug}|{model_key}"] = summary
+
+        logger.debug(
+            "Hardware EOL smart packs loaded from %s: %d records, %d model summaries, %d packs",
+            manifest_path,
+            total_records or len(merged_locations),
+            len(self._summary_by_key),
+            len(pack_indexes),
+        )
+
+    @staticmethod
+    def _profile_for_pack(pack: str) -> str:
+        return {
+            "home": "hardware-eol-home",
+            "office": "hardware-eol-office",
+            "enterprise": "hardware-eol-enterprise",
+            "industrial_ot": "hardware-eol-industrial",
+            "service_provider": "hardware-eol-service-provider",
+        }.get(pack, "hardware-eol-full")
+
+    @staticmethod
+    def _merge_lookup_indexes(target: Dict[str, Any], source: Dict[str, Any]) -> None:
+        for index_name, index_value in source.items():
+            if not isinstance(index_value, dict):
+                continue
+            if index_name == "vendor_aliases":
+                aliases = target.setdefault("vendor_aliases", {})
+                aliases.update(index_value)
+                continue
+            merged = target.setdefault(index_name, {})
+            for key, value in index_value.items():
+                if index_name == "by_id":
+                    merged[str(key)] = value
+                elif isinstance(value, list):
+                    bucket = merged.setdefault(str(key), [])
+                    bucket.extend(str(item) for item in value)
+
+    @staticmethod
+    def _resolve_manifest_file(manifest_path: Path, file_info: Any) -> Path:
+        if not isinstance(file_info, dict):
+            return manifest_path.parent / "__missing__"
+        rel_path = str(file_info.get("path") or "")
+        path = Path(rel_path)
+        if path.is_absolute():
+            candidates = [path]
+        else:
+            candidates = [manifest_path.parent / path]
+        for candidate in list(candidates):
+            if candidate.suffix == ".gz":
+                candidates.append(candidate.with_suffix(""))
+            else:
+                candidates.append(Path(f"{candidate}.gz"))
+        for candidate in candidates:
+            if candidate.exists():
+                return candidate
+        return candidates[0]
+
+    @staticmethod
+    def _resolve_pack_file(index_path: Path, rel_path: Any) -> Path:
+        path = Path(str(rel_path or ""))
+        if path.is_absolute():
+            candidates = [path]
+        else:
+            candidates = [index_path.parent / path]
+        for candidate in list(candidates):
+            if candidate.suffix == ".gz":
+                candidates.append(candidate.with_suffix(""))
+            else:
+                candidates.append(Path(f"{candidate}.gz"))
+        for candidate in candidates:
+            if candidate.exists():
+                return candidate
+        return candidates[0]
 
     def _lookup_record_ids(self, vendor_key: str, model_key: str) -> Tuple[List[str], str]:
         composite = f"{vendor_key}|{model_key}" if vendor_key else ""
@@ -479,31 +757,41 @@ class HardwareEOLDatabase:
         focused = records
         used_specific_input = False
 
-        part_key = normalize_key(part_number)
-        if part_key:
+        part_keys = set(_lookup_key_variants(part_number))
+        if part_keys:
             exact_part = [
                 r for r in focused
-                if normalize_key(r.get("part_number")) == part_key
+                if part_keys.intersection(_lookup_key_variants(r.get("part_number")))
             ]
             if exact_part:
                 focused = exact_part
                 used_specific_input = True
 
-        hw_key = _normalize_version_key(hardware_version)
-        if hw_key:
+        hw_keys = {
+            _normalize_version_key(key)
+            for key in _lookup_key_variants(hardware_version)
+            if _normalize_version_key(key)
+        }
+        if hw_keys:
             exact_hw = [
                 r for r in focused
-                if _normalize_version_key(r.get("hardware_version")) == hw_key
+                if hw_keys.intersection(
+                    {
+                        _normalize_version_key(key)
+                        for key in _lookup_key_variants(r.get("hardware_version"))
+                        if _normalize_version_key(key)
+                    }
+                )
             ]
             if exact_hw:
                 focused = exact_hw
                 used_specific_input = True
 
-        region_key = normalize_key(region)
-        if region_key:
+        region_keys = set(_lookup_key_variants(region))
+        if region_keys:
             exact_region = [
                 r for r in focused
-                if normalize_key(r.get("region")) == region_key
+                if region_keys.intersection(_lookup_key_variants(r.get("region")))
             ]
             if exact_region:
                 focused = exact_region
@@ -662,7 +950,7 @@ class HardwareEOLDatabase:
     ) -> HardwareEOLMatch:
         display_vendor = (summary or {}).get("vendor") or vendor or vendor_key
         display_model = (summary or {}).get("model") or model
-        title = f"{display_vendor} {display_model} lifecycle review needed".strip()
+        title = f"{display_vendor} {display_model} {_review_title_suffix(records)}".strip()
         return HardwareEOLMatch(
             vendor=vendor,
             model=model,
