@@ -143,6 +143,7 @@ class InteractiveController:
         self.current_target: str = ""
         self.scan_history: List[Dict] = []
         self._last_scan_result: Optional[ScanResult] = None
+        self._user_requested_exit = False
 
         # Components
         self.nse_scanner: Optional[NSEScanner] = None
@@ -179,11 +180,11 @@ class InteractiveController:
 
         # Get initial target
         if not self.get_target_from_user():
-            return 1
+            return 0 if self._user_requested_exit else 1
 
         # Perform initial discovery
         if not self.discovery_scan():
-            return 1
+            return 0 if self._user_requested_exit else 1
 
         # Main menu loop
         while True:
@@ -236,6 +237,7 @@ class InteractiveController:
         self.console.print("  - Range:    192.168.1.1-100")
         self.console.print("  - List:     192.168.1.1,5,10")
         self.console.print("  - Hostname: router.local")
+        self.console.print("  - Quit:     q")
         self.console.print()
 
         while True:
@@ -243,6 +245,9 @@ class InteractiveController:
 
             if not target:
                 continue
+            if target.strip().lower() in {"q", "quit", "exit"}:
+                self._user_requested_exit = True
+                return False
 
             targets = parse_target_input(target)
 

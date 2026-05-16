@@ -26,6 +26,18 @@ def test_settings_menu_replaces_frozen_settings_and_rebuilds_components(monkeypa
     assert controller.banner_grabber.timeout == 7
 
 
+def test_initial_target_prompt_accepts_quit(monkeypatch):
+    controller = InteractiveController(settings=Settings(), no_color=True)
+
+    monkeypatch.setattr(
+        "ui.interactive_controller.Prompt.ask",
+        lambda *args, **kwargs: "q",
+    )
+
+    assert controller.get_target_from_user() is False
+    assert controller._user_requested_exit is True
+
+
 def test_tui_full_assessment_preserves_safe_mode_flags(monkeypatch):
     import sunsetscan
 

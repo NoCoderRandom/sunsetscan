@@ -2373,6 +2373,16 @@ class SunsetScan:
                         f"  {ip:<18} {risk.score:>3}/100  {risk.label}"
                     )
 
+            if getattr(self.settings, 'auto_save_history', True):
+                try:
+                    self.scan_history.save(
+                        scan_result,
+                        self.finding_registry,
+                        target=target,
+                    )
+                except Exception as e:
+                    logger.debug(f"History save failed: {e}")
+
             # Auto-export to HTML with timestamp
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             filename = f"sunsetscan_assessment_{timestamp}.html"

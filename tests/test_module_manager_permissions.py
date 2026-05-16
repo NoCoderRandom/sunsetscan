@@ -91,7 +91,7 @@ def test_hardware_eol_smart_profile_installed_requires_manifest_index_and_shards
     assert manager.is_installed("hardware-eol-office") is False
 
 
-def test_download_all_uses_full_smart_hardware_eol_profile(monkeypatch, tmp_path):
+def test_download_all_uses_full_smart_hardware_eol_profile_and_legacy(monkeypatch, tmp_path):
     _redirect_module_cache(monkeypatch, tmp_path)
     manager = ModuleManager()
     attempted = []
@@ -108,7 +108,7 @@ def test_download_all_uses_full_smart_hardware_eol_profile(monkeypatch, tmp_path
 
     manager.download_all(quiet=True)
 
-    assert "hardware-eol" not in attempted
+    assert "hardware-eol" in attempted
     assert "hardware-eol-home" not in attempted
     assert "hardware-eol-office" not in attempted
     assert "hardware-eol-full" in attempted
@@ -242,6 +242,110 @@ def test_hardware_eol_smart_profile_download_installs_only_selected_packs(
     assert f"{base_url}indexes/home.json.gz" in requested
     assert f"{base_url}indexes/office.json.gz" in requested
     assert f"{base_url}indexes/enterprise.json.gz" not in requested
+
+
+def test_full_hardware_eol_profile_records_implied_profile_metadata(
+    monkeypatch,
+    tmp_path,
+):
+    _redirect_module_cache(monkeypatch, tmp_path)
+
+    def gz_json(data):
+        return gzip.compress(json.dumps(data).encode("utf-8"))
+
+    def pack_artifacts(pack):
+        category = "network_infrastructure"
+        record_id = f"hw_{pack}_001"
+        index = {
+            "metadata": {"schema": "sunsetscan.hardware_eol.v1"},
+            "summary": {"total_records": 1},
+            "indexes": {"vendor_aliases": {}},
+            "model_summaries": [],
+            "record_locations": {record_id: category},
+            "record_shards": {
+                category: {
+                    "path": f"../records/{pack}/{category}.json.gz",
+                    "record_count": 1,
+                }
+            },
+        }
+        shard = {
+            "category": category,
+            "records": [{"id": record_id, "vendor_slug": pack}],
+            "positions": {record_id: 0},
+        }
+        return gz_json(index), gz_json(shard)
+
+    packs = ("home", "office", "enterprise", "industrial_ot", "service_provider")
+    pack_bytes = {pack: pack_artifacts(pack) for pack in packs}
+    manifest = {
+        "metadata": {"schema": "sunsetscan.hardware_eol.smart_packs.v1"},
+        "profiles": {
+            "hardware-eol-home": {"packs": ["home"]},
+            "hardware-eol-office": {"packs": ["home", "office"]},
+            "hardware-eol-enterprise": {"packs": ["home", "office", "enterprise"]},
+            "hardware-eol-industrial": {"packs": ["home", "office", "industrial_ot"]},
+            "hardware-eol-service-provider": {
+                "packs": ["home", "office", "enterprise", "service_provider"]
+            },
+            "hardware-eol-full": {
+                "packs": ["home", "office", "enterprise", "industrial_ot", "service_provider"]
+            },
+        },
+        "packs": {},
+    }
+    for pack, (index_bytes, shard_bytes) in pack_bytes.items():
+        manifest["packs"][pack] = {
+            "record_count": 1,
+            "index": {
+                "path": f"indexes/{pack}.json.gz",
+                "sha256": hashlib.sha256(index_bytes).hexdigest(),
+            },
+            "shards": {
+                "network_infrastructure": {
+                    "path": f"records/{pack}/network_infrastructure.json.gz",
+                    "sha256": hashlib.sha256(shard_bytes).hexdigest(),
+                }
+            },
+        }
+
+    manifest_url = module_manager.MODULE_REGISTRY["hardware-eol-full"]["url"]
+    base_url = manifest_url.rsplit("/", 1)[0] + "/"
+    payloads = {manifest_url: gz_json(manifest)}
+    for pack, (index_bytes, shard_bytes) in pack_bytes.items():
+        payloads[f"{base_url}indexes/{pack}.json.gz"] = index_bytes
+        payloads[f"{base_url}records/{pack}/network_infrastructure.json.gz"] = shard_bytes
+
+    class FakeResponse:
+        def __init__(self, content=b"", status_code=200):
+            self.content = content
+            self.status_code = status_code
+
+    class FakeSession:
+        def __init__(self):
+            self.headers = {}
+
+        def get(self, url, timeout=30):
+            if url not in payloads:
+                return FakeResponse(status_code=404)
+            return FakeResponse(payloads[url])
+
+    monkeypatch.setattr(requests, "Session", FakeSession)
+
+    manager = ModuleManager()
+
+    assert manager.download("hardware-eol-full", quiet=True) is True
+    for profile_name in (
+        "hardware-eol-home",
+        "hardware-eol-office",
+        "hardware-eol-enterprise",
+        "hardware-eol-industrial",
+        "hardware-eol-service-provider",
+        "hardware-eol-full",
+    ):
+        assert manager.is_installed(profile_name) is True
+        assert manager.get_installed_at(profile_name)
+        assert manager.is_expired(profile_name) is False
 
 
 def test_hardware_eol_smart_profile_hash_mismatch_leaves_profile_uninstalled(

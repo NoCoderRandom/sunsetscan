@@ -814,19 +814,12 @@ class ModuleManager:
                 indent = 2 if isinstance(parsed, list) else None
                 json.dump(parsed, f, indent=indent)
 
-            # Update metadata
-            self._meta[module_name] = {
-                "installed": True,
-                "version": "1.0",
-                "installed_at": datetime.now().isoformat(),
-                "source": info["source"],
-                "local_path": info["local_path"],
-                "entries": _entry_count(parsed, module_name),
-            }
-            if info.get("license"):
-                self._meta[module_name]["license"] = info["license"]
-            if info.get("license_url"):
-                self._meta[module_name]["license_url"] = info["license_url"]
+            # Update metadata. Full smart-pack installs also satisfy narrower
+            # smart-pack profiles, so record those profile timestamps too.
+            installed_at = datetime.now().isoformat()
+            self._mark_module_installed(module_name, info, parsed, installed_at)
+            if info.get("hardware_profile"):
+                self._mark_implied_hardware_profiles(module_name, parsed, installed_at)
             self._save_meta()
 
             if not quiet:
@@ -845,6 +838,54 @@ class ModuleManager:
                 print(f"  Download error: {e}")
             logger.error(f"Module download failed for {module_name}: {e}")
             return False
+
+    def _mark_module_installed(
+        self,
+        module_name: str,
+        info: Dict[str, Any],
+        parsed: Any,
+        installed_at: str,
+    ) -> None:
+        """Record install metadata for a downloaded module."""
+        self._meta[module_name] = {
+            "installed": True,
+            "version": "1.0",
+            "installed_at": installed_at,
+            "source": info["source"],
+            "local_path": info["local_path"],
+            "entries": _entry_count(parsed, module_name),
+        }
+        if info.get("license"):
+            self._meta[module_name]["license"] = info["license"]
+        if info.get("license_url"):
+            self._meta[module_name]["license_url"] = info["license_url"]
+
+    def _mark_implied_hardware_profiles(
+        self,
+        module_name: str,
+        parsed: Any,
+        installed_at: str,
+    ) -> None:
+        """Mark narrower hardware smart-pack profiles installed by a superset."""
+        source_info = MODULE_REGISTRY.get(module_name) or {}
+        installed_packs = set(source_info.get("packs") or [])
+        if not installed_packs or not isinstance(parsed, dict):
+            return
+
+        for profile_name, profile_info in MODULE_REGISTRY.items():
+            if not profile_info.get("hardware_profile"):
+                continue
+            profile_packs = set(profile_info.get("packs") or [])
+            if not profile_packs or not profile_packs.issubset(installed_packs):
+                continue
+            if not self._hardware_profile_installed(profile_info):
+                continue
+            self._mark_module_installed(
+                profile_name,
+                profile_info,
+                parsed,
+                installed_at,
+            )
 
     def _download_wappalyzer(self, session, quiet: bool = False) -> Dict:
         """Download and merge all Wappalyzer letter files."""
@@ -1062,7 +1103,7 @@ class ModuleManager:
         success = 0
         candidates = [
             (name, info) for name, info in MODULE_REGISTRY.items()
-            if not info.get("hardware_profile") and name != "hardware-eol"
+            if not info.get("hardware_profile")
         ]
         candidates.append(("hardware-eol-full", MODULE_REGISTRY["hardware-eol-full"]))
         pending = [
@@ -1076,10 +1117,7 @@ class ModuleManager:
             return 0
 
         for name, info in candidates:
-            if not info["default"] and not self.is_installed(name):
-                if self.download(name, quiet=quiet):
-                    success += 1
-            elif info["default"] and not self.is_installed(name):
+            if not self.is_installed(name):
                 if self.download(name, quiet=quiet):
                     success += 1
         return success
@@ -1118,11 +1156,15 @@ class ModuleManager:
             if not self.is_installed(name):
                 continue
             if self.is_expired(name):
+                previous_age = self._age_days(name)
                 if self.download(name, quiet=True):
                     results[name] = "updated"
-                    age_str = f"was {self._age_days(name)} days old" if self._age_days(name) else ""
                     if not quiet:
-                        print(f"  {name}: updated ({age_str})")
+                        if previous_age is None:
+                            detail = "metadata refreshed"
+                        else:
+                            detail = f"was {previous_age} days old"
+                        print(f"  {name}: updated ({detail})")
                 else:
                     results[name] = "failed"
                     if not quiet:

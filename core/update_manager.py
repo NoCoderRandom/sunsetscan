@@ -275,7 +275,6 @@ class UpdateManager:
         """Print a table of cache file ages and sizes."""
         print("\nSunsetScan Cache Status")
         print("=" * 55)
-        now = datetime.now(timezone.utc)
 
         def _age(ts_str: Optional[str]) -> str:
             if not ts_str:
@@ -283,9 +282,17 @@ class UpdateManager:
             try:
                 ts = datetime.fromisoformat(ts_str)
                 if ts.tzinfo is None:
-                    ts = ts.replace(tzinfo=timezone.utc)
-                delta = now - ts
+                    delta = datetime.now() - ts
+                else:
+                    delta = datetime.now(timezone.utc) - ts.astimezone(timezone.utc)
+                if delta.total_seconds() < 0:
+                    delta = abs(delta)
+                    if delta.total_seconds() < 300:
+                        return "just now"
+                    return "unknown"
                 h = int(delta.total_seconds() // 3600)
+                if h < 1:
+                    return "just now"
                 if h < 24:
                     return f"{h}h ago"
                 return f"{delta.days}d ago"
@@ -320,11 +327,40 @@ class UpdateManager:
         except Exception:
             pass
 
+        modules_meta_path = _CACHE_DIR / "modules.json"
+        modules_meta = {}
+        try:
+            if modules_meta_path.exists():
+                with open(modules_meta_path, "r", encoding="utf-8") as _f:
+                    modules_meta = json.load(_f)
+        except Exception:
+            modules_meta = {}
+
+        def _module_installed_at(*names: str) -> Optional[str]:
+            for module_name in names:
+                entry = modules_meta.get(module_name) or {}
+                installed_at = entry.get("installed_at")
+                if installed_at:
+                    return installed_at
+            return None
+
+        wappalyzer_last = (
+            self._meta.get("wappalyzer_last_updated")
+            or _module_installed_at("wappalyzer-full", "wappalyzer-mini")
+        )
+        ja3_last = (
+            self._meta.get("ja3_last_updated")
+            or _module_installed_at("ja3-signatures")
+        )
+        wappalyzer_path = _CACHE_DIR / "wappalyzer_tech.json"
+        if not wappalyzer_path.exists():
+            wappalyzer_path = _CACHE_DIR / "wappalyzer_mini.json"
+
         entries = [
             ("EOL cache (per-product)", _CACHE_DIR,                        eol_last),
             ("CVE cache",          _CACHE_DIR / "cve_cache.json",      cve_last),
-            ("Wappalyzer",         _CACHE_DIR / "wappalyzer_tech.json",self._meta.get("wappalyzer_last_updated")),
-            ("JA3 signatures",     _CACHE_DIR / "ja3_signatures.json", self._meta.get("ja3_last_updated")),
+            ("Wappalyzer",         wappalyzer_path, wappalyzer_last),
+            ("JA3 signatures",     _CACHE_DIR / "ja3_signatures.json", ja3_last),
         ]
         for name, path, last_ts in entries:
             exists = "[OK]" if path.exists() else "[--]"
