@@ -1,0 +1,2813 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SunsetScan Security Report — 192.0.2.212</title>
+<style>
+  /* ===== RESET & BASE ===== */
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  html { font-size: 15px; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+    line-height: 1.6; color: #1a1a2e; background: #f0f2f5;
+    overflow-x: hidden;
+  }
+  a { color: #2563eb; text-decoration: none; }
+  a:hover { text-decoration: underline; }
+
+  /* ===== LAYOUT ===== */
+  .page { width: 100%; max-width: 1300px; margin: 0 auto; padding: 20px; }
+
+  /* ===== HEADER ===== */
+  .report-header {
+    background: linear-gradient(135deg, #0f172a 0%, #1e3a5f 60%, #1e40af 100%);
+    color: #fff; border-radius: 12px 12px 0 0; padding: 32px 40px 28px;
+    display: flex; justify-content: space-between; align-items: flex-start;
+    flex-wrap: wrap; gap: 16px;
+  }
+  .report-header > div { min-width: 0; }
+  .report-header h1 { font-size: 1.9rem; font-weight: 700; letter-spacing: 0; overflow-wrap: anywhere; }
+  .report-header h1 span { color: #60a5fa; }
+  .report-header .subtitle { font-size: 0.85rem; color: #94a3b8; margin-top: 4px; }
+  .report-meta-right { text-align: right; font-size: 0.82rem; color: #94a3b8; }
+  .report-meta-right strong { color: #e2e8f0; font-size: 0.95rem; display: block; }
+
+  /* ===== METADATA BAR ===== */
+  .meta-bar {
+    background: #fff; border-left: 1px solid #e2e8f0; border-right: 1px solid #e2e8f0;
+    border-bottom: 1px solid #e2e8f0; padding: 16px 40px;
+    display: flex; flex-wrap: wrap; gap: 24px; font-size: 0.82rem; color: #64748b;
+  }
+  .meta-item { min-width: 0; }
+  .meta-item strong { display: block; color: #374151; font-size: 0.88rem; overflow-wrap: anywhere; }
+
+  /* ===== DASHBOARD ===== */
+  .dashboard {
+    background: #fff; border-radius: 0; border: 1px solid #e2e8f0;
+    border-top: none; padding: 28px 40px;
+  }
+  .dashboard-title {
+    font-size: 0.7rem; font-weight: 700; letter-spacing: 1.2px;
+    text-transform: uppercase; color: #6b7280; margin-bottom: 16px;
+  }
+  .severity-badges { display: flex; flex-wrap: wrap; gap: 12px; margin-bottom: 20px; }
+  .badge {
+    display: flex; align-items: center; gap: 8px;
+    padding: 10px 18px; border-radius: 8px;
+    font-weight: 700; font-size: 1rem; min-width: 110px;
+  }
+  .badge .count { font-size: 1.6rem; line-height: 1; }
+  .badge .label { font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.5px; opacity: 0.85; }
+  .badge.critical { background: #fee2e2; color: #dc2626; }
+  .badge.high     { background: #ffedd5; color: #ea580c; }
+  .badge.medium   { background: #fef3c7; color: #d97706; }
+  .badge.low      { background: #dbeafe; color: #2563eb; }
+  .badge.info     { background: #f3f4f6; color: #6b7280; }
+
+  /* Severity bar */
+  .severity-bar { display: flex; height: 10px; border-radius: 5px; overflow: hidden; background: #e5e7eb; }
+  .severity-bar .seg-critical { background: #dc2626; }
+  .severity-bar .seg-high     { background: #ea580c; }
+  .severity-bar .seg-medium   { background: #d97706; }
+  .severity-bar .seg-low      { background: #2563eb; }
+  .severity-bar .seg-info     { background: #9ca3af; }
+
+  /* Stats row */
+  .stats-row { display: flex; flex-wrap: wrap; gap: 16px; margin-top: 20px; }
+  .stat-card {
+    background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px;
+    padding: 12px 20px; min-width: 120px;
+  }
+  .stat-card .stat-num { font-size: 1.5rem; font-weight: 700; color: #0f172a; }
+  .stat-card .stat-lbl { font-size: 0.72rem; color: #6b7280; text-transform: uppercase; letter-spacing: 0.5px; }
+
+  /* ===== SECTION CARDS ===== */
+  .section {
+    background: #fff; border: 1px solid #e2e8f0; border-top: none;
+    padding: 32px 40px;
+  }
+  .section:last-of-type { border-radius: 0 0 12px 12px; }
+  .section-title {
+    font-size: 1rem; font-weight: 700; color: #0f172a; margin-bottom: 20px;
+    padding-bottom: 10px; border-bottom: 2px solid #e2e8f0;
+    display: flex; align-items: center; gap: 8px;
+  }
+
+  /* ===== FINDINGS SUMMARY TABLE ===== */
+  .findings-table { width: 100%; border-collapse: collapse; font-size: 0.84rem; }
+  .findings-table th {
+    background: #f8fafc; color: #374151; font-weight: 600; font-size: 0.75rem;
+    text-transform: uppercase; letter-spacing: 0.5px; padding: 10px 14px;
+    border-bottom: 2px solid #e2e8f0; text-align: left; white-space: nowrap;
+  }
+  .findings-table td { padding: 10px 14px; border-bottom: 1px solid #f1f5f9; vertical-align: top; }
+  .findings-table tr:hover td { background: #f8fafc; cursor: pointer; }
+  .findings-table .sev-badge {
+    display: inline-block; padding: 2px 9px; border-radius: 12px;
+    font-size: 0.7rem; font-weight: 700; text-transform: uppercase; white-space: nowrap;
+  }
+
+  /* ===== HOST SECTIONS ===== */
+  .host-section { margin-bottom: 24px; border: 1px solid #e2e8f0; border-radius: 10px; overflow: hidden; }
+  .host-header {
+    padding: 14px 20px; cursor: pointer; user-select: none;
+    display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px;
+    background: #f8fafc; border-bottom: 1px solid #e2e8f0;
+  }
+  .host-header:hover { background: #f1f5f9; }
+  .host-header .host-ip { font-size: 1rem; font-weight: 700; color: #0f172a; font-family: monospace; }
+  .host-header .host-name { font-size: 0.82rem; color: #6b7280; margin-left: 8px; }
+  .host-header .host-badges { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+  .host-header .toggle { color: #9ca3af; font-size: 1.2rem; transition: transform 0.2s; }
+  .host-body { padding: 20px; }
+  .host-meta { display: flex; flex-wrap: wrap; gap: 16px; margin-bottom: 16px; font-size: 0.82rem; color: #374151; }
+  .host-meta span { background: #f1f5f9; border-radius: 4px; padding: 3px 10px; }
+
+  /* ===== FINDING CARDS ===== */
+  .finding-card {
+    border: 1px solid #e5e7eb; border-radius: 8px; margin-bottom: 14px; overflow: hidden;
+  }
+  .finding-card-header {
+    display: flex; align-items: center; gap: 10px; padding: 11px 16px;
+    border-bottom: 1px solid #e5e7eb; background: #fafafa;
+  }
+  .finding-card-body { padding: 14px 16px; font-size: 0.85rem; }
+  .finding-title { font-weight: 600; color: #0f172a; font-size: 0.88rem; }
+  .finding-port { font-size: 0.75rem; color: #6b7280; font-family: monospace; margin-left: auto; }
+
+  .finding-section-lbl {
+    font-size: 0.7rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.8px;
+    color: #9ca3af; margin-top: 10px; margin-bottom: 4px;
+  }
+  .finding-text { color: #374151; line-height: 1.55; }
+  .finding-reco { color: #1e40af; line-height: 1.55; white-space: pre-line; }
+  .finding-evidence {
+    font-family: monospace; font-size: 0.78rem; color: #6b7280;
+    background: #f8fafc; border-radius: 4px; padding: 6px 10px; margin-top: 8px;
+    word-break: break-all; border: 1px solid #e5e7eb;
+  }
+  .cve-tag {
+    display: inline-block; background: #fee2e2; color: #dc2626;
+    border-radius: 4px; padding: 1px 7px; font-size: 0.72rem; font-weight: 600;
+    font-family: monospace; margin-right: 4px; margin-top: 4px;
+  }
+  .cvss-tag {
+    display: inline-block; border-radius: 4px; padding: 1px 7px;
+    font-size: 0.72rem; font-weight: 700; margin-right: 4px;
+  }
+
+  /* ===== OPEN PORTS TABLE ===== */
+  .ports-table { width: 100%; border-collapse: collapse; font-size: 0.82rem; margin-top: 16px; }
+  .ports-table th {
+    background: #f1f5f9; color: #374151; font-weight: 600; font-size: 0.73rem;
+    text-transform: uppercase; letter-spacing: 0.5px; padding: 7px 12px;
+    border-bottom: 1px solid #e2e8f0; text-align: left;
+  }
+  .ports-table td { padding: 7px 12px; border-bottom: 1px solid #f1f5f9; font-family: monospace; }
+  .ports-table tr:last-child td { border-bottom: none; }
+
+  /* ===== RECOMMENDATIONS ===== */
+  .reco-list { counter-reset: reco-counter; list-style: none; }
+  .reco-list li {
+    display: flex; gap: 14px; align-items: flex-start;
+    padding: 12px 0; border-bottom: 1px solid #f1f5f9;
+    font-size: 0.85rem;
+  }
+  .reco-list li:last-child { border-bottom: none; }
+  .reco-num {
+    counter-increment: reco-counter; min-width: 28px; height: 28px;
+    background: #1e40af; color: #fff; border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 0.75rem; font-weight: 700; flex-shrink: 0;
+  }
+  .reco-item-host { font-family: monospace; color: #2563eb; font-size: 0.78rem; }
+
+  /* ===== FOOTER ===== */
+  .report-footer {
+    text-align: center; padding: 20px; font-size: 0.78rem; color: #9ca3af;
+    margin-top: 8px;
+  }
+
+  /* ===== SEVERITY COLOUR HELPERS ===== */
+  .sev-critical { background: #fee2e2; color: #dc2626; }
+  .sev-high     { background: #ffedd5; color: #ea580c; }
+  .sev-medium   { background: #fef3c7; color: #d97706; }
+  .sev-low      { background: #dbeafe; color: #2563eb; }
+  .sev-info     { background: #f3f4f6; color: #6b7280; }
+
+  .border-critical { border-left: 4px solid #dc2626 !important; }
+  .border-high     { border-left: 4px solid #ea580c !important; }
+  .border-medium   { border-left: 4px solid #d97706 !important; }
+  .border-low      { border-left: 4px solid #2563eb !important; }
+  .border-info     { border-left: 4px solid #9ca3af !important; }
+
+  /* ===== EOL STATUS ===== */
+  .eol-critical { color: #dc2626; font-weight: 600; }
+  .eol-warning  { color: #d97706; font-weight: 600; }
+  .eol-ok       { color: #059669; }
+  .eol-unknown  { color: #9ca3af; }
+
+  /* ===== EXECUTIVE SUMMARY ===== */
+  .exec-summary {
+    background: #fff; border: 1px solid #e2e8f0; border-top: none; padding: 28px 40px;
+  }
+  .exec-summary-title {
+    font-size: 0.7rem; font-weight: 700; letter-spacing: 1.2px;
+    text-transform: uppercase; color: #6b7280; margin-bottom: 12px;
+  }
+  .exec-summary-headline {
+    font-size: 1.15rem; font-weight: 700; color: #0f172a; margin-bottom: 10px;
+    overflow-wrap: anywhere;
+  }
+  .exec-summary-body { font-size: 0.88rem; color: #374151; line-height: 1.7; overflow-wrap: anywhere; }
+  .exec-summary-body ul { margin: 8px 0 8px 24px; }
+  .exec-summary-body li { margin-bottom: 4px; }
+
+  /* ===== RISK SCORES ===== */
+  .risk-row { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 16px; }
+  .risk-card {
+    display: flex; align-items: center; gap: 14px;
+    background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 10px;
+    padding: 12px 18px; min-width: 200px;
+  }
+  .risk-score-circle {
+    width: 52px; height: 52px; border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 1.1rem; font-weight: 800; color: #fff; flex-shrink: 0;
+  }
+  .risk-card .risk-ip { font-family: monospace; font-weight: 700; font-size: 0.9rem; color: #0f172a; }
+  .risk-card > div:last-child { min-width: 0; }
+  .risk-card .risk-label { font-size: 0.74rem; color: #6b7280; margin-top: 2px; overflow-wrap: anywhere; }
+
+  /* ===== CONFIDENCE BADGES ===== */
+  .confidence-confirmed   { background: #d1fae5; color: #065f46; }
+  .confidence-likely      { background: #dbeafe; color: #1e40af; }
+  .confidence-suspected   { background: #fef3c7; color: #92400e; }
+  .confidence-unconfirmed { background: #f3f4f6; color: #6b7280; }
+
+  /* ===== DIFF SECTION ===== */
+  .diff-section { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 16px 20px; margin-bottom: 16px; }
+  .diff-added   { color: #059669; }
+  .diff-removed { color: #dc2626; }
+  .diff-changed { color: #d97706; }
+
+  /* ===== FIXED ISSUES (GREEN) ===== */
+  .fixed-section {
+    background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 8px;
+    padding: 16px 20px; margin-top: 16px;
+  }
+  .fixed-title { color: #166534; font-weight: 700; font-size: 0.85rem; margin-bottom: 8px; }
+  .fixed-item { color: #15803d; font-size: 0.82rem; padding: 2px 0; }
+
+  /* ===== NETWORK TOPOLOGY ===== */
+  .topology-grid { display: flex; flex-wrap: wrap; gap: 16px; margin-top: 12px; }
+  .topo-device {
+    background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 10px;
+    padding: 14px 18px; min-width: 180px; max-width: 240px;
+    display: flex; flex-direction: column; gap: 4px;
+  }
+  .topo-device.gateway { border-color: #3b82f6; background: #eff6ff; }
+  .topo-device-ip { font-family: monospace; font-weight: 700; font-size: 0.9rem; color: #0f172a; }
+  .topo-device-name { font-size: 0.78rem; color: #6b7280; }
+  .topo-device-ports { font-size: 0.72rem; color: #9ca3af; margin-top: 4px; overflow-wrap: anywhere; }
+  .topo-device-badge { font-size: 0.68rem; font-weight: 700; padding: 1px 6px; border-radius: 4px; width: fit-content; }
+  .topo-device-id { font-size: 0.76rem; color: #1e40af; font-weight: 600; margin-top: 2px; }
+  .topo-device-id-type { font-size: 0.7rem; color: #4b5563; font-style: italic; }
+
+  /* ===== DEVICE IDENTITY ===== */
+  .device-id-badge {
+    display: inline-flex; align-items: center; gap: 6px;
+    background: linear-gradient(135deg, #eff6ff 0%, #dbeafe 100%);
+    border: 1px solid #93c5fd; border-radius: 8px;
+    padding: 6px 14px; font-size: 0.82rem; color: #1e3a5f; font-weight: 600;
+  }
+  .device-id-badge .did-type { color: #3b82f6; font-weight: 700; }
+  .device-id-badge .did-conf { font-size: 0.7rem; color: #6b7280; font-weight: 400; }
+
+  /* ===== DEVICE INVENTORY TABLE ===== */
+  .inventory-table { width: 100%; border-collapse: collapse; font-size: 0.82rem; }
+  .inventory-table th {
+    background: #f1f5f9; color: #374151; font-weight: 700;
+    text-align: left; padding: 10px 14px; border-bottom: 2px solid #e2e8f0;
+    font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.5px;
+  }
+  .inventory-table td { padding: 8px 14px; border-bottom: 1px solid #f1f5f9; }
+  .inventory-table tr:hover { background: #f8fafc; }
+  .inventory-conf {
+    display: inline-block; min-width: 42px; text-align: center;
+    padding: 1px 8px; border-radius: 10px; font-size: 0.72rem; font-weight: 600;
+  }
+  .conf-high { background: #dcfce7; color: #166534; }
+  .conf-med  { background: #fef3c7; color: #92400e; }
+  .conf-low  { background: #f3f4f6; color: #6b7280; }
+
+  .empty-state {
+    color: #6b7280;
+    font-size: 0.88rem;
+    background: #f8fafc;
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+    padding: 14px 16px;
+  }
+
+  /* ===== POSTURE COLORS ===== */
+  .posture-critical { color: #dc2626; }
+  .posture-high     { color: #ea580c; }
+  .posture-medium   { color: #d97706; }
+  .posture-low      { color: #2563eb; }
+  .posture-clean    { color: #059669; }
+
+  /* ===== PRINT ===== */
+  @media print {
+    body { background: #fff; }
+    .page { padding: 0; }
+    .host-body { display: block !important; }
+    .toggle { display: none; }
+    .report-header { border-radius: 0; }
+  }
+
+  @media (max-width: 700px) {
+    html { font-size: 14px; }
+    .page { max-width: none; padding: 0; }
+    .report-header, .meta-bar, .dashboard, .exec-summary, .section {
+      width: 100%; max-width: 100%; overflow-x: hidden;
+    }
+    .report-header {
+      border-radius: 0; padding: 24px 20px;
+      flex-direction: column; align-items: flex-start;
+    }
+    .report-header h1 { font-size: 1.5rem; line-height: 1.25; }
+    .report-meta-right { text-align: left; }
+    .meta-bar, .dashboard, .exec-summary, .section { padding: 18px 20px; }
+    .meta-bar {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 14px 18px;
+    }
+    .severity-badges, .stats-row {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr);
+    }
+    .severity-badges, .stats-row, .risk-row, .topology-grid,
+    .exec-summary-headline, .exec-summary-body, .empty-state {
+      width: calc(100vw - 80px);
+      max-width: 100%;
+    }
+    .badge, .stat-card { min-width: 0; padding-left: 14px; padding-right: 14px; }
+    .risk-row, .topology-grid {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr);
+    }
+    .risk-card, .topo-device {
+      width: calc(100vw - 80px);
+      min-width: 0;
+      max-width: 100%;
+    }
+    .exec-summary-body p, .exec-summary-body li, .section-title {
+      width: calc(100vw - 80px);
+      max-width: 100%;
+      overflow-wrap: anywhere;
+    }
+    .host-header { align-items: flex-start; }
+    .host-header .host-name { display: block; margin-left: 0; margin-top: 2px; }
+    .finding-card-header { flex-wrap: wrap; align-items: flex-start; }
+    .finding-title { min-width: 0; overflow-wrap: anywhere; }
+    .finding-port { margin-left: 0; }
+    .reco-list li { gap: 10px; }
+  }
+</style>
+</head>
+<body>
+<div class="page">
+
+  <!-- ====== HEADER ====== -->
+  <div class="report-header">
+    <div>
+      <h1>Sunset<span>Scan</span> Security Report</h1>
+      <div class="subtitle">Network Security &amp; Lifecycle Assessment Tool &bull; v2.1.0</div>
+    </div>
+    <div class="report-meta-right">
+      <strong>192.0.2.212</strong>
+      2026-05-28 14:27:20<br>
+      Profile: FULL
+    </div>
+  </div>
+
+  <!-- ====== METADATA BAR ====== -->
+  <div class="meta-bar">
+    <div class="meta-item"><strong>2026-05-28 14:27:20</strong>Scan Date</div>
+    <div class="meta-item"><strong>2m 15s</strong>Duration</div>
+    <div class="meta-item"><strong>FULL</strong>Scan Profile</div>
+    <div class="meta-item"><strong>1 / 1</strong>Hosts Up</div>
+    <div class="meta-item"><strong>47</strong>Total Findings</div>
+    <div class="meta-item"><strong>v2.1.0</strong>SunsetScan Version</div>
+  </div>
+
+  <!-- ====== DASHBOARD ====== -->
+  <div class="dashboard">
+    <div class="dashboard-title">Severity Dashboard</div>
+
+    <div class="severity-badges">
+      <div class="badge critical">
+        <div><div class="count">1</div><div class="label">Critical</div></div>
+      </div>
+      <div class="badge high">
+        <div><div class="count">7</div><div class="label">High</div></div>
+      </div>
+      <div class="badge medium">
+        <div><div class="count">19</div><div class="label">Medium</div></div>
+      </div>
+      <div class="badge low">
+        <div><div class="count">5</div><div class="label">Low</div></div>
+      </div>
+      <div class="badge info">
+        <div><div class="count">15</div><div class="label">Info</div></div>
+      </div>
+    </div>
+
+    
+    
+    <div class="severity-bar">
+      <div class="seg-critical" style="width:2.1%"></div>
+          <div class="seg-high"     style="width:14.9%"></div>
+        <div class="seg-medium"   style="width:40.4%"></div>
+           <div class="seg-low"      style="width:10.6%"></div>
+          <div class="seg-info"     style="width:31.9%"></div>
+    </div>
+    
+
+    <div class="stats-row">
+      <div class="stat-card"><div class="stat-num">1</div><div class="stat-lbl">Hosts Scanned</div></div>
+      <div class="stat-card"><div class="stat-num">1</div><div class="stat-lbl">Hosts Online</div></div>
+      <div class="stat-card"><div class="stat-num">13</div><div class="stat-lbl">Open Ports</div></div>
+      <div class="stat-card"><div class="stat-num">47</div><div class="stat-lbl">Total Findings</div></div>
+    </div>
+  </div>
+
+  <!-- ====== EXECUTIVE SUMMARY ====== -->
+  <div class="exec-summary">
+    <div class="exec-summary-title">&#128196; Executive Summary</div>
+    
+    <div class="exec-summary-headline posture-critical">
+      Immediate action required — 1 critical issue(s) detected
+    </div>
+    <div class="exec-summary-body">
+      <p>SunsetScan scanned 1 active device(s) on 192.0.2.212 using the FULL profile and found 38 device finding(s); 9 network-level check(s) were recorded. Devices online: 192.0.2.212 (Linux 4.15 - 5.6).</p>
+      
+      <ul>
+        
+        <li>1 critical finding(s) — requires immediate remediation</li>
+        
+        <li>7 high-severity finding(s) — remediate within 7 days</li>
+        
+        <li>19 medium-severity finding(s) — schedule for next maintenance window</li>
+        
+        <li>5 low-severity finding(s) — address when convenient</li>
+        
+        <li>Category with most issues: Authentication (2 finding(s))</li>
+        
+        <li>Category with most issues: SSH (2 finding(s))</li>
+        
+        <li>Category with most issues: End-of-Life Software (2 finding(s))</li>
+        
+        <li>Highest-risk device: 192.0.2.212 — Risk score 100/100 (Critical Risk)</li>
+        
+      </ul>
+      
+      
+      <p style="margin-top:8px;"><strong>Recommended next step:</strong> Immediately address critical findings: change default credentials, disable SMBv1, and apply available security patches. Isolate any device with a CRITICAL finding until remediated.</p>
+      
+    </div>
+
+    
+
+    
+
+    
+    <div style="margin-top:16px;">
+      <div class="exec-summary-title" style="margin-bottom:8px;">&#127919; Device Risk Scores</div>
+      <div class="risk-row">
+        
+        <div class="risk-card">
+          <div class="risk-score-circle" style="background:#dc2626;">100</div>
+          <div>
+            <div class="risk-ip">192.0.2.212</div>
+            <div class="risk-label">Critical Risk</div>
+            <div class="risk-label">38 finding(s)</div>
+            
+            <div class="risk-label risk-top-findings" style="margin-top:2px;" title="Anonymous FTP login allowed on port 2121, Login form on plain HTTP — credentials sent in cleartext">
+              Top: Anonymous FTP login allowed on port 2121, Login form on plain HTTP — credentials sent...
+            </div>
+            
+          </div>
+        </div>
+        
+        <div class="risk-card">
+          <div class="risk-score-circle" style="background:#2563eb;">12</div>
+          <div>
+            <div class="risk-ip">192.0.2.1</div>
+            <div class="risk-label">Low Risk</div>
+            <div class="risk-label">2 finding(s)</div>
+            
+            <div class="risk-label risk-top-findings" style="margin-top:2px;" title="UPnP Internet Gateway Device (router) found at 192.0.2.1, UPnP device found: RT-AX92U-7130">
+              Top: UPnP Internet Gateway Device (router) found..., UPnP device found: RT-AX92U-7130
+            </div>
+            
+          </div>
+        </div>
+        
+        <div class="risk-card">
+          <div class="risk-score-circle" style="background:#2563eb;">12</div>
+          <div>
+            <div class="risk-ip">192.0.2.61</div>
+            <div class="risk-label">Low Risk</div>
+            <div class="risk-label">3 finding(s)</div>
+            
+            <div class="risk-label risk-top-findings" style="margin-top:2px;" title="UPnP-enabled device at 192.0.2.61: Nas (DS224+), mDNS-only device discovered: 192.0.2.61 [Nas.local.]">
+              Top: UPnP-enabled device at 192.0.2.61: Nas (DS224+), mDNS-only device discovered: 192.0.2.61...
+            </div>
+            
+          </div>
+        </div>
+        
+        <div class="risk-card">
+          <div class="risk-score-circle" style="background:#16a34a;">7</div>
+          <div>
+            <div class="risk-ip">192.0.2.181</div>
+            <div class="risk-label">Minimal Risk</div>
+            <div class="risk-label">1 finding(s)</div>
+            
+            <div class="risk-label risk-top-findings" style="margin-top:2px;" title="mDNS-only device discovered: 192.0.2.181 [Sovrum]">
+              Top: mDNS-only device discovered: 192.0.2.181 [Sovrum]
+            </div>
+            
+          </div>
+        </div>
+        
+        <div class="risk-card">
+          <div class="risk-score-circle" style="background:#16a34a;">5</div>
+          <div>
+            <div class="risk-ip">192.0.2.84</div>
+            <div class="risk-label">Minimal Risk</div>
+            <div class="risk-label">2 finding(s)</div>
+            
+            <div class="risk-label risk-top-findings" style="margin-top:2px;" title="UPnP-enabled device at 192.0.2.84: WPS Access Point, UPnP device found: WPS Access Point">
+              Top: UPnP-enabled device at 192.0.2.84: WPS..., UPnP device found: WPS Access Point
+            </div>
+            
+          </div>
+        </div>
+        
+      </div>
+    </div>
+    
+
+    
+  </div>
+
+  <!-- ====== NETWORK TOPOLOGY ====== -->
+  <div class="section">
+    <div class="section-title">&#127760; Network Topology</div>
+    
+    
+      
+    
+    
+    <div class="topology-grid">
+      
+      
+      
+      <div class="topo-device ">
+        <div class="topo-device-ip">192.0.2.212</div>
+        
+        
+        <div class="topo-device-id-type">Router</div>
+        <div class="topo-device-id">TP-Link Archer C7</div>
+        <div class="topo-device-name" style="font-family:monospace;">v3.15.1 Build 160616</div>
+        <div class="topo-device-name">LabPi</div>
+        
+        <div class="topo-device-name" style="font-family:monospace;">02:00:00:E1:22:A8</div>
+        
+        
+        
+          <div class="topo-device-badge sev-critical">1 Critical</div>
+        
+        
+        
+        <div class="topo-device-ports">Risk: 100/100 — Critical Risk</div>
+        
+        <div class="topo-device-ports">13 open port(s): 22, 53, 80, 443, 2121, 2222, 2323, 5000, 5555, 8080, 8088, 8089, 8090</div>
+      </div>
+      
+      
+    </div>
+    
+  </div>
+
+  <!-- ====== DEVICE INVENTORY ====== -->
+  <div class="section">
+    <div class="section-title">&#128270; Device Inventory</div>
+    
+    <div style="overflow-x:auto;">
+      <table class="inventory-table">
+        <thead>
+          <tr>
+            <th>IP Address</th>
+            <th>Name</th>
+            <th>Type</th>
+            <th>Vendor</th>
+            <th>Model</th>
+            <th>Version</th>
+            <th>Firmware EOL</th>
+            <th>Confidence</th>
+            <th>Sources</th>
+          </tr>
+        </thead>
+        <tbody>
+          
+          
+          <tr onclick="scrollToHost('192.0.2.212')" style="cursor:pointer;" title="Click to go to host section">
+            <td style="font-family:monospace; font-weight:600;">192.0.2.212</td>
+            <td>LabPi</td>
+            <td>Router</td>
+            <td style="font-weight:600;">TP-Link</td>
+            <td>Archer C7</td>
+            <td style="font-family:monospace;">3.15.1 Build 160616</td>
+            <td>
+              
+              
+                <span style="color:#9ca3af;">—</span>
+              
+            </td>
+            <td>
+              
+              <span class="inventory-conf conf-high">100%</span>
+            </td>
+            <td style="font-size:0.72rem; color:#6b7280;">active:credentials_model_index, active:http_fingerprint, mdns, oui, history</td>
+          </tr>
+          
+        </tbody>
+      </table>
+    </div>
+    
+  </div>
+
+  <!-- ====== FINDINGS SUMMARY TABLE ====== -->
+  
+  <div class="section">
+    <div class="section-title">&#9881; All Findings (sorted by severity)</div>
+    <div style="overflow-x:auto;">
+      <table class="findings-table" id="findings-table">
+        <thead>
+          <tr>
+            <th>Severity</th>
+            <th>Host</th>
+            <th>Port</th>
+            <th>Category</th>
+            <th>Finding</th>
+          </tr>
+        </thead>
+        <tbody>
+          
+          <tr onclick="scrollToHost('192.0.2.212')" title="Click to go to host section">
+            <td><span class="sev-badge sev-critical">CRITICAL</span></td>
+            <td style="font-family:monospace; white-space:nowrap;">192.0.2.212</td>
+            <td style="font-family:monospace; white-space:nowrap;">2121/FTP</td>
+            <td style="white-space:nowrap; font-size:0.78rem; color:#6b7280;">Authentication</td>
+            <td>Anonymous FTP login allowed on port 2121</td>
+          </tr>
+          
+          <tr title="Network-level finding">
+            <td><span class="sev-badge sev-high">HIGH</span></td>
+            <td style="font-family:monospace; white-space:nowrap;">192.0.2.1</td>
+            <td style="font-family:monospace; white-space:nowrap;">1900/UDP</td>
+            <td style="white-space:nowrap; font-size:0.78rem; color:#6b7280;">UPnP</td>
+            <td>UPnP Internet Gateway Device (router) found at 192.0.2.1</td>
+          </tr>
+          
+          <tr onclick="scrollToHost('192.0.2.212')" title="Click to go to host section">
+            <td><span class="sev-badge sev-high">HIGH</span></td>
+            <td style="font-family:monospace; white-space:nowrap;">192.0.2.212</td>
+            <td style="font-family:monospace; white-space:nowrap;"></td>
+            <td style="white-space:nowrap; font-size:0.78rem; color:#6b7280;">Hardware Lifecycle</td>
+            <td>TP-Link Archer C7 no longer receives security updates</td>
+          </tr>
+          
+          <tr onclick="scrollToHost('192.0.2.212')" title="Click to go to host section">
+            <td><span class="sev-badge sev-high">HIGH</span></td>
+            <td style="font-family:monospace; white-space:nowrap;">192.0.2.212</td>
+            <td style="font-family:monospace; white-space:nowrap;">22/SSH</td>
+            <td style="white-space:nowrap; font-size:0.78rem; color:#6b7280;">SSH</td>
+            <td>SSH weak MAC algorithms supported on port 22</td>
+          </tr>
+          
+          <tr onclick="scrollToHost('192.0.2.212')" title="Click to go to host section">
+            <td><span class="sev-badge sev-high">HIGH</span></td>
+            <td style="font-family:monospace; white-space:nowrap;">192.0.2.212</td>
+            <td style="font-family:monospace; white-space:nowrap;">22/SSH</td>
+            <td style="white-space:nowrap; font-size:0.78rem; color:#6b7280;">SSH</td>
+            <td>SSH weak ciphers supported on port 22</td>
+          </tr>
+          
+          <tr onclick="scrollToHost('192.0.2.212')" title="Click to go to host section">
+            <td><span class="sev-badge sev-high">HIGH</span></td>
+            <td style="font-family:monospace; white-space:nowrap;">192.0.2.212</td>
+            <td style="font-family:monospace; white-space:nowrap;">8080/HTTP</td>
+            <td style="white-space:nowrap; font-size:0.78rem; color:#6b7280;">Authentication</td>
+            <td>Login form on plain HTTP — credentials sent in cleartext</td>
+          </tr>
+          
+          <tr onclick="scrollToHost('192.0.2.212')" title="Click to go to host section">
+            <td><span class="sev-badge sev-high">HIGH</span></td>
+            <td style="font-family:monospace; white-space:nowrap;">192.0.2.212</td>
+            <td style="font-family:monospace; white-space:nowrap;">8080/TCP</td>
+            <td style="white-space:nowrap; font-size:0.78rem; color:#6b7280;">End-of-Life Software</td>
+            <td>End-of-Life software: nginx 1.14.0</td>
+          </tr>
+          
+          <tr onclick="scrollToHost('192.0.2.212')" title="Click to go to host section">
+            <td><span class="sev-badge sev-high">HIGH</span></td>
+            <td style="font-family:monospace; white-space:nowrap;">192.0.2.212</td>
+            <td style="font-family:monospace; white-space:nowrap;">8088/TCP</td>
+            <td style="white-space:nowrap; font-size:0.78rem; color:#6b7280;">End-of-Life Software</td>
+            <td>End-of-Life software: nginx 1.14.0</td>
+          </tr>
+          
+          <tr title="Network-level finding">
+            <td><span class="sev-badge sev-medium">MEDIUM</span></td>
+            <td style="font-family:monospace; white-space:nowrap;">192.0.2.61</td>
+            <td style="font-family:monospace; white-space:nowrap;">445/UDP</td>
+            <td style="white-space:nowrap; font-size:0.78rem; color:#6b7280;">mDNS Discovery</td>
+            <td>mDNS-only device discovered: 192.0.2.61 [Nas.local.]</td>
+          </tr>
+          
+          <tr title="Network-level finding">
+            <td><span class="sev-badge sev-medium">MEDIUM</span></td>
+            <td style="font-family:monospace; white-space:nowrap;">192.0.2.61</td>
+            <td style="font-family:monospace; white-space:nowrap;">1900/UDP</td>
+            <td style="white-space:nowrap; font-size:0.78rem; color:#6b7280;">UPnP</td>
+            <td>UPnP-enabled device at 192.0.2.61: Nas (DS224+)</td>
+          </tr>
+          
+          <tr title="Network-level finding">
+            <td><span class="sev-badge sev-medium">MEDIUM</span></td>
+            <td style="font-family:monospace; white-space:nowrap;">192.0.2.84</td>
+            <td style="font-family:monospace; white-space:nowrap;">1900/UDP</td>
+            <td style="white-space:nowrap; font-size:0.78rem; color:#6b7280;">UPnP</td>
+            <td>UPnP-enabled device at 192.0.2.84: WPS Access Point</td>
+          </tr>
+          
+          <tr title="Network-level finding">
+            <td><span class="sev-badge sev-medium">MEDIUM</span></td>
+            <td style="font-family:monospace; white-space:nowrap;">192.0.2.181</td>
+            <td style="font-family:monospace; white-space:nowrap;">5353/UDP</td>
+            <td style="white-space:nowrap; font-size:0.78rem; color:#6b7280;">mDNS Discovery</td>
+            <td>mDNS-only device discovered: 192.0.2.181 [Sovrum]</td>
+          </tr>
+          
+          <tr onclick="scrollToHost('192.0.2.212')" title="Click to go to host section">
+            <td><span class="sev-badge sev-medium">MEDIUM</span></td>
+            <td style="font-family:monospace; white-space:nowrap;">192.0.2.212</td>
+            <td style="font-family:monospace; white-space:nowrap;">80/HTTP</td>
+            <td style="white-space:nowrap; font-size:0.78rem; color:#6b7280;">Web Interface</td>
+            <td>Admin panel paths found on port 80</td>
+          </tr>
+          
+          <tr onclick="scrollToHost('192.0.2.212')" title="Click to go to host section">
+            <td><span class="sev-badge sev-medium">MEDIUM</span></td>
+            <td style="font-family:monospace; white-space:nowrap;">192.0.2.212</td>
+            <td style="font-family:monospace; white-space:nowrap;">443/HTTPS</td>
+            <td style="white-space:nowrap; font-size:0.78rem; color:#6b7280;">HTTP Security Headers</td>
+            <td>Missing HSTS header</td>
+          </tr>
+          
+          <tr onclick="scrollToHost('192.0.2.212')" title="Click to go to host section">
+            <td><span class="sev-badge sev-medium">MEDIUM</span></td>
+            <td style="font-family:monospace; white-space:nowrap;">192.0.2.212</td>
+            <td style="font-family:monospace; white-space:nowrap;">443/HTTPS</td>
+            <td style="white-space:nowrap; font-size:0.78rem; color:#6b7280;">Web Interface</td>
+            <td>Admin panel paths found on port 443</td>
+          </tr>
+          
+          <tr onclick="scrollToHost('192.0.2.212')" title="Click to go to host section">
+            <td><span class="sev-badge sev-medium">MEDIUM</span></td>
+            <td style="font-family:monospace; white-space:nowrap;">192.0.2.212</td>
+            <td style="font-family:monospace; white-space:nowrap;">2121/FTP</td>
+            <td style="white-space:nowrap; font-size:0.78rem; color:#6b7280;">Encryption</td>
+            <td>FTP has no TLS support (cleartext credentials) on port 2121</td>
+          </tr>
+          
+          <tr onclick="scrollToHost('192.0.2.212')" title="Click to go to host section">
+            <td><span class="sev-badge sev-medium">MEDIUM</span></td>
+            <td style="font-family:monospace; white-space:nowrap;">192.0.2.212</td>
+            <td style="font-family:monospace; white-space:nowrap;">8080/TCP</td>
+            <td style="white-space:nowrap; font-size:0.78rem; color:#6b7280;">Known Vulnerabilities (CVE)</td>
+            <td>Known vulnerability: ALPINE-CVE-2018-16843 in nginx 1.14.0</td>
+          </tr>
+          
+          <tr onclick="scrollToHost('192.0.2.212')" title="Click to go to host section">
+            <td><span class="sev-badge sev-medium">MEDIUM</span></td>
+            <td style="font-family:monospace; white-space:nowrap;">192.0.2.212</td>
+            <td style="font-family:monospace; white-space:nowrap;">8080/TCP</td>
+            <td style="white-space:nowrap; font-size:0.78rem; color:#6b7280;">Known Vulnerabilities (CVE)</td>
+            <td>Known vulnerability: ALPINE-CVE-2018-16844 in nginx 1.14.0</td>
+          </tr>
+          
+          <tr onclick="scrollToHost('192.0.2.212')" title="Click to go to host section">
+            <td><span class="sev-badge sev-medium">MEDIUM</span></td>
+            <td style="font-family:monospace; white-space:nowrap;">192.0.2.212</td>
+            <td style="font-family:monospace; white-space:nowrap;">8080/TCP</td>
+            <td style="white-space:nowrap; font-size:0.78rem; color:#6b7280;">Known Vulnerabilities (CVE)</td>
+            <td>Known vulnerability: ALPINE-CVE-2018-16845 in nginx 1.14.0</td>
+          </tr>
+          
+          <tr onclick="scrollToHost('192.0.2.212')" title="Click to go to host section">
+            <td><span class="sev-badge sev-medium">MEDIUM</span></td>
+            <td style="font-family:monospace; white-space:nowrap;">192.0.2.212</td>
+            <td style="font-family:monospace; white-space:nowrap;">8080/TCP</td>
+            <td style="white-space:nowrap; font-size:0.78rem; color:#6b7280;">Known Vulnerabilities (CVE)</td>
+            <td>Known vulnerability: ALPINE-CVE-2019-20372 in nginx 1.14.0</td>
+          </tr>
+          
+          <tr onclick="scrollToHost('192.0.2.212')" title="Click to go to host section">
+            <td><span class="sev-badge sev-medium">MEDIUM</span></td>
+            <td style="font-family:monospace; white-space:nowrap;">192.0.2.212</td>
+            <td style="font-family:monospace; white-space:nowrap;">8080/TCP</td>
+            <td style="white-space:nowrap; font-size:0.78rem; color:#6b7280;">Known Vulnerabilities (CVE)</td>
+            <td>Known vulnerability: ALPINE-CVE-2019-9511 in nginx 1.14.0</td>
+          </tr>
+          
+          <tr onclick="scrollToHost('192.0.2.212')" title="Click to go to host section">
+            <td><span class="sev-badge sev-medium">MEDIUM</span></td>
+            <td style="font-family:monospace; white-space:nowrap;">192.0.2.212</td>
+            <td style="font-family:monospace; white-space:nowrap;">8080/HTTP</td>
+            <td style="white-space:nowrap; font-size:0.78rem; color:#6b7280;">Web Interface</td>
+            <td>Admin panel paths found on port 8080</td>
+          </tr>
+          
+          <tr onclick="scrollToHost('192.0.2.212')" title="Click to go to host section">
+            <td><span class="sev-badge sev-medium">MEDIUM</span></td>
+            <td style="font-family:monospace; white-space:nowrap;">192.0.2.212</td>
+            <td style="font-family:monospace; white-space:nowrap;">8088/TCP</td>
+            <td style="white-space:nowrap; font-size:0.78rem; color:#6b7280;">Known Vulnerabilities (CVE)</td>
+            <td>Known vulnerability: ALPINE-CVE-2018-16843 in nginx 1.14.0</td>
+          </tr>
+          
+          <tr onclick="scrollToHost('192.0.2.212')" title="Click to go to host section">
+            <td><span class="sev-badge sev-medium">MEDIUM</span></td>
+            <td style="font-family:monospace; white-space:nowrap;">192.0.2.212</td>
+            <td style="font-family:monospace; white-space:nowrap;">8088/TCP</td>
+            <td style="white-space:nowrap; font-size:0.78rem; color:#6b7280;">Known Vulnerabilities (CVE)</td>
+            <td>Known vulnerability: ALPINE-CVE-2018-16844 in nginx 1.14.0</td>
+          </tr>
+          
+          <tr onclick="scrollToHost('192.0.2.212')" title="Click to go to host section">
+            <td><span class="sev-badge sev-medium">MEDIUM</span></td>
+            <td style="font-family:monospace; white-space:nowrap;">192.0.2.212</td>
+            <td style="font-family:monospace; white-space:nowrap;">8088/TCP</td>
+            <td style="white-space:nowrap; font-size:0.78rem; color:#6b7280;">Known Vulnerabilities (CVE)</td>
+            <td>Known vulnerability: ALPINE-CVE-2018-16845 in nginx 1.14.0</td>
+          </tr>
+          
+          <tr onclick="scrollToHost('192.0.2.212')" title="Click to go to host section">
+            <td><span class="sev-badge sev-medium">MEDIUM</span></td>
+            <td style="font-family:monospace; white-space:nowrap;">192.0.2.212</td>
+            <td style="font-family:monospace; white-space:nowrap;">8088/TCP</td>
+            <td style="white-space:nowrap; font-size:0.78rem; color:#6b7280;">Known Vulnerabilities (CVE)</td>
+            <td>Known vulnerability: ALPINE-CVE-2019-20372 in nginx 1.14.0</td>
+          </tr>
+          
+          <tr onclick="scrollToHost('192.0.2.212')" title="Click to go to host section">
+            <td><span class="sev-badge sev-medium">MEDIUM</span></td>
+            <td style="font-family:monospace; white-space:nowrap;">192.0.2.212</td>
+            <td style="font-family:monospace; white-space:nowrap;">8088/TCP</td>
+            <td style="white-space:nowrap; font-size:0.78rem; color:#6b7280;">Known Vulnerabilities (CVE)</td>
+            <td>Known vulnerability: ALPINE-CVE-2019-9511 in nginx 1.14.0</td>
+          </tr>
+          
+          <tr onclick="scrollToHost('192.0.2.212')" title="Click to go to host section">
+            <td><span class="sev-badge sev-low">LOW</span></td>
+            <td style="font-family:monospace; white-space:nowrap;">192.0.2.212</td>
+            <td style="font-family:monospace; white-space:nowrap;">443/HTTPS</td>
+            <td style="white-space:nowrap; font-size:0.78rem; color:#6b7280;">SSL/TLS</td>
+            <td>TLS certificate expiring in 41 days</td>
+          </tr>
+          
+          <tr onclick="scrollToHost('192.0.2.212')" title="Click to go to host section">
+            <td><span class="sev-badge sev-low">LOW</span></td>
+            <td style="font-family:monospace; white-space:nowrap;">192.0.2.212</td>
+            <td style="font-family:monospace; white-space:nowrap;">2222/SSH</td>
+            <td style="white-space:nowrap; font-size:0.78rem; color:#6b7280;">SSH</td>
+            <td>SSH algorithm enumeration failed on port 2222 — manual verification recommended</td>
+          </tr>
+          
+          <tr onclick="scrollToHost('192.0.2.212')" title="Click to go to host section">
+            <td><span class="sev-badge sev-low">LOW</span></td>
+            <td style="font-family:monospace; white-space:nowrap;">192.0.2.212</td>
+            <td style="font-family:monospace; white-space:nowrap;">8080/HTTP</td>
+            <td style="white-space:nowrap; font-size:0.78rem; color:#6b7280;">HTTP Security Headers</td>
+            <td>Missing Content-Security-Policy header</td>
+          </tr>
+          
+          <tr onclick="scrollToHost('192.0.2.212')" title="Click to go to host section">
+            <td><span class="sev-badge sev-low">LOW</span></td>
+            <td style="font-family:monospace; white-space:nowrap;">192.0.2.212</td>
+            <td style="font-family:monospace; white-space:nowrap;">8080/HTTP</td>
+            <td style="white-space:nowrap; font-size:0.78rem; color:#6b7280;">HTTP Security Headers</td>
+            <td>Missing X-Content-Type-Options header</td>
+          </tr>
+          
+          <tr onclick="scrollToHost('192.0.2.212')" title="Click to go to host section">
+            <td><span class="sev-badge sev-low">LOW</span></td>
+            <td style="font-family:monospace; white-space:nowrap;">192.0.2.212</td>
+            <td style="font-family:monospace; white-space:nowrap;">8080/HTTP</td>
+            <td style="white-space:nowrap; font-size:0.78rem; color:#6b7280;">HTTP Security Headers</td>
+            <td>Missing X-Frame-Options header</td>
+          </tr>
+          
+          <tr title="Network-level finding">
+            <td><span class="sev-badge sev-info">INFO</span></td>
+            <td style="font-family:monospace; white-space:nowrap;">192.0.2.1</td>
+            <td style="font-family:monospace; white-space:nowrap;">1900/UDP</td>
+            <td style="white-space:nowrap; font-size:0.78rem; color:#6b7280;">UPnP</td>
+            <td>UPnP device found: RT-AX92U-7130</td>
+          </tr>
+          
+          <tr title="Network-level finding">
+            <td><span class="sev-badge sev-info">INFO</span></td>
+            <td style="font-family:monospace; white-space:nowrap;">192.0.2.61</td>
+            <td style="font-family:monospace; white-space:nowrap;">1900/UDP</td>
+            <td style="white-space:nowrap; font-size:0.78rem; color:#6b7280;">UPnP</td>
+            <td>UPnP device found: Nas (DS224+)</td>
+          </tr>
+          
+          <tr title="Network-level finding">
+            <td><span class="sev-badge sev-info">INFO</span></td>
+            <td style="font-family:monospace; white-space:nowrap;">192.0.2.84</td>
+            <td style="font-family:monospace; white-space:nowrap;">1900/UDP</td>
+            <td style="white-space:nowrap; font-size:0.78rem; color:#6b7280;">UPnP</td>
+            <td>UPnP device found: WPS Access Point</td>
+          </tr>
+          
+          <tr onclick="scrollToHost('192.0.2.212')" title="Click to go to host section">
+            <td><span class="sev-badge sev-info">INFO</span></td>
+            <td style="font-family:monospace; white-space:nowrap;">192.0.2.212</td>
+            <td style="font-family:monospace; white-space:nowrap;"></td>
+            <td style="white-space:nowrap; font-size:0.78rem; color:#6b7280;">Device Identification</td>
+            <td>Device identified: Router — TP-Link — Archer C7 — v3.15.1 Build 160616</td>
+          </tr>
+          
+          <tr onclick="scrollToHost('192.0.2.212')" title="Click to go to host section">
+            <td><span class="sev-badge sev-info">INFO</span></td>
+            <td style="font-family:monospace; white-space:nowrap;">192.0.2.212</td>
+            <td style="font-family:monospace; white-space:nowrap;">22/SSH</td>
+            <td style="white-space:nowrap; font-size:0.78rem; color:#6b7280;">SSH</td>
+            <td>SSH service detected: OpenSSH 10.0p2</td>
+          </tr>
+          
+          <tr onclick="scrollToHost('192.0.2.212')" title="Click to go to host section">
+            <td><span class="sev-badge sev-info">INFO</span></td>
+            <td style="font-family:monospace; white-space:nowrap;">192.0.2.212</td>
+            <td style="font-family:monospace; white-space:nowrap;">80/HTTP</td>
+            <td style="white-space:nowrap; font-size:0.78rem; color:#6b7280;">Web Interface</td>
+            <td>Web interface detected: Pi-hole LabPi</td>
+          </tr>
+          
+          <tr onclick="scrollToHost('192.0.2.212')" title="Click to go to host section">
+            <td><span class="sev-badge sev-info">INFO</span></td>
+            <td style="font-family:monospace; white-space:nowrap;">192.0.2.212</td>
+            <td style="font-family:monospace; white-space:nowrap;">443/HTTPS</td>
+            <td style="white-space:nowrap; font-size:0.78rem; color:#6b7280;">SSL/TLS</td>
+            <td>JA3S fingerprint computed on port 443</td>
+          </tr>
+          
+          <tr onclick="scrollToHost('192.0.2.212')" title="Click to go to host section">
+            <td><span class="sev-badge sev-info">INFO</span></td>
+            <td style="font-family:monospace; white-space:nowrap;">192.0.2.212</td>
+            <td style="font-family:monospace; white-space:nowrap;">443/HTTPS</td>
+            <td style="white-space:nowrap; font-size:0.78rem; color:#6b7280;">SSL/TLS</td>
+            <td>TLS certificate: CN=pi.hole</td>
+          </tr>
+          
+          <tr onclick="scrollToHost('192.0.2.212')" title="Click to go to host section">
+            <td><span class="sev-badge sev-info">INFO</span></td>
+            <td style="font-family:monospace; white-space:nowrap;">192.0.2.212</td>
+            <td style="font-family:monospace; white-space:nowrap;">443/HTTPS</td>
+            <td style="white-space:nowrap; font-size:0.78rem; color:#6b7280;">Web Interface</td>
+            <td>Web interface detected: Pi-hole LabPi</td>
+          </tr>
+          
+          <tr onclick="scrollToHost('192.0.2.212')" title="Click to go to host section">
+            <td><span class="sev-badge sev-info">INFO</span></td>
+            <td style="font-family:monospace; white-space:nowrap;">192.0.2.212</td>
+            <td style="font-family:monospace; white-space:nowrap;">2121/FTP</td>
+            <td style="white-space:nowrap; font-size:0.78rem; color:#6b7280;">FTP</td>
+            <td>FTP service detected: vsftpd 2.3.4</td>
+          </tr>
+          
+          <tr onclick="scrollToHost('192.0.2.212')" title="Click to go to host section">
+            <td><span class="sev-badge sev-info">INFO</span></td>
+            <td style="font-family:monospace; white-space:nowrap;">192.0.2.212</td>
+            <td style="font-family:monospace; white-space:nowrap;">2222/SSH</td>
+            <td style="white-space:nowrap; font-size:0.78rem; color:#6b7280;">SSH</td>
+            <td>SSH service detected: OpenSSH 7.4</td>
+          </tr>
+          
+          <tr onclick="scrollToHost('192.0.2.212')" title="Click to go to host section">
+            <td><span class="sev-badge sev-info">INFO</span></td>
+            <td style="font-family:monospace; white-space:nowrap;">192.0.2.212</td>
+            <td style="font-family:monospace; white-space:nowrap;">8080/HTTP</td>
+            <td style="white-space:nowrap; font-size:0.78rem; color:#6b7280;">Web Interface</td>
+            <td>Web interface detected: TP-Link Archer C7</td>
+          </tr>
+          
+          <tr onclick="scrollToHost('192.0.2.212')" title="Click to go to host section">
+            <td><span class="sev-badge sev-info">INFO</span></td>
+            <td style="font-family:monospace; white-space:nowrap;">192.0.2.212</td>
+            <td style="font-family:monospace; white-space:nowrap;">8080/HTTP</td>
+            <td style="white-space:nowrap; font-size:0.78rem; color:#6b7280;">Web Technology</td>
+            <td>Web technology detected: Nginx 1.14.0</td>
+          </tr>
+          
+          <tr onclick="scrollToHost('192.0.2.212')" title="Click to go to host section">
+            <td><span class="sev-badge sev-info">INFO</span></td>
+            <td style="font-family:monospace; white-space:nowrap;">192.0.2.212</td>
+            <td style="font-family:monospace; white-space:nowrap;">8080/HTTP</td>
+            <td style="white-space:nowrap; font-size:0.78rem; color:#6b7280;">Web Technology</td>
+            <td>Web technology detected: PHP 7.2.34</td>
+          </tr>
+          
+          <tr title="Network-level finding">
+            <td><span class="sev-badge sev-info">INFO</span></td>
+            <td style="font-family:monospace; white-space:nowrap;">local</td>
+            <td style="font-family:monospace; white-space:nowrap;">53/UDP</td>
+            <td style="white-space:nowrap; font-size:0.78rem; color:#6b7280;">DNS Security</td>
+            <td>DNS responses match trusted resolver — no hijacking detected</td>
+          </tr>
+          
+        </tbody>
+      </table>
+    </div>
+  </div>
+  
+
+  <!-- ====== HOST SECTIONS ====== -->
+  <div class="section">
+    <div class="section-title">&#128301; Host Details</div>
+
+    
+
+    
+    
+    
+    <div class="host-section" id="host-192-168-50-212">
+
+      <!-- Host header (clickable to collapse) -->
+      <div class="host-header" onclick="toggleHost('192-168-50-212')">
+        <div>
+          <span class="host-ip">192.0.2.212</span>
+          <span class="host-name">LabPi</span>
+          
+          
+          <span class="host-name">&bull; TP-Link Archer C7 (Router)</span>
+          
+        </div>
+        <div class="host-badges">
+          
+          <span class="sev-badge sev-critical">1 Critical</span>
+              <span class="sev-badge sev-high">6 High</span>
+            <span class="sev-badge sev-medium">15 Medium</span>
+               <span class="sev-badge sev-low">5 Low</span>
+          
+          
+          
+          <span style="background:#dc2626; color:#fff; border-radius:6px; padding:2px 9px; font-size:0.73rem; font-weight:700;">Risk 100/100</span>
+          
+          <span class="toggle" id="toggle-192-168-50-212">&#9660;</span>
+        </div>
+      </div>
+
+      <!-- Host body -->
+      <div class="host-body" id="body-192-168-50-212">
+
+        <!-- Host metadata -->
+        <div class="host-meta">
+          <span>MAC: 02:00:00:E1:22:A8</span>
+          
+          <span>OS: Linux 4.15 - 5.6 (100% confidence)</span>
+          <span>State: up</span>
+          <span>Open ports: 13</span>
+        </div>
+        
+        
+        <div style="margin-bottom: 14px;">
+          <div class="device-id-badge">
+            <span class="did-type">Router</span> &mdash; 
+            TP-Link Archer C7
+             v3.15.1 Build 160616
+            <span class="did-conf">100% confidence</span>
+          </div>
+        </div>
+        
+
+        <!-- Findings for this host -->
+        
+        <div style="margin-bottom:16px;">
+          
+          <div class="finding-card border-critical">
+            <div class="finding-card-header sev-critical" style="opacity:0.95;">
+              <span class="sev-badge sev-critical">CRITICAL</span>
+              <span class="finding-title">Anonymous FTP login allowed on port 2121</span>
+              
+              <span class="finding-port">2121/FTP</span>
+            </div>
+            <div class="finding-card-body">
+              <div class="finding-section-lbl">What was found</div>
+              <div class="finding-text">The FTP server on port 2121 accepted a login with username &#39;anonymous&#39; and no real password. Any user on the network can browse and download files.</div>
+
+              <div class="finding-section-lbl" style="margin-top:12px;">What this means</div>
+              <div class="finding-text">Anonymous FTP allows anyone to connect without credentials. This is almost always unintentional on home and office networks and can expose sensitive files to anyone on the local network or internet.</div>
+
+              <div class="finding-section-lbl" style="margin-top:12px;">What to do</div>
+              <div class="finding-reco">1. Disable anonymous FTP access immediately in the server configuration.
+2. If anonymous access is required (e.g., public software mirror), ensure no sensitive files are in the FTP root.
+3. Consider switching to SFTP which enforces authentication and encryption.</div>
+
+              
+              <div class="finding-evidence">Evidence: Anonymous login succeeded. Welcome: &#39;220 (vsFTPd 2.3.4)&#39;</div>
+              
+
+              
+            </div>
+          </div>
+          
+          <div class="finding-card border-high">
+            <div class="finding-card-header sev-high" style="opacity:0.95;">
+              <span class="sev-badge sev-high">HIGH</span>
+              <span class="finding-title">TP-Link Archer C7 no longer receives security updates</span>
+              
+              <span class="sev-badge confidence-likely" style="font-size:0.68rem;">LIKELY</span>
+              
+              
+            </div>
+            <div class="finding-card-body">
+              <div class="finding-section-lbl">What was found</div>
+              <div class="finding-text">TP-Link Archer C7 matched hardware lifecycle data with status &#39;unsupported&#39;. Security/support updates ended on 2017-12-31.</div>
+
+              <div class="finding-section-lbl" style="margin-top:12px;">What this means</div>
+              <div class="finding-text">Vendor lifecycle data indicates this hardware no longer receives security updates on 2017-12-31. New vulnerabilities may remain unpatched even if the device&#39;s exposed services are configured correctly.</div>
+
+              <div class="finding-section-lbl" style="margin-top:12px;">What to do</div>
+              <div class="finding-reco">1. Confirm the exact model, hardware revision, and region from the device label or admin UI.
+2. Apply the newest firmware still offered by the vendor.
+3. If the vendor no longer provides security updates for this hardware, plan replacement or isolate the device on a restricted network segment.</div>
+
+              
+              <div class="finding-evidence">Evidence: Hardware EOL records: hw_tplink_2a54c23c924ff4ce, hw_tplink_30fd65b4223a97aa, hw_tplink_365180a5e1734e89, hw_tplink_36f0703e1cd7c06d, hw_tplink_6883355b4570d79f, +3 more; security EOL date: 2017-12-31; hardware revision seen: v2.0; source: https://static.tp-link.com/upload/manual/2026/202602/20260228/EOL%20List_Home%20Networking%20-%20V7.0.pdf</div>
+              
+
+              
+            </div>
+          </div>
+          
+          <div class="finding-card border-high">
+            <div class="finding-card-header sev-high" style="opacity:0.95;">
+              <span class="sev-badge sev-high">HIGH</span>
+              <span class="finding-title">SSH weak MAC algorithms supported on port 22</span>
+              
+              <span class="finding-port">22/SSH</span>
+            </div>
+            <div class="finding-card-body">
+              <div class="finding-section-lbl">What was found</div>
+              <div class="finding-text">The SSH server supports weak MAC algorithms: hmac-sha1, hmac-md5, hmac-sha1-96, hmac-md5-96</div>
+
+              <div class="finding-section-lbl" style="margin-top:12px;">What this means</div>
+              <div class="finding-text">HMAC-MD5 and HMAC-SHA1 are deprecated and considered weak for integrity protection. Modern SSH should use ETM (encrypt-then-MAC) variants.</div>
+
+              <div class="finding-section-lbl" style="margin-top:12px;">What to do</div>
+              <div class="finding-reco">In sshd_config, set:
+MACs hmac-sha2-512-etm@openssh.com,hmac-sha2-256-etm@openssh.com,umac-128-etm@openssh.com</div>
+
+              
+              <div class="finding-evidence">Evidence: Weak MACs advertised: hmac-sha1, hmac-md5, hmac-sha1-96, hmac-md5-96</div>
+              
+
+              
+            </div>
+          </div>
+          
+          <div class="finding-card border-high">
+            <div class="finding-card-header sev-high" style="opacity:0.95;">
+              <span class="sev-badge sev-high">HIGH</span>
+              <span class="finding-title">SSH weak ciphers supported on port 22</span>
+              
+              <span class="finding-port">22/SSH</span>
+            </div>
+            <div class="finding-card-body">
+              <div class="finding-section-lbl">What was found</div>
+              <div class="finding-text">The SSH server supports weak or broken ciphers: 3des-cbc</div>
+
+              <div class="finding-section-lbl" style="margin-top:12px;">What this means</div>
+              <div class="finding-text">RC4 (arcfour) is a broken stream cipher banned by RFC 7465. 3DES-CBC is vulnerable to Sweet32 birthday attacks. The &#39;none&#39; cipher transmits data completely unencrypted.</div>
+
+              <div class="finding-section-lbl" style="margin-top:12px;">What to do</div>
+              <div class="finding-reco">In sshd_config, set:
+Ciphers aes256-gcm@openssh.com,aes128-gcm@openssh.com,chacha20-poly1305@openssh.com</div>
+
+              
+              <div class="finding-evidence">Evidence: Weak ciphers advertised: 3des-cbc</div>
+              
+
+              
+            </div>
+          </div>
+          
+          <div class="finding-card border-high">
+            <div class="finding-card-header sev-high" style="opacity:0.95;">
+              <span class="sev-badge sev-high">HIGH</span>
+              <span class="finding-title">Login form on plain HTTP — credentials sent in cleartext</span>
+              
+              <span class="finding-port">8080/HTTP</span>
+            </div>
+            <div class="finding-card-body">
+              <div class="finding-section-lbl">What was found</div>
+              <div class="finding-text">Port 8080 serves an HTML login form over plain HTTP. Any password entered here is transmitted without encryption.</div>
+
+              <div class="finding-section-lbl" style="margin-top:12px;">What this means</div>
+              <div class="finding-text">This web interface has a username/password login form but uses plain HTTP instead of HTTPS. Any password typed into this form is sent across the network without any encryption. Anyone else on the same Wi-Fi network could capture those credentials using freely available tools.</div>
+
+              <div class="finding-section-lbl" style="margin-top:12px;">What to do</div>
+              <div class="finding-reco">1. Access this device&#39;s settings and enable HTTPS.
+2. If the device doesn&#39;t support HTTPS, check for a firmware update.
+3. Until this is fixed, only administer this device from a wired connection, not over Wi-Fi.</div>
+
+              
+              <div class="finding-evidence">Evidence: Password input field found at: http://192.0.2.212:8080/</div>
+              
+
+              
+            </div>
+          </div>
+          
+          <div class="finding-card border-high">
+            <div class="finding-card-header sev-high" style="opacity:0.95;">
+              <span class="sev-badge sev-high">HIGH</span>
+              <span class="finding-title">End-of-Life software: nginx 1.14.0</span>
+              
+              <span class="finding-port">8080/TCP</span>
+            </div>
+            <div class="finding-card-body">
+              <div class="finding-section-lbl">What was found</div>
+              <div class="finding-text">nginx 1.14.0 reached EOL on 2019-04-23</div>
+
+              <div class="finding-section-lbl" style="margin-top:12px;">What this means</div>
+              <div class="finding-text">nginx 1.14.0 reached End-of-Life on 2019-04-23. The vendor no longer releases security patches for this version. Any new vulnerabilities discovered will remain unpatched forever.</div>
+
+              <div class="finding-section-lbl" style="margin-top:12px;">What to do</div>
+              <div class="finding-reco">Upgrade nginx to the latest supported version (1.14.2). If this is a network device (router, NAS, printer), check the manufacturer&#39;s website for a firmware update or replacement options.</div>
+
+              
+              <div class="finding-evidence">Evidence: Product: nginx 1.14.0</div>
+              
+
+              
+            </div>
+          </div>
+          
+          <div class="finding-card border-high">
+            <div class="finding-card-header sev-high" style="opacity:0.95;">
+              <span class="sev-badge sev-high">HIGH</span>
+              <span class="finding-title">End-of-Life software: nginx 1.14.0</span>
+              
+              <span class="finding-port">8088/TCP</span>
+            </div>
+            <div class="finding-card-body">
+              <div class="finding-section-lbl">What was found</div>
+              <div class="finding-text">nginx 1.14.0 reached EOL on 2019-04-23</div>
+
+              <div class="finding-section-lbl" style="margin-top:12px;">What this means</div>
+              <div class="finding-text">nginx 1.14.0 reached End-of-Life on 2019-04-23. The vendor no longer releases security patches for this version. Any new vulnerabilities discovered will remain unpatched forever.</div>
+
+              <div class="finding-section-lbl" style="margin-top:12px;">What to do</div>
+              <div class="finding-reco">Upgrade nginx to the latest supported version (1.14.2). If this is a network device (router, NAS, printer), check the manufacturer&#39;s website for a firmware update or replacement options.</div>
+
+              
+              <div class="finding-evidence">Evidence: Product: nginx 1.14.0</div>
+              
+
+              
+            </div>
+          </div>
+          
+          <div class="finding-card border-medium">
+            <div class="finding-card-header sev-medium" style="opacity:0.95;">
+              <span class="sev-badge sev-medium">MEDIUM</span>
+              <span class="finding-title">Admin panel paths found on port 80</span>
+              
+              <span class="finding-port">80/HTTP</span>
+            </div>
+            <div class="finding-card-body">
+              <div class="finding-section-lbl">What was found</div>
+              <div class="finding-text">The following admin-related paths responded on port 80: /admin [accessible], /admin/ [accessible]</div>
+
+              <div class="finding-section-lbl" style="margin-top:12px;">What this means</div>
+              <div class="finding-text">Admin panel paths are accessible on this device. Paths marked &#39;accessible&#39; returned HTTP 200 without authentication. Paths marked &#39;protected&#39; exist but require login — ensure strong credentials are in use.</div>
+
+              <div class="finding-section-lbl" style="margin-top:12px;">What to do</div>
+              <div class="finding-reco">1. Ensure all admin interfaces require strong authentication.
+2. If possible, restrict admin access to specific IP addresses only.
+3. Disable or remove any admin paths that are no longer needed.
+4. Change any default passwords on accessible admin panels.</div>
+
+              
+              <div class="finding-evidence">Evidence: Paths: /admin [accessible], /admin/ [accessible]</div>
+              
+
+              
+            </div>
+          </div>
+          
+          <div class="finding-card border-medium">
+            <div class="finding-card-header sev-medium" style="opacity:0.95;">
+              <span class="sev-badge sev-medium">MEDIUM</span>
+              <span class="finding-title">Missing HSTS header</span>
+              
+              <span class="finding-port">443/HTTPS</span>
+            </div>
+            <div class="finding-card-body">
+              <div class="finding-section-lbl">What was found</div>
+              <div class="finding-text">The HTTP response from port 443 is missing the Strict-Transport-Security security header.</div>
+
+              <div class="finding-section-lbl" style="margin-top:12px;">What this means</div>
+              <div class="finding-text">HTTP Strict Transport Security (HSTS) tells browsers to only connect over HTTPS. Without it, users could be tricked into connecting over plain HTTP.</div>
+
+              <div class="finding-section-lbl" style="margin-top:12px;">What to do</div>
+              <div class="finding-reco">Add header: Strict-Transport-Security: max-age=31536000; includeSubDomains</div>
+
+              
+              <div class="finding-evidence">Evidence: Header absent from: GET https://192.0.2.212:443/</div>
+              
+
+              
+            </div>
+          </div>
+          
+          <div class="finding-card border-medium">
+            <div class="finding-card-header sev-medium" style="opacity:0.95;">
+              <span class="sev-badge sev-medium">MEDIUM</span>
+              <span class="finding-title">Admin panel paths found on port 443</span>
+              
+              <span class="finding-port">443/HTTPS</span>
+            </div>
+            <div class="finding-card-body">
+              <div class="finding-section-lbl">What was found</div>
+              <div class="finding-text">The following admin-related paths responded on port 443: /admin [accessible], /admin/ [accessible]</div>
+
+              <div class="finding-section-lbl" style="margin-top:12px;">What this means</div>
+              <div class="finding-text">Admin panel paths are accessible on this device. Paths marked &#39;accessible&#39; returned HTTP 200 without authentication. Paths marked &#39;protected&#39; exist but require login — ensure strong credentials are in use.</div>
+
+              <div class="finding-section-lbl" style="margin-top:12px;">What to do</div>
+              <div class="finding-reco">1. Ensure all admin interfaces require strong authentication.
+2. If possible, restrict admin access to specific IP addresses only.
+3. Disable or remove any admin paths that are no longer needed.
+4. Change any default passwords on accessible admin panels.</div>
+
+              
+              <div class="finding-evidence">Evidence: Paths: /admin [accessible], /admin/ [accessible]</div>
+              
+
+              
+            </div>
+          </div>
+          
+          <div class="finding-card border-medium">
+            <div class="finding-card-header sev-medium" style="opacity:0.95;">
+              <span class="sev-badge sev-medium">MEDIUM</span>
+              <span class="finding-title">FTP has no TLS support (cleartext credentials) on port 2121</span>
+              
+              <span class="finding-port">2121/FTP</span>
+            </div>
+            <div class="finding-card-body">
+              <div class="finding-section-lbl">What was found</div>
+              <div class="finding-text">The FTP server on port 2121 does not support AUTH TLS (STARTTLS). Credentials and file transfers are sent in cleartext.</div>
+
+              <div class="finding-section-lbl" style="margin-top:12px;">What this means</div>
+              <div class="finding-text">Without TLS, your FTP username and password are sent across the network unencrypted. Anyone using a network monitoring tool on the same network can capture your FTP credentials.</div>
+
+              <div class="finding-section-lbl" style="margin-top:12px;">What to do</div>
+              <div class="finding-reco">1. Enable FTPS (AUTH TLS) in your FTP server configuration.
+2. Better: replace FTP entirely with SFTP (port 22, SSH-based).
+3. Disable plain FTP if FTPS or SFTP is available.</div>
+
+              
+              <div class="finding-evidence">Evidence: AUTH TLS response was not 234</div>
+              
+
+              
+            </div>
+          </div>
+          
+          <div class="finding-card border-medium">
+            <div class="finding-card-header sev-medium" style="opacity:0.95;">
+              <span class="sev-badge sev-medium">MEDIUM</span>
+              <span class="finding-title">Known vulnerability: ALPINE-CVE-2018-16843 in nginx 1.14.0</span>
+              
+              <span class="finding-port">8080/TCP</span>
+            </div>
+            <div class="finding-card-body">
+              <div class="finding-section-lbl">What was found</div>
+              <div class="finding-text">ALPINE-CVE-2018-16843 affects nginx 1.14.0 (no CVSS score). No description available</div>
+
+              <div class="finding-section-lbl" style="margin-top:12px;">What this means</div>
+              <div class="finding-text">A publicly known security vulnerability exists in the version of nginx detected on this device. This vulnerability has been disclosed publicly, meaning attackers know about it and may have tools to exploit it.</div>
+
+              <div class="finding-section-lbl" style="margin-top:12px;">What to do</div>
+              <div class="finding-reco">Update nginx to the latest available version. Check your device vendor&#39;s support site for firmware updates.</div>
+
+              
+              <div class="finding-evidence">Evidence: Detected service: nginx 1.14.0</div>
+              
+
+              
+              <div style="margin-top:8px;">
+                <span class="cve-tag">ALPINE-CVE-2018-16843</span>
+                
+              </div>
+              
+            </div>
+          </div>
+          
+          <div class="finding-card border-medium">
+            <div class="finding-card-header sev-medium" style="opacity:0.95;">
+              <span class="sev-badge sev-medium">MEDIUM</span>
+              <span class="finding-title">Known vulnerability: ALPINE-CVE-2018-16844 in nginx 1.14.0</span>
+              
+              <span class="finding-port">8080/TCP</span>
+            </div>
+            <div class="finding-card-body">
+              <div class="finding-section-lbl">What was found</div>
+              <div class="finding-text">ALPINE-CVE-2018-16844 affects nginx 1.14.0 (no CVSS score). No description available</div>
+
+              <div class="finding-section-lbl" style="margin-top:12px;">What this means</div>
+              <div class="finding-text">A publicly known security vulnerability exists in the version of nginx detected on this device. This vulnerability has been disclosed publicly, meaning attackers know about it and may have tools to exploit it.</div>
+
+              <div class="finding-section-lbl" style="margin-top:12px;">What to do</div>
+              <div class="finding-reco">Update nginx to the latest available version. Check your device vendor&#39;s support site for firmware updates.</div>
+
+              
+              <div class="finding-evidence">Evidence: Detected service: nginx 1.14.0</div>
+              
+
+              
+              <div style="margin-top:8px;">
+                <span class="cve-tag">ALPINE-CVE-2018-16844</span>
+                
+              </div>
+              
+            </div>
+          </div>
+          
+          <div class="finding-card border-medium">
+            <div class="finding-card-header sev-medium" style="opacity:0.95;">
+              <span class="sev-badge sev-medium">MEDIUM</span>
+              <span class="finding-title">Known vulnerability: ALPINE-CVE-2018-16845 in nginx 1.14.0</span>
+              
+              <span class="finding-port">8080/TCP</span>
+            </div>
+            <div class="finding-card-body">
+              <div class="finding-section-lbl">What was found</div>
+              <div class="finding-text">ALPINE-CVE-2018-16845 affects nginx 1.14.0 (no CVSS score). No description available</div>
+
+              <div class="finding-section-lbl" style="margin-top:12px;">What this means</div>
+              <div class="finding-text">A publicly known security vulnerability exists in the version of nginx detected on this device. This vulnerability has been disclosed publicly, meaning attackers know about it and may have tools to exploit it.</div>
+
+              <div class="finding-section-lbl" style="margin-top:12px;">What to do</div>
+              <div class="finding-reco">Update nginx to the latest available version. Check your device vendor&#39;s support site for firmware updates.</div>
+
+              
+              <div class="finding-evidence">Evidence: Detected service: nginx 1.14.0</div>
+              
+
+              
+              <div style="margin-top:8px;">
+                <span class="cve-tag">ALPINE-CVE-2018-16845</span>
+                
+              </div>
+              
+            </div>
+          </div>
+          
+          <div class="finding-card border-medium">
+            <div class="finding-card-header sev-medium" style="opacity:0.95;">
+              <span class="sev-badge sev-medium">MEDIUM</span>
+              <span class="finding-title">Known vulnerability: ALPINE-CVE-2019-20372 in nginx 1.14.0</span>
+              
+              <span class="finding-port">8080/TCP</span>
+            </div>
+            <div class="finding-card-body">
+              <div class="finding-section-lbl">What was found</div>
+              <div class="finding-text">ALPINE-CVE-2019-20372 affects nginx 1.14.0 (no CVSS score). No description available</div>
+
+              <div class="finding-section-lbl" style="margin-top:12px;">What this means</div>
+              <div class="finding-text">A publicly known security vulnerability exists in the version of nginx detected on this device. This vulnerability has been disclosed publicly, meaning attackers know about it and may have tools to exploit it.</div>
+
+              <div class="finding-section-lbl" style="margin-top:12px;">What to do</div>
+              <div class="finding-reco">Update nginx to the latest available version. Check your device vendor&#39;s support site for firmware updates.</div>
+
+              
+              <div class="finding-evidence">Evidence: Detected service: nginx 1.14.0</div>
+              
+
+              
+              <div style="margin-top:8px;">
+                <span class="cve-tag">ALPINE-CVE-2019-20372</span>
+                
+              </div>
+              
+            </div>
+          </div>
+          
+          <div class="finding-card border-medium">
+            <div class="finding-card-header sev-medium" style="opacity:0.95;">
+              <span class="sev-badge sev-medium">MEDIUM</span>
+              <span class="finding-title">Known vulnerability: ALPINE-CVE-2019-9511 in nginx 1.14.0</span>
+              
+              <span class="finding-port">8080/TCP</span>
+            </div>
+            <div class="finding-card-body">
+              <div class="finding-section-lbl">What was found</div>
+              <div class="finding-text">ALPINE-CVE-2019-9511 affects nginx 1.14.0 (no CVSS score). No description available</div>
+
+              <div class="finding-section-lbl" style="margin-top:12px;">What this means</div>
+              <div class="finding-text">A publicly known security vulnerability exists in the version of nginx detected on this device. This vulnerability has been disclosed publicly, meaning attackers know about it and may have tools to exploit it.</div>
+
+              <div class="finding-section-lbl" style="margin-top:12px;">What to do</div>
+              <div class="finding-reco">Update nginx to the latest available version. Check your device vendor&#39;s support site for firmware updates.</div>
+
+              
+              <div class="finding-evidence">Evidence: Detected service: nginx 1.14.0</div>
+              
+
+              
+              <div style="margin-top:8px;">
+                <span class="cve-tag">ALPINE-CVE-2019-9511</span>
+                
+              </div>
+              
+            </div>
+          </div>
+          
+          <div class="finding-card border-medium">
+            <div class="finding-card-header sev-medium" style="opacity:0.95;">
+              <span class="sev-badge sev-medium">MEDIUM</span>
+              <span class="finding-title">Admin panel paths found on port 8080</span>
+              
+              <span class="finding-port">8080/HTTP</span>
+            </div>
+            <div class="finding-card-body">
+              <div class="finding-section-lbl">What was found</div>
+              <div class="finding-text">The following admin-related paths responded on port 8080: /admin [accessible], /admin/ [accessible], /administrator [accessible], /administrator/ [accessible], /setup [accessible], /setup/ [accessible], /config [accessible], /config/ [accessible], /manager [accessible], /manager/html [accessible], /wp-admin [accessible], /wp-admin/ [accessible], /phpmyadmin [accessible], /phpmyadmin/ [accessible], /webadmin [accessible], /webadmin/ [accessible], /cgi-bin/ [accessible], /cgi-bin/admin [accessible], /login [accessible], /login.html [accessible], /login.php [accessible], /dashboard [accessible], /panel [accessible]</div>
+
+              <div class="finding-section-lbl" style="margin-top:12px;">What this means</div>
+              <div class="finding-text">Admin panel paths are accessible on this device. Paths marked &#39;accessible&#39; returned HTTP 200 without authentication. Paths marked &#39;protected&#39; exist but require login — ensure strong credentials are in use.</div>
+
+              <div class="finding-section-lbl" style="margin-top:12px;">What to do</div>
+              <div class="finding-reco">1. Ensure all admin interfaces require strong authentication.
+2. If possible, restrict admin access to specific IP addresses only.
+3. Disable or remove any admin paths that are no longer needed.
+4. Change any default passwords on accessible admin panels.</div>
+
+              
+              <div class="finding-evidence">Evidence: Paths: /admin [accessible], /admin/ [accessible], /administrator [accessible], /administrator/ [accessible], /setup [accessible], /setup/ [accessible], /config [accessible], /config/ [accessible], /manager [accessible], /manager/html [accessible], /wp-admin [accessible], /wp-admin/ [accessible], /phpmyadmin [accessible], /phpmyadmin/ [accessible], /webadmin [accessible], /webadmin/ [accessible], /cgi-bin/ [accessible], /cgi-bin/admin [accessible], /login [accessible], /login.html [accessible], /login.php [accessible], /dashboard [accessible], /panel [accessible]</div>
+              
+
+              
+            </div>
+          </div>
+          
+          <div class="finding-card border-medium">
+            <div class="finding-card-header sev-medium" style="opacity:0.95;">
+              <span class="sev-badge sev-medium">MEDIUM</span>
+              <span class="finding-title">Known vulnerability: ALPINE-CVE-2018-16843 in nginx 1.14.0</span>
+              
+              <span class="finding-port">8088/TCP</span>
+            </div>
+            <div class="finding-card-body">
+              <div class="finding-section-lbl">What was found</div>
+              <div class="finding-text">ALPINE-CVE-2018-16843 affects nginx 1.14.0 (no CVSS score). No description available</div>
+
+              <div class="finding-section-lbl" style="margin-top:12px;">What this means</div>
+              <div class="finding-text">A publicly known security vulnerability exists in the version of nginx detected on this device. This vulnerability has been disclosed publicly, meaning attackers know about it and may have tools to exploit it.</div>
+
+              <div class="finding-section-lbl" style="margin-top:12px;">What to do</div>
+              <div class="finding-reco">Update nginx to the latest available version. Check your device vendor&#39;s support site for firmware updates.</div>
+
+              
+              <div class="finding-evidence">Evidence: Detected service: nginx 1.14.0</div>
+              
+
+              
+              <div style="margin-top:8px;">
+                <span class="cve-tag">ALPINE-CVE-2018-16843</span>
+                
+              </div>
+              
+            </div>
+          </div>
+          
+          <div class="finding-card border-medium">
+            <div class="finding-card-header sev-medium" style="opacity:0.95;">
+              <span class="sev-badge sev-medium">MEDIUM</span>
+              <span class="finding-title">Known vulnerability: ALPINE-CVE-2018-16844 in nginx 1.14.0</span>
+              
+              <span class="finding-port">8088/TCP</span>
+            </div>
+            <div class="finding-card-body">
+              <div class="finding-section-lbl">What was found</div>
+              <div class="finding-text">ALPINE-CVE-2018-16844 affects nginx 1.14.0 (no CVSS score). No description available</div>
+
+              <div class="finding-section-lbl" style="margin-top:12px;">What this means</div>
+              <div class="finding-text">A publicly known security vulnerability exists in the version of nginx detected on this device. This vulnerability has been disclosed publicly, meaning attackers know about it and may have tools to exploit it.</div>
+
+              <div class="finding-section-lbl" style="margin-top:12px;">What to do</div>
+              <div class="finding-reco">Update nginx to the latest available version. Check your device vendor&#39;s support site for firmware updates.</div>
+
+              
+              <div class="finding-evidence">Evidence: Detected service: nginx 1.14.0</div>
+              
+
+              
+              <div style="margin-top:8px;">
+                <span class="cve-tag">ALPINE-CVE-2018-16844</span>
+                
+              </div>
+              
+            </div>
+          </div>
+          
+          <div class="finding-card border-medium">
+            <div class="finding-card-header sev-medium" style="opacity:0.95;">
+              <span class="sev-badge sev-medium">MEDIUM</span>
+              <span class="finding-title">Known vulnerability: ALPINE-CVE-2018-16845 in nginx 1.14.0</span>
+              
+              <span class="finding-port">8088/TCP</span>
+            </div>
+            <div class="finding-card-body">
+              <div class="finding-section-lbl">What was found</div>
+              <div class="finding-text">ALPINE-CVE-2018-16845 affects nginx 1.14.0 (no CVSS score). No description available</div>
+
+              <div class="finding-section-lbl" style="margin-top:12px;">What this means</div>
+              <div class="finding-text">A publicly known security vulnerability exists in the version of nginx detected on this device. This vulnerability has been disclosed publicly, meaning attackers know about it and may have tools to exploit it.</div>
+
+              <div class="finding-section-lbl" style="margin-top:12px;">What to do</div>
+              <div class="finding-reco">Update nginx to the latest available version. Check your device vendor&#39;s support site for firmware updates.</div>
+
+              
+              <div class="finding-evidence">Evidence: Detected service: nginx 1.14.0</div>
+              
+
+              
+              <div style="margin-top:8px;">
+                <span class="cve-tag">ALPINE-CVE-2018-16845</span>
+                
+              </div>
+              
+            </div>
+          </div>
+          
+          <div class="finding-card border-medium">
+            <div class="finding-card-header sev-medium" style="opacity:0.95;">
+              <span class="sev-badge sev-medium">MEDIUM</span>
+              <span class="finding-title">Known vulnerability: ALPINE-CVE-2019-20372 in nginx 1.14.0</span>
+              
+              <span class="finding-port">8088/TCP</span>
+            </div>
+            <div class="finding-card-body">
+              <div class="finding-section-lbl">What was found</div>
+              <div class="finding-text">ALPINE-CVE-2019-20372 affects nginx 1.14.0 (no CVSS score). No description available</div>
+
+              <div class="finding-section-lbl" style="margin-top:12px;">What this means</div>
+              <div class="finding-text">A publicly known security vulnerability exists in the version of nginx detected on this device. This vulnerability has been disclosed publicly, meaning attackers know about it and may have tools to exploit it.</div>
+
+              <div class="finding-section-lbl" style="margin-top:12px;">What to do</div>
+              <div class="finding-reco">Update nginx to the latest available version. Check your device vendor&#39;s support site for firmware updates.</div>
+
+              
+              <div class="finding-evidence">Evidence: Detected service: nginx 1.14.0</div>
+              
+
+              
+              <div style="margin-top:8px;">
+                <span class="cve-tag">ALPINE-CVE-2019-20372</span>
+                
+              </div>
+              
+            </div>
+          </div>
+          
+          <div class="finding-card border-medium">
+            <div class="finding-card-header sev-medium" style="opacity:0.95;">
+              <span class="sev-badge sev-medium">MEDIUM</span>
+              <span class="finding-title">Known vulnerability: ALPINE-CVE-2019-9511 in nginx 1.14.0</span>
+              
+              <span class="finding-port">8088/TCP</span>
+            </div>
+            <div class="finding-card-body">
+              <div class="finding-section-lbl">What was found</div>
+              <div class="finding-text">ALPINE-CVE-2019-9511 affects nginx 1.14.0 (no CVSS score). No description available</div>
+
+              <div class="finding-section-lbl" style="margin-top:12px;">What this means</div>
+              <div class="finding-text">A publicly known security vulnerability exists in the version of nginx detected on this device. This vulnerability has been disclosed publicly, meaning attackers know about it and may have tools to exploit it.</div>
+
+              <div class="finding-section-lbl" style="margin-top:12px;">What to do</div>
+              <div class="finding-reco">Update nginx to the latest available version. Check your device vendor&#39;s support site for firmware updates.</div>
+
+              
+              <div class="finding-evidence">Evidence: Detected service: nginx 1.14.0</div>
+              
+
+              
+              <div style="margin-top:8px;">
+                <span class="cve-tag">ALPINE-CVE-2019-9511</span>
+                
+              </div>
+              
+            </div>
+          </div>
+          
+          <div class="finding-card border-low">
+            <div class="finding-card-header sev-low" style="opacity:0.95;">
+              <span class="sev-badge sev-low">LOW</span>
+              <span class="finding-title">TLS certificate expiring in 41 days</span>
+              
+              <span class="finding-port">443/HTTPS</span>
+            </div>
+            <div class="finding-card-body">
+              <div class="finding-section-lbl">What was found</div>
+              <div class="finding-text">Certificate on port 443 expires in 41 days.</div>
+
+              <div class="finding-section-lbl" style="margin-top:12px;">What this means</div>
+              <div class="finding-text">The TLS certificate expires within 90 days.</div>
+
+              <div class="finding-section-lbl" style="margin-top:12px;">What to do</div>
+              <div class="finding-reco">Plan to renew the TLS certificate before it expires.</div>
+
+              
+              <div class="finding-evidence">Evidence: Expires: 2026-07-09</div>
+              
+
+              
+            </div>
+          </div>
+          
+          <div class="finding-card border-low">
+            <div class="finding-card-header sev-low" style="opacity:0.95;">
+              <span class="sev-badge sev-low">LOW</span>
+              <span class="finding-title">SSH algorithm enumeration failed on port 2222 — manual verification recommended</span>
+              
+              <span class="finding-port">2222/SSH</span>
+            </div>
+            <div class="finding-card-body">
+              <div class="finding-section-lbl">What was found</div>
+              <div class="finding-text">SSH service detected on port 2222 but algorithm enumeration failed. The server may use non-standard client restrictions or a custom SSH stack.</div>
+
+              <div class="finding-section-lbl" style="margin-top:12px;">What this means</div>
+              <div class="finding-text">SSH algorithm enumeration identifies weak or outdated cryptographic settings. Both paramiko and raw socket KEXINIT methods were attempted. When enumeration fails, the cryptographic posture cannot be fully assessed.</div>
+
+              <div class="finding-section-lbl" style="margin-top:12px;">What to do</div>
+              <div class="finding-reco">Manually verify SSH configuration:
+  ssh -Q kex &lt;host&gt;
+  ssh-audit &lt;host&gt;  (install via pip install ssh-audit)
+Ensure the server uses modern algorithms and has SSHv1 disabled.</div>
+
+              
+              <div class="finding-evidence">Evidence: Banner: SSH-2.0-OpenSSH_7.4; Paramiko: connection rejected; Raw KEXINIT: no valid response</div>
+              
+
+              
+            </div>
+          </div>
+          
+          <div class="finding-card border-low">
+            <div class="finding-card-header sev-low" style="opacity:0.95;">
+              <span class="sev-badge sev-low">LOW</span>
+              <span class="finding-title">Missing Content-Security-Policy header</span>
+              
+              <span class="finding-port">8080/HTTP</span>
+            </div>
+            <div class="finding-card-body">
+              <div class="finding-section-lbl">What was found</div>
+              <div class="finding-text">The HTTP response from port 8080 is missing the Content-Security-Policy security header.</div>
+
+              <div class="finding-section-lbl" style="margin-top:12px;">What this means</div>
+              <div class="finding-text">A Content Security Policy helps prevent Cross-Site Scripting (XSS) attacks by controlling which scripts and resources can load.</div>
+
+              <div class="finding-section-lbl" style="margin-top:12px;">What to do</div>
+              <div class="finding-reco">Implement a Content-Security-Policy header appropriate for your application.</div>
+
+              
+              <div class="finding-evidence">Evidence: Header absent from: GET http://192.0.2.212:8080/</div>
+              
+
+              
+            </div>
+          </div>
+          
+          <div class="finding-card border-low">
+            <div class="finding-card-header sev-low" style="opacity:0.95;">
+              <span class="sev-badge sev-low">LOW</span>
+              <span class="finding-title">Missing X-Content-Type-Options header</span>
+              
+              <span class="finding-port">8080/HTTP</span>
+            </div>
+            <div class="finding-card-body">
+              <div class="finding-section-lbl">What was found</div>
+              <div class="finding-text">The HTTP response from port 8080 is missing the X-Content-Type-Options security header.</div>
+
+              <div class="finding-section-lbl" style="margin-top:12px;">What this means</div>
+              <div class="finding-text">This header prevents browsers from guessing (sniffing) the content type. Without it, some attacks using malicious file uploads become easier.</div>
+
+              <div class="finding-section-lbl" style="margin-top:12px;">What to do</div>
+              <div class="finding-reco">Add header: X-Content-Type-Options: nosniff</div>
+
+              
+              <div class="finding-evidence">Evidence: Header absent from: GET http://192.0.2.212:8080/</div>
+              
+
+              
+            </div>
+          </div>
+          
+          <div class="finding-card border-low">
+            <div class="finding-card-header sev-low" style="opacity:0.95;">
+              <span class="sev-badge sev-low">LOW</span>
+              <span class="finding-title">Missing X-Frame-Options header</span>
+              
+              <span class="finding-port">8080/HTTP</span>
+            </div>
+            <div class="finding-card-body">
+              <div class="finding-section-lbl">What was found</div>
+              <div class="finding-text">The HTTP response from port 8080 is missing the X-Frame-Options security header.</div>
+
+              <div class="finding-section-lbl" style="margin-top:12px;">What this means</div>
+              <div class="finding-text">Without X-Frame-Options, this page could be embedded in another website&#39;s iframe. This enables clickjacking attacks.</div>
+
+              <div class="finding-section-lbl" style="margin-top:12px;">What to do</div>
+              <div class="finding-reco">Add header: X-Frame-Options: DENY (or SAMEORIGIN for admin panels).</div>
+
+              
+              <div class="finding-evidence">Evidence: Header absent from: GET http://192.0.2.212:8080/</div>
+              
+
+              
+            </div>
+          </div>
+          
+          <div class="finding-card border-info">
+            <div class="finding-card-header sev-info" style="opacity:0.95;">
+              <span class="sev-badge sev-info">INFO</span>
+              <span class="finding-title">Device identified: Router — TP-Link — Archer C7 — v3.15.1 Build 160616</span>
+              
+              
+            </div>
+            <div class="finding-card-body">
+              <div class="finding-section-lbl">What was found</div>
+              <div class="finding-text">Type: Router
+Vendor: TP-Link
+Model: Archer C7
+Version: 3.15.1 Build 160616</div>
+
+              <div class="finding-section-lbl" style="margin-top:12px;">What this means</div>
+              <div class="finding-text">Device identity determined by combining evidence from multiple sources including MAC OUI, nmap OS detection, HTTP fingerprinting, TLS certificates, SSH banners, UPnP discovery, SNMP, and port heuristics.</div>
+
+              <div class="finding-section-lbl" style="margin-top:12px;">What to do</div>
+              <div class="finding-reco">No action required — informational finding.</div>
+
+              
+              <div class="finding-evidence">Evidence: Sources: credentials_model_index, http_fingerprint | Confidence: 90%</div>
+              
+
+              
+            </div>
+          </div>
+          
+          <div class="finding-card border-info">
+            <div class="finding-card-header sev-info" style="opacity:0.95;">
+              <span class="sev-badge sev-info">INFO</span>
+              <span class="finding-title">SSH service detected: OpenSSH 10.0p2</span>
+              
+              <span class="finding-port">22/SSH</span>
+            </div>
+            <div class="finding-card-body">
+              <div class="finding-section-lbl">What was found</div>
+              <div class="finding-text">SSH server identified as: SSH-2.0-OpenSSH_10.0p2 Debian-7+deb13u4</div>
+
+              <div class="finding-section-lbl" style="margin-top:12px;">What this means</div>
+              <div class="finding-text">An SSH service was detected. SSH is generally secure but weak algorithm choices can undermine its security.</div>
+
+              <div class="finding-section-lbl" style="margin-top:12px;">What to do</div>
+              <div class="finding-reco">Ensure SSH server is up-to-date and uses modern algorithm configurations.</div>
+
+              
+              <div class="finding-evidence">Evidence: Banner: SSH-2.0-OpenSSH_10.0p2 Debian-7+deb13u4</div>
+              
+
+              
+            </div>
+          </div>
+          
+          <div class="finding-card border-info">
+            <div class="finding-card-header sev-info" style="opacity:0.95;">
+              <span class="sev-badge sev-info">INFO</span>
+              <span class="finding-title">Web interface detected: Pi-hole LabPi</span>
+              
+              <span class="finding-port">80/HTTP</span>
+            </div>
+            <div class="finding-card-body">
+              <div class="finding-section-lbl">What was found</div>
+              <div class="finding-text">HTTP service on port 80: Title=&#39;Pi-hole LabPi&#39;, Server=&#39;&#39;, Status=403.</div>
+
+              <div class="finding-section-lbl" style="margin-top:12px;">What this means</div>
+              <div class="finding-text">A web interface was found on this device.</div>
+
+              <div class="finding-section-lbl" style="margin-top:12px;">What to do</div>
+              <div class="finding-reco">Review this web interface to ensure it requires authentication.</div>
+
+              
+              <div class="finding-evidence">Evidence: GET http://192.0.2.212:80/ → 403 | Server: </div>
+              
+
+              
+            </div>
+          </div>
+          
+          <div class="finding-card border-info">
+            <div class="finding-card-header sev-info" style="opacity:0.95;">
+              <span class="sev-badge sev-info">INFO</span>
+              <span class="finding-title">JA3S fingerprint computed on port 443</span>
+              
+              <span class="sev-badge confidence-likely" style="font-size:0.68rem;">LIKELY</span>
+              
+              <span class="finding-port">443/HTTPS</span>
+            </div>
+            <div class="finding-card-body">
+              <div class="finding-section-lbl">What was found</div>
+              <div class="finding-text">JA3S fingerprint computed for TLS server on port 443. No match found in signature database.</div>
+
+              <div class="finding-section-lbl" style="margin-top:12px;">What this means</div>
+              <div class="finding-text">JA3S is a server-side TLS fingerprint computed from the ServerHello: TLS version, selected cipher suite, and extension types. It can identify the TLS server implementation and detect known malicious configurations.</div>
+
+              <div class="finding-section-lbl" style="margin-top:12px;">What to do</div>
+              <div class="finding-reco">No action required for INFO findings. If matched as malicious/suspicious, investigate the service on this port.</div>
+
+              
+              <div class="finding-evidence">Evidence: JA3S: 2f9649d23227b8e19c207047c87df268</div>
+              
+
+              
+            </div>
+          </div>
+          
+          <div class="finding-card border-info">
+            <div class="finding-card-header sev-info" style="opacity:0.95;">
+              <span class="sev-badge sev-info">INFO</span>
+              <span class="finding-title">TLS certificate: CN=pi.hole</span>
+              
+              <span class="finding-port">443/HTTPS</span>
+            </div>
+            <div class="finding-card-body">
+              <div class="finding-section-lbl">What was found</div>
+              <div class="finding-text">Port 443 TLS certificate: CN=pi.hole, Issuer=Pi-hole, Expires=2026-07-09, Protocol=TLSv1.3, Key=EC-384.</div>
+
+              <div class="finding-section-lbl" style="margin-top:12px;">What this means</div>
+              <div class="finding-text">TLS certificate details for this service.</div>
+
+              <div class="finding-section-lbl" style="margin-top:12px;">What to do</div>
+              <div class="finding-reco">No action required for this informational item.</div>
+
+              
+              <div class="finding-evidence">Evidence: CN=pi.hole | Issuer=Pi-hole | Expires=2026-07-09, Key=EC-384</div>
+              
+
+              
+            </div>
+          </div>
+          
+          <div class="finding-card border-info">
+            <div class="finding-card-header sev-info" style="opacity:0.95;">
+              <span class="sev-badge sev-info">INFO</span>
+              <span class="finding-title">Web interface detected: Pi-hole LabPi</span>
+              
+              <span class="finding-port">443/HTTPS</span>
+            </div>
+            <div class="finding-card-body">
+              <div class="finding-section-lbl">What was found</div>
+              <div class="finding-text">HTTP service on port 443: Title=&#39;Pi-hole LabPi&#39;, Server=&#39;&#39;, Status=403.</div>
+
+              <div class="finding-section-lbl" style="margin-top:12px;">What this means</div>
+              <div class="finding-text">A web interface was found on this device.</div>
+
+              <div class="finding-section-lbl" style="margin-top:12px;">What to do</div>
+              <div class="finding-reco">Review this web interface to ensure it requires authentication.</div>
+
+              
+              <div class="finding-evidence">Evidence: GET https://192.0.2.212:443/ → 403 | Server: </div>
+              
+
+              
+            </div>
+          </div>
+          
+          <div class="finding-card border-info">
+            <div class="finding-card-header sev-info" style="opacity:0.95;">
+              <span class="sev-badge sev-info">INFO</span>
+              <span class="finding-title">FTP service detected: vsftpd 2.3.4</span>
+              
+              <span class="finding-port">2121/FTP</span>
+            </div>
+            <div class="finding-card-body">
+              <div class="finding-section-lbl">What was found</div>
+              <div class="finding-text">FTP service running vsftpd 2.3.4 on port 2121. Banner: &#39;220 (vsFTPd 2.3.4)&#39;</div>
+
+              <div class="finding-section-lbl" style="margin-top:12px;">What this means</div>
+              <div class="finding-text">An FTP service was detected. FTP transmits data in cleartext by default.</div>
+
+              <div class="finding-section-lbl" style="margin-top:12px;">What to do</div>
+              <div class="finding-reco">Consider replacing FTP with SFTP (SSH) or FTPS. Disable FTP if unused.</div>
+
+              
+              <div class="finding-evidence">Evidence: Banner: 220 (vsFTPd 2.3.4)</div>
+              
+
+              
+            </div>
+          </div>
+          
+          <div class="finding-card border-info">
+            <div class="finding-card-header sev-info" style="opacity:0.95;">
+              <span class="sev-badge sev-info">INFO</span>
+              <span class="finding-title">SSH service detected: OpenSSH 7.4</span>
+              
+              <span class="finding-port">2222/SSH</span>
+            </div>
+            <div class="finding-card-body">
+              <div class="finding-section-lbl">What was found</div>
+              <div class="finding-text">SSH server identified as: SSH-2.0-OpenSSH_7.4</div>
+
+              <div class="finding-section-lbl" style="margin-top:12px;">What this means</div>
+              <div class="finding-text">An SSH service was detected. SSH is generally secure but weak algorithm choices can undermine its security.</div>
+
+              <div class="finding-section-lbl" style="margin-top:12px;">What to do</div>
+              <div class="finding-reco">Ensure SSH server is up-to-date and uses modern algorithm configurations.</div>
+
+              
+              <div class="finding-evidence">Evidence: Banner: SSH-2.0-OpenSSH_7.4</div>
+              
+
+              
+            </div>
+          </div>
+          
+          <div class="finding-card border-info">
+            <div class="finding-card-header sev-info" style="opacity:0.95;">
+              <span class="sev-badge sev-info">INFO</span>
+              <span class="finding-title">Web interface detected: TP-Link Archer C7</span>
+              
+              <span class="finding-port">8080/HTTP</span>
+            </div>
+            <div class="finding-card-body">
+              <div class="finding-section-lbl">What was found</div>
+              <div class="finding-text">HTTP service on port 8080: Title=&#39;TP-Link Archer C7&#39;, Server=&#39;nginx/1.14.0 &#39;, Status=200.</div>
+
+              <div class="finding-section-lbl" style="margin-top:12px;">What this means</div>
+              <div class="finding-text">A web interface was found on this device.</div>
+
+              <div class="finding-section-lbl" style="margin-top:12px;">What to do</div>
+              <div class="finding-reco">Review this web interface to ensure it requires authentication.</div>
+
+              
+              <div class="finding-evidence">Evidence: GET http://192.0.2.212:8080/ → 200 | Server: nginx/1.14.0 </div>
+              
+
+              
+            </div>
+          </div>
+          
+          <div class="finding-card border-info">
+            <div class="finding-card-header sev-info" style="opacity:0.95;">
+              <span class="sev-badge sev-info">INFO</span>
+              <span class="finding-title">Web technology detected: Nginx 1.14.0</span>
+              
+              <span class="sev-badge confidence-likely" style="font-size:0.68rem;">LIKELY</span>
+              
+              <span class="finding-port">8080/HTTP</span>
+            </div>
+            <div class="finding-card-body">
+              <div class="finding-section-lbl">What was found</div>
+              <div class="finding-text">Wappalyzer signature matched: Nginx 1.14.0 detected on port 8080.</div>
+
+              <div class="finding-section-lbl" style="margin-top:12px;">What this means</div>
+              <div class="finding-text">The web interface on port 8080 appears to be running Nginx 1.14.0. Knowing the exact technology stack helps identify applicable CVEs and EOL dates.</div>
+
+              <div class="finding-section-lbl" style="margin-top:12px;">What to do</div>
+              <div class="finding-reco">Verify Nginx is up to date and check its End-of-Life status.</div>
+
+              
+              <div class="finding-evidence">Evidence: Wappalyzer signature match (LIKELY): Nginx</div>
+              
+
+              
+            </div>
+          </div>
+          
+          <div class="finding-card border-info">
+            <div class="finding-card-header sev-info" style="opacity:0.95;">
+              <span class="sev-badge sev-info">INFO</span>
+              <span class="finding-title">Web technology detected: PHP 7.2.34</span>
+              
+              <span class="sev-badge confidence-likely" style="font-size:0.68rem;">LIKELY</span>
+              
+              <span class="finding-port">8080/HTTP</span>
+            </div>
+            <div class="finding-card-body">
+              <div class="finding-section-lbl">What was found</div>
+              <div class="finding-text">Wappalyzer signature matched: PHP 7.2.34 detected on port 8080.</div>
+
+              <div class="finding-section-lbl" style="margin-top:12px;">What this means</div>
+              <div class="finding-text">The web interface on port 8080 appears to be running PHP 7.2.34. Knowing the exact technology stack helps identify applicable CVEs and EOL dates.</div>
+
+              <div class="finding-section-lbl" style="margin-top:12px;">What to do</div>
+              <div class="finding-reco">Verify PHP is up to date and check its End-of-Life status.</div>
+
+              
+              <div class="finding-evidence">Evidence: Wappalyzer signature match (LIKELY): PHP</div>
+              
+
+              
+            </div>
+          </div>
+          
+        </div>
+        
+
+        <!-- Open ports table -->
+        
+        <div style="font-size:0.72rem; font-weight:700; text-transform:uppercase; letter-spacing:0.8px; color:#9ca3af; margin-bottom:8px;">Open Ports</div>
+        <div style="overflow-x:auto;">
+          <table class="ports-table">
+            <thead>
+              <tr>
+                <th>Port</th>
+                <th>Protocol</th>
+                <th>Service</th>
+                <th>Software</th>
+                <th>Version</th>
+                <th>EOL Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              
+              
+              <tr>
+                <td>22</td>
+                <td>tcp</td>
+                <td>openssh</td>
+                <td>SSH-2.0-OpenSSH_10.0p2 Debian-</td>
+                <td>Debian-7+deb13u4</td>
+                <td>
+                  
+                    
+                      <span class="eol-unknown" title="N/A — openssh not tracked by endoflife.date">N/A</span>
+                    
+                  
+                </td>
+              </tr>
+              
+              
+              <tr>
+                <td>53</td>
+                <td>tcp</td>
+                <td>dnsmasq</td>
+                <td>—</td>
+                <td>pi-hole-v2.92rc1</td>
+                <td>
+                  
+                    
+                      <span class="eol-unknown" title="N/A — dnsmasq not tracked by endoflife.date">N/A</span>
+                    
+                  
+                </td>
+              </tr>
+              
+              
+              <tr>
+                <td>80</td>
+                <td>tcp</td>
+                <td>http</td>
+                <td>HTTP/1.0 403 Forbidden
+</td>
+                <td>1.0</td>
+                <td>
+                  
+                    
+                      <span class="eol-unknown" title="N/A — http not tracked by endoflife.date">N/A</span>
+                    
+                  
+                </td>
+              </tr>
+              
+              
+              <tr>
+                <td>443</td>
+                <td>tcp</td>
+                <td>http</td>
+                <td>HTTP/1.0 403 Forbidden
+</td>
+                <td>1.0</td>
+                <td>
+                  
+                    
+                      <span class="eol-unknown" title="N/A — http not tracked by endoflife.date">N/A</span>
+                    
+                  
+                </td>
+              </tr>
+              
+              
+              <tr>
+                <td>2121</td>
+                <td>tcp</td>
+                <td>vsftpd</td>
+                <td>220 (vsFTPd 2.3.4)
+</td>
+                <td>2.3.4)</td>
+                <td>
+                  
+                    
+                      <span class="eol-unknown" title="N/A — vsftpd not tracked by endoflife.date">N/A</span>
+                    
+                  
+                </td>
+              </tr>
+              
+              
+              <tr>
+                <td>2222</td>
+                <td>tcp</td>
+                <td>openssh</td>
+                <td>SSH-2.0-OpenSSH_7.4
+</td>
+                <td>7.4</td>
+                <td>
+                  
+                    
+                      <span class="eol-unknown" title="N/A — openssh not tracked by endoflife.date">N/A</span>
+                    
+                  
+                </td>
+              </tr>
+              
+              
+              <tr>
+                <td>2323</td>
+                <td>tcp</td>
+                <td>3d-nfsd</td>
+                <td>BusyBox v1.19.4 (2012-03-15) b</td>
+                <td>—</td>
+                <td>
+                  
+                    <span class="eol-unknown">—</span>
+                  
+                </td>
+              </tr>
+              
+              
+              <tr>
+                <td>5000</td>
+                <td>tcp</td>
+                <td>apache</td>
+                <td>TP-Link</td>
+                <td>2.4.49</td>
+                <td>
+                  
+                    
+                      <span class="eol-unknown" title="N/A — arch-linux not tracked by endoflife.date">N/A</span>
+                    
+                  
+                </td>
+              </tr>
+              
+              
+              <tr>
+                <td>5555</td>
+                <td>tcp</td>
+                <td>redis key-value store</td>
+                <td>—</td>
+                <td>—</td>
+                <td>
+                  
+                    <span class="eol-unknown">—</span>
+                  
+                </td>
+              </tr>
+              
+              
+              <tr>
+                <td>8080</td>
+                <td>tcp</td>
+                <td>nginx</td>
+                <td>TP-Link</td>
+                <td>1.14.0</td>
+                <td>
+                  
+                    
+                      <span class="eol-critical">EOL: 2019-04-23</span>
+                    
+                  
+                </td>
+              </tr>
+              
+              
+              <tr>
+                <td>8088</td>
+                <td>tcp</td>
+                <td>nginx</td>
+                <td>—</td>
+                <td>1.14.0</td>
+                <td>
+                  
+                    
+                      <span class="eol-critical">EOL: 2019-04-23</span>
+                    
+                  
+                </td>
+              </tr>
+              
+              
+              <tr>
+                <td>8089</td>
+                <td>tcp</td>
+                <td>apache</td>
+                <td>—</td>
+                <td>2.4.49</td>
+                <td>
+                  
+                    
+                      <span class="eol-unknown">Unknown</span>
+                    
+                  
+                </td>
+              </tr>
+              
+              
+              <tr>
+                <td>8090</td>
+                <td>tcp</td>
+                <td>apache</td>
+                <td>—</td>
+                <td>2.4.38</td>
+                <td>
+                  
+                    
+                      <span class="eol-unknown">Unknown</span>
+                    
+                  
+                </td>
+              </tr>
+              
+            </tbody>
+          </table>
+        </div>
+        
+
+      </div><!-- /host-body -->
+    </div><!-- /host-section -->
+    
+  </div>
+
+  <!-- ====== RECOMMENDATIONS ====== -->
+  
+  
+  <div class="section">
+    <div class="section-title">&#9989; Recommended Actions (by priority)</div>
+    <ul class="reco-list">
+      
+      <li>
+        <div class="reco-num">1</div>
+        <div>
+          <div style="margin-bottom:4px;">
+            <span class="sev-badge sev-critical">CRITICAL</span>
+            &nbsp;<strong>Anonymous FTP login allowed on port 2121</strong>
+            &nbsp;<span class="reco-item-host">192.0.2.212:2121</span>
+          </div>
+          <div class="finding-reco" style="color:#374151;">1. Disable anonymous FTP access immediately in the server configuration.
+2. If anonymous access is required (e.g., public software mirror), ensure no sensitive files are in the FTP root.
+3. Consider switching to SFTP which enforces authentication and encryption.</div>
+        </div>
+      </li>
+      
+      <li>
+        <div class="reco-num">2</div>
+        <div>
+          <div style="margin-bottom:4px;">
+            <span class="sev-badge sev-high">HIGH</span>
+            &nbsp;<strong>UPnP Internet Gateway Device (router) found at 192.0.2.1</strong>
+            &nbsp;<span class="reco-item-host">192.0.2.1:1900</span>
+          </div>
+          <div class="finding-reco" style="color:#374151;">1. Log into your router&#39;s admin panel.
+2. Find the UPnP settings (usually under Advanced &gt; UPnP or NAT).
+3. Disable UPnP entirely unless you have a specific need for it.
+4. After disabling, test that streaming services, games, and VoIP still work — most will not require UPnP.
+5. If some application specifically requires UPnP, create static port forwarding rules manually instead.</div>
+        </div>
+      </li>
+      
+      <li>
+        <div class="reco-num">3</div>
+        <div>
+          <div style="margin-bottom:4px;">
+            <span class="sev-badge sev-high">HIGH</span>
+            &nbsp;<strong>TP-Link Archer C7 no longer receives security updates</strong>
+            &nbsp;<span class="reco-item-host">192.0.2.212</span>
+          </div>
+          <div class="finding-reco" style="color:#374151;">1. Confirm the exact model, hardware revision, and region from the device label or admin UI.
+2. Apply the newest firmware still offered by the vendor.
+3. If the vendor no longer provides security updates for this hardware, plan replacement or isolate the device on a restricted network segment.</div>
+        </div>
+      </li>
+      
+      <li>
+        <div class="reco-num">4</div>
+        <div>
+          <div style="margin-bottom:4px;">
+            <span class="sev-badge sev-high">HIGH</span>
+            &nbsp;<strong>SSH weak MAC algorithms supported on port 22</strong>
+            &nbsp;<span class="reco-item-host">192.0.2.212:22</span>
+          </div>
+          <div class="finding-reco" style="color:#374151;">In sshd_config, set:
+MACs hmac-sha2-512-etm@openssh.com,hmac-sha2-256-etm@openssh.com,umac-128-etm@openssh.com</div>
+        </div>
+      </li>
+      
+      <li>
+        <div class="reco-num">5</div>
+        <div>
+          <div style="margin-bottom:4px;">
+            <span class="sev-badge sev-high">HIGH</span>
+            &nbsp;<strong>SSH weak ciphers supported on port 22</strong>
+            &nbsp;<span class="reco-item-host">192.0.2.212:22</span>
+          </div>
+          <div class="finding-reco" style="color:#374151;">In sshd_config, set:
+Ciphers aes256-gcm@openssh.com,aes128-gcm@openssh.com,chacha20-poly1305@openssh.com</div>
+        </div>
+      </li>
+      
+      <li>
+        <div class="reco-num">6</div>
+        <div>
+          <div style="margin-bottom:4px;">
+            <span class="sev-badge sev-high">HIGH</span>
+            &nbsp;<strong>Login form on plain HTTP — credentials sent in cleartext</strong>
+            &nbsp;<span class="reco-item-host">192.0.2.212:8080</span>
+          </div>
+          <div class="finding-reco" style="color:#374151;">1. Access this device&#39;s settings and enable HTTPS.
+2. If the device doesn&#39;t support HTTPS, check for a firmware update.
+3. Until this is fixed, only administer this device from a wired connection, not over Wi-Fi.</div>
+        </div>
+      </li>
+      
+      <li>
+        <div class="reco-num">7</div>
+        <div>
+          <div style="margin-bottom:4px;">
+            <span class="sev-badge sev-high">HIGH</span>
+            &nbsp;<strong>End-of-Life software: nginx 1.14.0</strong>
+            &nbsp;<span class="reco-item-host">192.0.2.212:8080</span>
+          </div>
+          <div class="finding-reco" style="color:#374151;">Upgrade nginx to the latest supported version (1.14.2). If this is a network device (router, NAS, printer), check the manufacturer&#39;s website for a firmware update or replacement options.</div>
+        </div>
+      </li>
+      
+      <li>
+        <div class="reco-num">8</div>
+        <div>
+          <div style="margin-bottom:4px;">
+            <span class="sev-badge sev-high">HIGH</span>
+            &nbsp;<strong>End-of-Life software: nginx 1.14.0</strong>
+            &nbsp;<span class="reco-item-host">192.0.2.212:8088</span>
+          </div>
+          <div class="finding-reco" style="color:#374151;">Upgrade nginx to the latest supported version (1.14.2). If this is a network device (router, NAS, printer), check the manufacturer&#39;s website for a firmware update or replacement options.</div>
+        </div>
+      </li>
+      
+      <li>
+        <div class="reco-num">9</div>
+        <div>
+          <div style="margin-bottom:4px;">
+            <span class="sev-badge sev-medium">MEDIUM</span>
+            &nbsp;<strong>mDNS-only device discovered: 192.0.2.61 [Nas.local.]</strong>
+            &nbsp;<span class="reco-item-host">192.0.2.61:445</span>
+          </div>
+          <div class="finding-reco" style="color:#374151;">1. Identify this device: check your DHCP server/router for MAC address.
+2. If device is unexpected, investigate: who added 192.0.2.61 to the network?
+3. Check device firmware version and apply available updates.
+4. Consider network segmentation (IoT VLAN) to isolate smart home devices.</div>
+        </div>
+      </li>
+      
+      <li>
+        <div class="reco-num">10</div>
+        <div>
+          <div style="margin-bottom:4px;">
+            <span class="sev-badge sev-medium">MEDIUM</span>
+            &nbsp;<strong>UPnP-enabled device at 192.0.2.61: Nas (DS224+)</strong>
+            &nbsp;<span class="reco-item-host">192.0.2.61:1900</span>
+          </div>
+          <div class="finding-reco" style="color:#374151;">1. Check if this device actually needs UPnP to function.
+2. If possible, disable UPnP in the device&#39;s settings.
+3. Ensure the device has the latest firmware installed.
+4. Keep this device on a separate IoT network segment if possible.</div>
+        </div>
+      </li>
+      
+      <li>
+        <div class="reco-num">11</div>
+        <div>
+          <div style="margin-bottom:4px;">
+            <span class="sev-badge sev-medium">MEDIUM</span>
+            &nbsp;<strong>UPnP-enabled device at 192.0.2.84: WPS Access Point</strong>
+            &nbsp;<span class="reco-item-host">192.0.2.84:1900</span>
+          </div>
+          <div class="finding-reco" style="color:#374151;">1. Check if this device actually needs UPnP to function.
+2. If possible, disable UPnP in the device&#39;s settings.
+3. Ensure the device has the latest firmware installed.
+4. Keep this device on a separate IoT network segment if possible.</div>
+        </div>
+      </li>
+      
+      <li>
+        <div class="reco-num">12</div>
+        <div>
+          <div style="margin-bottom:4px;">
+            <span class="sev-badge sev-medium">MEDIUM</span>
+            &nbsp;<strong>mDNS-only device discovered: 192.0.2.181 [Sovrum]</strong>
+            &nbsp;<span class="reco-item-host">192.0.2.181:5353</span>
+          </div>
+          <div class="finding-reco" style="color:#374151;">1. Identify this device: check your DHCP server/router for MAC address.
+2. If device is unexpected, investigate: who added 192.0.2.181 to the network?
+3. Check device firmware version and apply available updates.
+4. Consider network segmentation (IoT VLAN) to isolate smart home devices.</div>
+        </div>
+      </li>
+      
+      <li>
+        <div class="reco-num">13</div>
+        <div>
+          <div style="margin-bottom:4px;">
+            <span class="sev-badge sev-medium">MEDIUM</span>
+            &nbsp;<strong>Admin panel paths found on port 80</strong>
+            &nbsp;<span class="reco-item-host">192.0.2.212:80</span>
+          </div>
+          <div class="finding-reco" style="color:#374151;">1. Ensure all admin interfaces require strong authentication.
+2. If possible, restrict admin access to specific IP addresses only.
+3. Disable or remove any admin paths that are no longer needed.
+4. Change any default passwords on accessible admin panels.</div>
+        </div>
+      </li>
+      
+      <li>
+        <div class="reco-num">14</div>
+        <div>
+          <div style="margin-bottom:4px;">
+            <span class="sev-badge sev-medium">MEDIUM</span>
+            &nbsp;<strong>Missing HSTS header</strong>
+            &nbsp;<span class="reco-item-host">192.0.2.212:443</span>
+          </div>
+          <div class="finding-reco" style="color:#374151;">Add header: Strict-Transport-Security: max-age=31536000; includeSubDomains</div>
+        </div>
+      </li>
+      
+      <li>
+        <div class="reco-num">15</div>
+        <div>
+          <div style="margin-bottom:4px;">
+            <span class="sev-badge sev-medium">MEDIUM</span>
+            &nbsp;<strong>Admin panel paths found on port 443</strong>
+            &nbsp;<span class="reco-item-host">192.0.2.212:443</span>
+          </div>
+          <div class="finding-reco" style="color:#374151;">1. Ensure all admin interfaces require strong authentication.
+2. If possible, restrict admin access to specific IP addresses only.
+3. Disable or remove any admin paths that are no longer needed.
+4. Change any default passwords on accessible admin panels.</div>
+        </div>
+      </li>
+      
+      <li>
+        <div class="reco-num">16</div>
+        <div>
+          <div style="margin-bottom:4px;">
+            <span class="sev-badge sev-medium">MEDIUM</span>
+            &nbsp;<strong>FTP has no TLS support (cleartext credentials) on port 2121</strong>
+            &nbsp;<span class="reco-item-host">192.0.2.212:2121</span>
+          </div>
+          <div class="finding-reco" style="color:#374151;">1. Enable FTPS (AUTH TLS) in your FTP server configuration.
+2. Better: replace FTP entirely with SFTP (port 22, SSH-based).
+3. Disable plain FTP if FTPS or SFTP is available.</div>
+        </div>
+      </li>
+      
+      <li>
+        <div class="reco-num">17</div>
+        <div>
+          <div style="margin-bottom:4px;">
+            <span class="sev-badge sev-medium">MEDIUM</span>
+            &nbsp;<strong>Known vulnerability: ALPINE-CVE-2018-16843 in nginx 1.14.0</strong>
+            &nbsp;<span class="reco-item-host">192.0.2.212:8080</span>
+          </div>
+          <div class="finding-reco" style="color:#374151;">Update nginx to the latest available version. Check your device vendor&#39;s support site for firmware updates.</div>
+        </div>
+      </li>
+      
+      <li>
+        <div class="reco-num">18</div>
+        <div>
+          <div style="margin-bottom:4px;">
+            <span class="sev-badge sev-medium">MEDIUM</span>
+            &nbsp;<strong>Known vulnerability: ALPINE-CVE-2018-16844 in nginx 1.14.0</strong>
+            &nbsp;<span class="reco-item-host">192.0.2.212:8080</span>
+          </div>
+          <div class="finding-reco" style="color:#374151;">Update nginx to the latest available version. Check your device vendor&#39;s support site for firmware updates.</div>
+        </div>
+      </li>
+      
+      <li>
+        <div class="reco-num">19</div>
+        <div>
+          <div style="margin-bottom:4px;">
+            <span class="sev-badge sev-medium">MEDIUM</span>
+            &nbsp;<strong>Known vulnerability: ALPINE-CVE-2018-16845 in nginx 1.14.0</strong>
+            &nbsp;<span class="reco-item-host">192.0.2.212:8080</span>
+          </div>
+          <div class="finding-reco" style="color:#374151;">Update nginx to the latest available version. Check your device vendor&#39;s support site for firmware updates.</div>
+        </div>
+      </li>
+      
+      <li>
+        <div class="reco-num">20</div>
+        <div>
+          <div style="margin-bottom:4px;">
+            <span class="sev-badge sev-medium">MEDIUM</span>
+            &nbsp;<strong>Known vulnerability: ALPINE-CVE-2019-20372 in nginx 1.14.0</strong>
+            &nbsp;<span class="reco-item-host">192.0.2.212:8080</span>
+          </div>
+          <div class="finding-reco" style="color:#374151;">Update nginx to the latest available version. Check your device vendor&#39;s support site for firmware updates.</div>
+        </div>
+      </li>
+      
+      <li>
+        <div class="reco-num">21</div>
+        <div>
+          <div style="margin-bottom:4px;">
+            <span class="sev-badge sev-medium">MEDIUM</span>
+            &nbsp;<strong>Known vulnerability: ALPINE-CVE-2019-9511 in nginx 1.14.0</strong>
+            &nbsp;<span class="reco-item-host">192.0.2.212:8080</span>
+          </div>
+          <div class="finding-reco" style="color:#374151;">Update nginx to the latest available version. Check your device vendor&#39;s support site for firmware updates.</div>
+        </div>
+      </li>
+      
+      <li>
+        <div class="reco-num">22</div>
+        <div>
+          <div style="margin-bottom:4px;">
+            <span class="sev-badge sev-medium">MEDIUM</span>
+            &nbsp;<strong>Admin panel paths found on port 8080</strong>
+            &nbsp;<span class="reco-item-host">192.0.2.212:8080</span>
+          </div>
+          <div class="finding-reco" style="color:#374151;">1. Ensure all admin interfaces require strong authentication.
+2. If possible, restrict admin access to specific IP addresses only.
+3. Disable or remove any admin paths that are no longer needed.
+4. Change any default passwords on accessible admin panels.</div>
+        </div>
+      </li>
+      
+      <li>
+        <div class="reco-num">23</div>
+        <div>
+          <div style="margin-bottom:4px;">
+            <span class="sev-badge sev-medium">MEDIUM</span>
+            &nbsp;<strong>Known vulnerability: ALPINE-CVE-2018-16843 in nginx 1.14.0</strong>
+            &nbsp;<span class="reco-item-host">192.0.2.212:8088</span>
+          </div>
+          <div class="finding-reco" style="color:#374151;">Update nginx to the latest available version. Check your device vendor&#39;s support site for firmware updates.</div>
+        </div>
+      </li>
+      
+      <li>
+        <div class="reco-num">24</div>
+        <div>
+          <div style="margin-bottom:4px;">
+            <span class="sev-badge sev-medium">MEDIUM</span>
+            &nbsp;<strong>Known vulnerability: ALPINE-CVE-2018-16844 in nginx 1.14.0</strong>
+            &nbsp;<span class="reco-item-host">192.0.2.212:8088</span>
+          </div>
+          <div class="finding-reco" style="color:#374151;">Update nginx to the latest available version. Check your device vendor&#39;s support site for firmware updates.</div>
+        </div>
+      </li>
+      
+      <li>
+        <div class="reco-num">25</div>
+        <div>
+          <div style="margin-bottom:4px;">
+            <span class="sev-badge sev-medium">MEDIUM</span>
+            &nbsp;<strong>Known vulnerability: ALPINE-CVE-2018-16845 in nginx 1.14.0</strong>
+            &nbsp;<span class="reco-item-host">192.0.2.212:8088</span>
+          </div>
+          <div class="finding-reco" style="color:#374151;">Update nginx to the latest available version. Check your device vendor&#39;s support site for firmware updates.</div>
+        </div>
+      </li>
+      
+      <li>
+        <div class="reco-num">26</div>
+        <div>
+          <div style="margin-bottom:4px;">
+            <span class="sev-badge sev-medium">MEDIUM</span>
+            &nbsp;<strong>Known vulnerability: ALPINE-CVE-2019-20372 in nginx 1.14.0</strong>
+            &nbsp;<span class="reco-item-host">192.0.2.212:8088</span>
+          </div>
+          <div class="finding-reco" style="color:#374151;">Update nginx to the latest available version. Check your device vendor&#39;s support site for firmware updates.</div>
+        </div>
+      </li>
+      
+      <li>
+        <div class="reco-num">27</div>
+        <div>
+          <div style="margin-bottom:4px;">
+            <span class="sev-badge sev-medium">MEDIUM</span>
+            &nbsp;<strong>Known vulnerability: ALPINE-CVE-2019-9511 in nginx 1.14.0</strong>
+            &nbsp;<span class="reco-item-host">192.0.2.212:8088</span>
+          </div>
+          <div class="finding-reco" style="color:#374151;">Update nginx to the latest available version. Check your device vendor&#39;s support site for firmware updates.</div>
+        </div>
+      </li>
+      
+    </ul>
+  </div>
+  
+
+  <!-- ====== FOOTER ====== -->
+  <div class="report-footer">
+    Generated by <strong>SunsetScan v2.1.0</strong>
+    &bull; 2026-05-28 14:27:20
+    &bull; This report is for authorised use only.
+    Lifecycle data from local SunsetScan caches &bull; CVE data from OSV.dev
+  </div>
+
+</div><!-- /page -->
+
+<script>
+  function toggleHost(id) {
+    var body = document.getElementById('body-' + id);
+    var toggle = document.getElementById('toggle-' + id);
+    if (!body) return;
+    if (body.style.display === 'none') {
+      body.style.display = '';
+      if (toggle) toggle.innerHTML = '&#9660;';
+    } else {
+      body.style.display = 'none';
+      if (toggle) toggle.innerHTML = '&#9654;';
+    }
+  }
+
+  function scrollToHost(ip) {
+    var id = 'host-' + ip.replace(/\./g, '-');
+    var el = document.getElementById(id);
+    if (!el) return;
+    // Expand if collapsed
+    var body = document.getElementById('body-' + ip.replace(/\./g, '-'));
+    if (body && body.style.display === 'none') toggleHost(ip.replace(/\./g, '-'));
+    el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+
+  // Auto-collapse INFO-only hosts on load to reduce visual noise
+  document.addEventListener('DOMContentLoaded', function () {
+    document.querySelectorAll('.host-section').forEach(function (section) {
+      var badges = section.querySelectorAll('.sev-badge');
+      var hasRisk = false;
+      badges.forEach(function (b) {
+        var t = b.textContent.trim().toLowerCase();
+        if (t.includes('critical') || t.includes('high') || t.includes('medium')) hasRisk = true;
+      });
+      if (!hasRisk) {
+        var id = section.id.replace('host-', '');
+        var body = document.getElementById('body-' + id);
+        var toggle = document.getElementById('toggle-' + id);
+        if (body) body.style.display = 'none';
+        if (toggle) toggle.innerHTML = '&#9654;';
+      }
+    });
+  });
+</script>
+</body>
+</html>

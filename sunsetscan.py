@@ -29,7 +29,7 @@ import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
 from pathlib import Path
-from typing import List, Optional, Dict, Any
+from typing import List, Optional, Dict, Any, Tuple
 
 # Setup logger
 logger = logging.getLogger(__name__)
@@ -747,7 +747,7 @@ class SunsetScan:
             scan_result: Scan results containing hosts and ports
         """
         banner_targets = [
-            (ip, p.port)
+            (ip, p.port, p.service)
             for ip, host in scan_result.hosts.items()
             for p in host.ports.values()
             if p.state == 'open'
@@ -788,8 +788,13 @@ class SunsetScan:
             max_workers = min(self.settings.max_threads, len(banner_targets))
             with ThreadPoolExecutor(max_workers=max_workers) as executor:
                 future_to_target = {
-                    executor.submit(self.banner_grabber.grab_banner, ip, port_num): (ip, port_num)
-                    for ip, port_num in banner_targets
+                    executor.submit(
+                        self.banner_grabber.grab_banner,
+                        ip,
+                        port_num,
+                        service_hint=service_hint,
+                    ): (ip, port_num)
+                    for ip, port_num, service_hint in banner_targets
                 }
 
                 for future in as_completed(future_to_target):
@@ -867,6 +872,22 @@ class SunsetScan:
                             logger.debug(
                                 f"HTTP fingerprint EOL: {ip}:{port_num} "
                                 f"{fw_slug} {fp.firmware_version}"
+                            )
+
+                    for hdr_product, hdr_version in self._iter_http_product_versions(port):
+                        try:
+                            hdr_status = self.eol_checker.check_version(hdr_product, hdr_version)
+                        except Exception as e:
+                            logger.debug(
+                                f"HTTP header EOL check error {ip}:{port_num} "
+                                f"{hdr_product} {hdr_version}: {e}"
+                            )
+                            continue
+                        if self._eol_status_priority(hdr_status) > self._eol_status_priority(eol_status):
+                            eol_status = hdr_status
+                            logger.debug(
+                                f"HTTP header EOL: {ip}:{port_num} "
+                                f"{hdr_product} {hdr_version} -> {hdr_status.level.value}"
                             )
 
                     # Only store the result if we actually identified a product.
@@ -1045,8 +1066,13 @@ class SunsetScan:
 
         # ---- Run checkers sequentially per host (no inner pool) ----
         checkers = [
-            ("protocols", lambda: _check_insecure_protocols(ip, open_ports)),
-            ("web", lambda: run_web_checks(ip, open_ports, timeout=web_timeout)),
+            ("protocols", lambda: _check_insecure_protocols(ip, open_ports, host_info=host_info)),
+            ("web", lambda: run_web_checks(
+                ip,
+                open_ports,
+                timeout=web_timeout,
+                services_by_port={p.port: p.service for p in host_info.ports.values()},
+            )),
             ("ftp", lambda: run_ftp_checks(ip, open_ports, timeout=banner_timeout)),
             ("ssh", lambda: run_ssh_checks(ip, open_ports)),
             ("smb", lambda: run_smb_checks(ip, open_ports)),
@@ -1485,6 +1511,71 @@ class SunsetScan:
     # Map Ubuntu SSH package revision prefix to Ubuntu release version
     _UBUNTU_SSH_RELEASE_MAP = load_data("ubuntu_ssh_release_map.json")
 
+    @staticmethod
+    def _eol_status_priority(eol_status) -> int:
+        """Rank EOL results so actionable HTTP header findings can replace generic service results."""
+        if not eol_status:
+            return 0
+        if eol_status.level == EOLStatusLevel.CRITICAL:
+            return 5
+        if eol_status.level == EOLStatusLevel.WARNING:
+            return 4
+        if eol_status.level == EOLStatusLevel.OK:
+            return 3
+        if eol_status.level == EOLStatusLevel.UNKNOWN:
+            return 2
+        if eol_status.level == EOLStatusLevel.NOT_APPLICABLE:
+            return 1
+        return 0
+
+    @staticmethod
+    def _http_header_value(headers: Dict[str, str], name: str) -> str:
+        """Read an HTTP header dict case-insensitively."""
+        if not isinstance(headers, dict):
+            return ""
+        direct = headers.get(name) or headers.get(name.lower()) or headers.get(name.upper())
+        if direct:
+            return str(direct)
+        name_lower = name.lower()
+        for key, value in headers.items():
+            if str(key).lower() == name_lower:
+                return str(value)
+        return ""
+
+    @classmethod
+    def _iter_http_product_versions(cls, port) -> List[Tuple[str, str]]:
+        """Extract product/version pairs from HTTP fingerprint headers."""
+        fp = getattr(port, "http_fingerprint", None)
+        if not fp:
+            return []
+
+        raw_headers = getattr(fp, "raw_headers", None) or {}
+        if not isinstance(raw_headers, dict):
+            return []
+
+        candidates: List[Tuple[str, str]] = []
+        seen = set()
+        for header_name in ("Server", "X-Powered-By", "X-Generator"):
+            header_value = cls._http_header_value(raw_headers, header_name)
+            if not header_value:
+                continue
+
+            for match in re.finditer(
+                r'([A-Za-z][A-Za-z0-9_.+-]*)(?:/|\s+v?)(\d+(?:[._-]\d+)*(?:[A-Za-z][0-9]*)?)',
+                header_value,
+                re.I,
+            ):
+                product = match.group(1).strip(" \t\r\n()[]{}.,;:").lower()
+                version = match.group(2).strip(" \t\r\n()[]{}.,;:")
+                if not product or not version or product in {"http", "https"}:
+                    continue
+                key = (product, version)
+                if key not in seen:
+                    candidates.append(key)
+                    seen.add(key)
+
+        return candidates
+
     def _run_cve_checks(self, ip: str, host_info) -> List[Finding]:
         """Run CVE lookup for each detected service version on a host."""
         findings: List[Finding] = []
@@ -1526,33 +1617,25 @@ class SunsetScan:
                             logger.debug(f"SSH CVE check error {ip}:{port_num}: {e}")
                         break
 
-            # HTTP fingerprint → CVE pipeline: check raw_headers Server for versions
-            if port.http_fingerprint:
-                fp = port.http_fingerprint
-                raw_headers = getattr(fp, "raw_headers", None) or {}
-                server_hdr = raw_headers.get("Server", "") if isinstance(raw_headers, dict) else ""
-                if server_hdr and "/" in server_hdr:
-                    # e.g. "Apache/2.4.29" or "nginx/1.18.0"
-                    parts = server_hdr.split("/", 1)
-                    hdr_product = parts[0].strip().lower()
-                    hdr_version = parts[1].split()[0].strip()
-                    # Avoid duplicate if nmap already reported same service+version
-                    if hdr_version and not (port.service and port.version == hdr_version):
-                        try:
-                            hdr_cve = self.cve_checker.check(
-                                host=ip,
-                                product=hdr_product,
-                                version=hdr_version,
-                                port=port.port,
-                                protocol=port.protocol,
-                            )
-                            findings.extend(hdr_cve)
-                            logger.debug(
-                                f"HTTP header CVE: {ip}:{port.port} "
-                                f"{hdr_product} {hdr_version} → {len(hdr_cve)} CVEs"
-                            )
-                        except Exception as e:
-                            logger.debug(f"HTTP header CVE check error {ip}:{port_num}: {e}")
+            # HTTP fingerprint → CVE pipeline: check versioned technology headers.
+            for hdr_product, hdr_version in self._iter_http_product_versions(port):
+                if port.service and port.version == hdr_version and port.service.lower() == hdr_product:
+                    continue
+                try:
+                    hdr_cve = self.cve_checker.check(
+                        host=ip,
+                        product=hdr_product,
+                        version=hdr_version,
+                        port=port.port,
+                        protocol=port.protocol,
+                    )
+                    findings.extend(hdr_cve)
+                    logger.debug(
+                        f"HTTP header CVE: {ip}:{port.port} "
+                        f"{hdr_product} {hdr_version} → {len(hdr_cve)} CVEs"
+                    )
+                except Exception as e:
+                    logger.debug(f"HTTP header CVE check error {ip}:{port_num}: {e}")
 
         return findings
 
@@ -2686,9 +2769,10 @@ examples:
     return parser
 
 
-def _check_insecure_protocols(host: str, open_ports: list) -> list:
+def _check_insecure_protocols(host: str, open_ports: list, host_info=None) -> list:
     """Return findings for inherently insecure protocols on open ports."""
     findings = []
+    flagged_ports = set()
     INSECURE_PORTS = {
         23: (
             Severity.HIGH,
@@ -2766,6 +2850,52 @@ def _check_insecure_protocols(host: str, open_ports: list) -> list:
                 recommendation=recommendation,
                 evidence=f"Port {port} open on {host}",
                 tags=["insecure-protocol", tag],
+            ))
+            flagged_ports.add(port)
+
+    if host_info:
+        for port_num, port_info in getattr(host_info, "ports", {}).items():
+            if port_num in flagged_ports or getattr(port_info, "state", "") != "open":
+                continue
+
+            service = (getattr(port_info, "service", "") or "").lower()
+            banner = (getattr(port_info, "banner", "") or "")
+            banner_lower = banner.lower()
+            telnet_service = "telnet" in service or service == "busybox"
+            login_prompt = re.search(r'(^|\r?\n)\s*(?:login|username|password)\s*:', banner, re.I)
+            looks_like_other_protocol = (
+                banner_lower.startswith("ssh-")
+                or banner_lower.startswith("http/")
+                or "server:" in banner_lower[:160]
+                or "ftp" in banner_lower[:160]
+            )
+
+            if not telnet_service and not (login_prompt and not looks_like_other_protocol):
+                continue
+
+            snippet = " ".join(banner.strip().split())[:180] if banner else f"Service: {service}"
+            findings.append(Finding(
+                severity=Severity.HIGH,
+                title=f"Telnet-like remote login service detected on port {port_num}",
+                host=host,
+                port=port_num,
+                protocol=getattr(port_info, "protocol", "tcp"),
+                category="Insecure Protocols",
+                description=(
+                    f"Port {port_num} appears to expose a Telnet-style remote login service."
+                ),
+                explanation=(
+                    "Telnet-style login services transmit sessions without modern transport "
+                    "encryption unless wrapped by another security layer. Credentials and "
+                    "commands can be captured by anyone able to observe the network path."
+                ),
+                recommendation=(
+                    "Disable the Telnet-style service or replace it with SSH. If the service "
+                    "is required for legacy equipment, restrict it to a management VLAN or "
+                    "specific administration hosts with firewall rules."
+                ),
+                evidence=snippet,
+                tags=["insecure-protocol", "telnet"],
             ))
     return findings
 

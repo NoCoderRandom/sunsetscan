@@ -2,7 +2,7 @@
 
 **Network security auditing for humans — powered by nmap, built for everyone.**
 
-[![Version](https://img.shields.io/badge/version-v2.1.0-blue)]
+[![Version](https://img.shields.io/badge/version-v2.1.1-blue)]
 [![Python 3.9+](https://img.shields.io/badge/python-3.9%2B-blue?logo=python&logoColor=white)](https://www.python.org/downloads/)
 [![Platform](https://img.shields.io/badge/platform-Linux%20%7C%20WSL2-brightgreen?logo=linux)](https://github.com)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)

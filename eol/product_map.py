@@ -455,7 +455,7 @@ def normalize_software_name(name: str) -> str:
     normalized = name.lower()
 
     # Remove common prefixes
-    prefixes_to_remove = ['gnu/', 'the ', 'apache ']
+    prefixes_to_remove = ['gnu/', 'the ']
     for prefix in prefixes_to_remove:
         if normalized.startswith(prefix):
             normalized = normalized[len(prefix):]

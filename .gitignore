@@ -20,6 +20,7 @@ data/arp_baseline*.json
 data/device_map.json
 data/device_map*.json
 reports/
+!docs/sample_reports/
 pitests/
 
 # Hardware EOL source artifact: keep the compressed downloadable module in git,
@@ -48,6 +49,7 @@ netwatch_backup_*/
 # Scan output files
 *.html
 !SunsetScan_Improvement_Master_Document.html
+!docs/sample_reports/*.html
 
 # Logs and environment
 *.log

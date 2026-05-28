@@ -230,6 +230,19 @@ class EOLChecker:
 
         return None
 
+    @staticmethod
+    def _normalize_detected_version(version: str) -> str:
+        """Extract a comparable version token from scanner/banner output."""
+        if not version:
+            return ""
+
+        clean = str(version).strip()
+        clean = re.sub(r'^(?:version|release|v)\s*', '', clean, flags=re.I)
+        match = re.search(r'\d+(?:[._-]\d+)*(?:[a-z][0-9]*)?', clean, re.I)
+        if match:
+            return match.group(0).replace("_", ".").rstrip(".,;:)]}")
+        return clean.strip(" \t\r\n.,;:)]}")
+
     def check_version(
         self,
         product: str,
@@ -244,47 +257,52 @@ class EOLChecker:
         Returns:
             EOLStatus with detailed information
         """
+        raw_product = product or "unknown"
+        raw_version = version or "unknown"
+        product_slug = get_product_slug(product) or str(product).lower().strip()
+        clean_version = self._normalize_detected_version(version)
+
         # Validate inputs
-        if not product or not version or version == "unknown":
+        if not product_slug or not clean_version or clean_version.lower() == "unknown":
             return EOLStatus(
-                product=product or "unknown",
-                version=version or "unknown",
+                product=raw_product,
+                version=raw_version,
                 level=EOLStatusLevel.NOT_APPLICABLE,
                 message="Version not available for EOL check"
             )
 
         # Skip products we know are not tracked by endoflife.date
-        if product in NOT_TRACKED_PRODUCTS:
+        if product_slug in NOT_TRACKED_PRODUCTS:
             return EOLStatus(
-                product=product,
-                version=version,
+                product=product_slug,
+                version=clean_version,
                 level=EOLStatusLevel.NOT_APPLICABLE,
-                message=f"N/A — {product} not tracked by endoflife.date"
+                message=f"N/A — {product_slug} not tracked by endoflife.date"
             )
 
         # Fetch product data
-        cycles = self.fetch_product_data(product)
+        cycles = self.fetch_product_data(product_slug)
         if cycles is None:
             return EOLStatus(
-                product=product,
-                version=version,
+                product=product_slug,
+                version=clean_version,
                 level=EOLStatusLevel.UNKNOWN,
-                message=f"No EOL data available for {product}"
+                message=f"No EOL data available for {product_slug}"
             )
 
         # Find matching cycle
-        cycle = self.find_version_cycle(cycles, version)
+        cycle = self.find_version_cycle(cycles, clean_version)
         if cycle is None:
             return EOLStatus(
-                product=product,
-                version=version,
+                product=product_slug,
+                version=clean_version,
                 level=EOLStatusLevel.UNKNOWN,
-                message=f"Version {version} not found in EOL database",
+                message=f"Version {clean_version} not found in EOL database",
                 details={'available_cycles': [c.get('cycle') for c in cycles[:5]]}
             )
 
         # Determine EOL status
-        return self._evaluate_eol_status(product, version, cycle, cycles)
+        return self._evaluate_eol_status(product_slug, clean_version, cycle, cycles)
 
     def _evaluate_eol_status(
         self,
@@ -430,4 +448,3 @@ class EOLChecker:
             List of cycle data or None
         """
         return self.fetch_product_data(product)
-

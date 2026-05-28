@@ -20,6 +20,7 @@ Severity mapping from CVSS v3 base score:
 """
 
 import logging
+import re
 import time
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Tuple
@@ -28,6 +29,7 @@ import requests
 
 from core.cache_manager import UnifiedCacheManager
 from core.findings import Finding, Severity
+from eol.product_map import get_product_slug, normalize_software_name
 
 logger = logging.getLogger(__name__)
 
@@ -69,6 +71,39 @@ class CVEChecker:
     def __init__(self, cache: Optional[UnifiedCacheManager] = None):
         self.cache = cache or UnifiedCacheManager()
 
+    @staticmethod
+    def _normalize_product(product: str) -> str:
+        """Map scanner product names to the canonical cache key where possible."""
+        if not product:
+            return ""
+        return get_product_slug(product) or normalize_software_name(product) or product.lower().strip()
+
+    @staticmethod
+    def _version_candidates(version: str) -> List[str]:
+        """Return cache lookup versions from most specific to broad fallback."""
+        if not version:
+            return []
+
+        raw = str(version).strip()
+        raw = re.sub(r'^(?:version|release|v)\s*', '', raw, flags=re.I)
+        match = re.search(r'\d+(?:[._-]\d+)*(?:[a-z][0-9]*)?', raw, re.I)
+        clean = (match.group(0) if match else raw).replace("_", ".").strip(" \t\r\n.,;:)]}")
+        if not clean or clean.lower() in ("unknown", "0", "none", "-"):
+            return []
+
+        candidates: List[str] = []
+        for candidate in (clean, clean.lower()):
+            if candidate not in candidates:
+                candidates.append(candidate)
+
+        parts = re.split(r'[.-]', clean)
+        numeric_parts = [part for part in parts if part.isdigit()]
+        if len(numeric_parts) >= 2:
+            major_minor = ".".join(numeric_parts[:2])
+            if major_minor not in candidates:
+                candidates.append(major_minor)
+        return candidates
+
     def check(
         self,
         host: str,
@@ -86,13 +121,25 @@ class CVEChecker:
         if not product or not version:
             return []
 
-        # Skip non-meaningful version strings
-        if version.lower() in ("unknown", "", "0", "none", "-"):
+        lookup_product = self._normalize_product(product)
+        version_candidates = self._version_candidates(version)
+
+        if not lookup_product or not version_candidates:
             return []
 
-        raw_vulns = self.cache.get_cve(product, version)
+        raw_vulns = None
+        matched_version = version_candidates[0]
+        for candidate in version_candidates:
+            raw_vulns = self.cache.get_cve(lookup_product, candidate)
+            if raw_vulns is not None:
+                matched_version = candidate
+                break
+
         if raw_vulns is None:
-            logger.debug(f"CVE cache miss for {product}:{version} — run --setup")
+            logger.debug(
+                f"CVE cache miss for {lookup_product}:{version_candidates[0]} "
+                f"(from {product}:{version}) — run --setup"
+            )
             return []
 
         if not raw_vulns:
@@ -115,35 +162,35 @@ class CVEChecker:
 
             cvss_str = f"CVSS {cvss:.1f}" if cvss is not None else "no CVSS score"
             fix_text = (
-                f"Update {product} to version {fixed_in} or later. "
+                f"Update {lookup_product} to version {fixed_in} or later. "
                 "Check your device vendor's support site for firmware updates."
             ) if fixed_in else (
-                f"Update {product} to the latest available version. "
+                f"Update {lookup_product} to the latest available version. "
                 "Check your device vendor's support site for firmware updates."
             )
 
             finding = Finding(
                 severity=sev,
-                title=f"Known vulnerability: {cve_id} in {product} {version}",
+                title=f"Known vulnerability: {cve_id} in {lookup_product} {matched_version}",
                 host=host,
                 port=port,
                 protocol=protocol,
                 category="Known Vulnerabilities (CVE)",
                 description=(
-                    f"{cve_id} affects {product} {version} ({cvss_str}). "
+                    f"{cve_id} affects {lookup_product} {matched_version} ({cvss_str}). "
                     f"{summary}"
                 ),
                 explanation=(
                     f"A publicly known security vulnerability exists in the version of "
-                    f"{product} detected on this device. This vulnerability has been "
+                    f"{lookup_product} detected on this device. This vulnerability has been "
                     f"disclosed publicly, meaning attackers know about it and may have "
                     f"tools to exploit it."
                 ),
                 recommendation=fix_text,
-                evidence=f"Detected service: {product} {version}",
+                evidence=f"Detected service: {product} {version}; cache key: {lookup_product} {matched_version}",
                 cve_ids=[cve_id],
                 cvss_score=cvss,
-                tags=["cve", product.lower()],
+                tags=["cve", lookup_product.lower()],
             )
             findings.append(finding)
 

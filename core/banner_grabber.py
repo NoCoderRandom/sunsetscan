@@ -17,6 +17,7 @@ Example:
 """
 
 import logging
+import re
 import socket
 import ssl
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -81,6 +82,7 @@ class BannerGrabber:
         'ftp': b'',  # FTP usually sends banner immediately
         'ssh': b'',  # SSH sends banner immediately
         'telnet': b'\r\n',
+        'redis': b'INFO server\r\n',
         'generic': b'\r\n\r\n',
     }
 
@@ -89,6 +91,12 @@ class BannerGrabber:
 
     # Ports that typically serve HTTP/HTTPS
     HTTP_PORTS = {80, 443, 8080, 8443, 8000, 8888, 9000, 8081, 5000, 5001}
+
+    HTTP_SERVICE_HINTS = (
+        "http", "https", "www", "web", "apache", "nginx", "httpd", "iis",
+        "tomcat", "caddy", "lighttpd", "jetty", "gunicorn", "php",
+    )
+    REDIS_SERVICE_HINTS = ("redis",)
 
     def __init__(
         self,
@@ -127,7 +135,8 @@ class BannerGrabber:
         self,
         host: str,
         port: int,
-        use_ssl: Optional[bool] = None
+        use_ssl: Optional[bool] = None,
+        service_hint: Optional[str] = None,
     ) -> BannerResult:
         """Grab banner from a single host:port.
 
@@ -139,6 +148,8 @@ class BannerGrabber:
             host: Target IP address
             port: Target port number
             use_ssl: Force SSL/TLS (None = auto-detect)
+            service_hint: Service name from nmap, used to choose broad probes on
+                non-standard ports.
 
         Returns:
             BannerResult with banner data or error information
@@ -147,11 +158,12 @@ class BannerGrabber:
 
         # Auto-detect SSL if not specified
         if use_ssl is None:
-            use_ssl = port in self.SSL_PORTS
+            hint = (service_hint or "").lower()
+            use_ssl = port in self.SSL_PORTS or "https" in hint or "ssl/http" in hint
         result.is_ssl = use_ssl
 
-        # For HTTP ports, try HTTP fingerprinting first
-        if port in self.HTTP_PORTS and self.http_fingerprinter:
+        # For HTTP services, try HTTP fingerprinting first even on non-standard ports.
+        if self._is_http_candidate(port, service_hint) and self.http_fingerprinter:
             try:
                 http_fp = self.http_fingerprinter.fingerprint(host, port)
                 result.http_fingerprint = http_fp
@@ -196,7 +208,7 @@ class BannerGrabber:
                 sock = context.wrap_socket(sock, server_hostname=host)
 
             # Determine probe to send
-            probe = self._get_probe(port)
+            probe = self._get_probe(port, service_hint=service_hint)
             if probe:
                 sock.send(probe)
 
@@ -289,15 +301,34 @@ class BannerGrabber:
 
         return results
 
-    def _get_probe(self, port: int) -> bytes:
+    def _matches_service_hint(self, service_hint: Optional[str], hints: Tuple[str, ...]) -> bool:
+        """Return True when the scanner's service name suggests a protocol."""
+        hint = (service_hint or "").lower()
+        return any(token in hint for token in hints)
+
+    def _is_http_candidate(self, port: int, service_hint: Optional[str] = None) -> bool:
+        """Return True if a port or service name looks HTTP-like."""
+        return port in self.HTTP_PORTS or self._matches_service_hint(service_hint, self.HTTP_SERVICE_HINTS)
+
+    def _is_redis_candidate(self, port: int, service_hint: Optional[str] = None) -> bool:
+        """Return True if a port or service name looks Redis-like."""
+        return port == 6379 or self._matches_service_hint(service_hint, self.REDIS_SERVICE_HINTS)
+
+    def _get_probe(self, port: int, service_hint: Optional[str] = None) -> bytes:
         """Get appropriate probe for a port.
 
         Args:
             port: Port number
+            service_hint: Service name from nmap, if available
 
         Returns:
             Probe bytes to send
         """
+        if self._is_redis_candidate(port, service_hint):
+            return self.PROBES['redis']
+        if self._is_http_candidate(port, service_hint):
+            return self.PROBES['http']
+
         # Map common ports to probes
         port_probes = {
             21: self.PROBES['ftp'],
@@ -375,17 +406,32 @@ class BannerGrabber:
                         return (name, version)
                     return (server.lower(), '')
 
+        if banner_lower.startswith("http/"):
+            return ('http', '')
+
         # FTP parsing
         if port == 21 or 'ftp' in banner_lower:
             if 'vsftpd' in banner_lower:
                 parts = banner.split()
                 for i, part in enumerate(parts):
                     if 'vsftpd' in part.lower():
-                        return ('vsftpd', parts[i + 1] if i + 1 < len(parts) else "")
+                        version = parts[i + 1] if i + 1 < len(parts) else ""
+                        return ('vsftpd', version.strip(" \t\r\n()[]{}.,;:"))
                 return ('vsftpd', '')
             if 'proftpd' in banner_lower:
                 return ('proftpd', '')
             return ('ftp', '')
+
+        redis_match = re.search(r'redis_version:([^\r\n]+)', banner, re.I)
+        if redis_match:
+            return ('redis', redis_match.group(1).strip(" \t\r\n.,;:"))
+
+        busybox_match = re.search(r'busybox\s+v?(\d+(?:\.\d+){1,3})', banner, re.I)
+        if busybox_match:
+            return ('busybox', busybox_match.group(1))
+
+        if re.search(r'(^|\r?\n)\s*(?:login|username|password)\s*:', banner, re.I):
+            return ('telnet', '')
 
         # MySQL parsing
         if 'mysql' in banner_lower:
@@ -404,7 +450,6 @@ class BannerGrabber:
             return ('postgresql', '')
 
         # Generic version detection
-        import re
         version_pattern = r'(\w+)[/\s-]+(\d+\.\d+(?:\.\d+)?)'
         match = re.search(version_pattern, banner)
         if match:

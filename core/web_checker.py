@@ -560,6 +560,7 @@ def run_web_checks(
     host: str,
     open_ports: List[int],
     timeout: float = 5.0,
+    services_by_port: Optional[Dict[int, str]] = None,
 ) -> List[Finding]:
     """Run web security checks on all HTTP/HTTPS ports for a host.
 
@@ -567,18 +568,26 @@ def run_web_checks(
         host:       IP address to check.
         open_ports: List of open TCP ports from the scan.
         timeout:    HTTP request timeout.
+        services_by_port: Optional nmap service hints keyed by port.
 
     Returns:
         List of Finding objects from all web checks.
     """
     HTTP_PORTS = {80, 8080, 8000, 8888, 9000, 8081, 3000}
     HTTPS_PORTS = {443, 8443, 9443}
+    HTTP_SERVICE_HINTS = (
+        "http", "https", "www", "web", "apache", "nginx", "httpd", "iis",
+        "tomcat", "caddy", "lighttpd", "jetty", "gunicorn", "php",
+    )
 
     all_findings: List[Finding] = []
+    services_by_port = services_by_port or {}
 
     for port in open_ports:
-        is_https = port in HTTPS_PORTS
-        if port in HTTP_PORTS or port in HTTPS_PORTS:
+        service_hint = services_by_port.get(port, "").lower()
+        is_https = port in HTTPS_PORTS or "https" in service_hint or "ssl/http" in service_hint
+        is_http_service = any(token in service_hint for token in HTTP_SERVICE_HINTS)
+        if port in HTTP_PORTS or port in HTTPS_PORTS or is_http_service:
             logger.debug(f"Web check: {host}:{port} (https={is_https})")
             findings = check_web_interface(
                 host, port, is_https=is_https, timeout=timeout
