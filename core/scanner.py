@@ -17,6 +17,7 @@ Example:
 """
 
 import logging
+import ipaddress
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Callable, Any
 from datetime import datetime
@@ -180,7 +181,7 @@ class NetworkScanner:
                            f"Valid profiles: {list(SCAN_PROFILES.keys())}")
 
         # Apply safe-mode downgrades + host exclusions
-        scan_args = self._apply_safety(scan_args)
+        scan_args = self._apply_safety(scan_args, target=target)
 
         logger.info(f"Starting {profile} scan on {target}")
         self._update_progress(f"Starting {profile} scan on {target}", 0.0)
@@ -252,7 +253,7 @@ class NetworkScanner:
             timeout = 900
         return max(timeout, 1)
 
-    def _apply_safety(self, args: str) -> str:
+    def _apply_safety(self, args: str, target: str = "") -> str:
         """Apply safe-mode downgrades and exclusions to an nmap argument string.
 
         - In safe mode: strip -O / --osscan-guess, replace -A with -sV -sC,
@@ -272,9 +273,38 @@ class NetworkScanner:
             logger.info("Safe mode: nmap args downgraded to: %s", out)
 
         excluded = getattr(self.settings, "excluded_hosts", ())
+        if self._target_is_explicit_excluded(target, excluded):
+            excluded = ()
         if excluded and "--exclude" not in out:
             out = f"{out} --exclude {','.join(excluded)}"
         return out
+
+    @staticmethod
+    def _target_is_explicit_excluded(target: str, excluded_hosts) -> bool:
+        """Return True when the whole target is one explicitly excluded host."""
+        if not target or not excluded_hosts:
+            return False
+
+        target = target.strip()
+        if not target or any(marker in target for marker in ("*", "-", ",")):
+            return False
+        if len(target.split()) > 1:
+            return False
+
+        excluded = {str(host).strip() for host in excluded_hosts if str(host).strip()}
+        try:
+            return str(ipaddress.ip_address(target)) in excluded
+        except ValueError:
+            pass
+
+        if "/" in target:
+            try:
+                network = ipaddress.ip_network(target, strict=False)
+            except ValueError:
+                return False
+            if network.num_addresses == 1:
+                return str(network.network_address) in excluded
+        return False
 
     @classmethod
     def _bound_safe_scan_args(cls, args: str) -> str:

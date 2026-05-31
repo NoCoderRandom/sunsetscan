@@ -62,6 +62,25 @@ def test_safe_mode_preserves_explicit_ports():
     assert "--version-intensity 2" in args
 
 
+def test_safe_mode_does_not_exclude_explicit_single_host_target():
+    scanner = NetworkScanner(Settings(
+        safe_mode=True,
+        excluded_hosts=("192.168.50.80", "192.168.50.1"),
+    ))
+
+    single_host_args = scanner._apply_safety(
+        "-T4 -F -sV",
+        target="192.168.50.80",
+    )
+    network_args = scanner._apply_safety(
+        "-T4 -F -sV",
+        target="192.168.50.0/24",
+    )
+
+    assert "--exclude" not in single_host_args
+    assert "--exclude 192.168.50.80,192.168.50.1" in network_args
+
+
 def test_safe_mode_skips_all_port_masscan(monkeypatch):
     monkeypatch.setattr(port_scanner, "_masscan_available", lambda: True)
     orchestrator = PortScanOrchestrator(Settings(safe_mode=True))
@@ -142,6 +161,32 @@ def test_masscan_single_host_uses_existing_discovery(monkeypatch):
     assert captured["target"] == "192.168.1.10"
     assert captured["profile"] == "SMB"
     assert "-p 445" in captured["arguments"]
+
+
+def test_masscan_does_not_exclude_explicit_single_host_target(monkeypatch):
+    monkeypatch.setattr(port_scanner, "_masscan_available", lambda: True)
+    captured = {}
+
+    def fake_masscan(*args, **kwargs):
+        captured["excluded_hosts"] = kwargs["excluded_hosts"]
+        return {"192.168.50.80": [445]}
+
+    monkeypatch.setattr(port_scanner, "_run_masscan", fake_masscan)
+    orchestrator = PortScanOrchestrator(Settings(
+        excluded_hosts=("192.168.50.80", "192.168.50.1"),
+    ))
+
+    def fake_scan(target, profile="QUICK", arguments=None):
+        result = ScanResult(target=target, profile=profile)
+        result.hosts[target] = HostInfo(ip=target, state="up")
+        return result
+
+    monkeypatch.setattr(orchestrator._nmap, "scan", fake_scan)
+
+    result = orchestrator.scan("192.168.50.80", profile="SMB")
+
+    assert captured["excluded_hosts"] == ()
+    assert sorted(result.hosts) == ["192.168.50.80"]
 
 
 def test_masscan_parallel_combines_hosts_without_duration_assignment(monkeypatch):

@@ -312,7 +312,7 @@ class PortScanOrchestrator:
         discovered = _run_masscan(
             target, rate, ports=masscan_ports,
             progress_callback=self._nmap._progress_callback,
-            excluded_hosts=self._settings.excluded_hosts,
+            excluded_hosts=self._effective_excluded_hosts(target),
         )
 
         if not discovered:
@@ -358,13 +358,14 @@ class PortScanOrchestrator:
         discovered = _run_masscan(
             target, rate, ports=masscan_ports,
             progress_callback=self._nmap._progress_callback,
-            excluded_hosts=self._settings.excluded_hosts,
+            excluded_hosts=self._effective_excluded_hosts(target),
         )
 
         # In safe mode, drop any host that is on the exclusion list (paranoia
         # against masscan ignoring --exclude under odd CIDR shapes).
-        if self._settings.excluded_hosts:
-            for ex in self._settings.excluded_hosts:
+        effective_excluded = self._effective_excluded_hosts(target)
+        if effective_excluded:
+            for ex in effective_excluded:
                 discovered.pop(ex, None)
 
         if not discovered:
@@ -420,6 +421,12 @@ class PortScanOrchestrator:
 
         combined.end_time = datetime.now()
         return combined
+
+    def _effective_excluded_hosts(self, target: str) -> Tuple[str, ...]:
+        excluded = tuple(getattr(self._settings, "excluded_hosts", ()) or ())
+        if NetworkScanner._target_is_explicit_excluded(target, excluded):
+            return ()
+        return excluded
 
     # ---- Convenience methods (mirror NetworkScanner) ----
 
