@@ -106,6 +106,17 @@ def test_http_header_product_versions_include_server_and_powered_by():
     ]
 
 
+def test_http_header_product_versions_skip_embedded_httpd():
+    port = PortInfo(port=80, state="open", service="ASUS", version="RT-AX92U")
+    port.http_fingerprint = HttpFingerprint(
+        host="192.168.50.1",
+        port=80,
+        raw_headers={"Server": "httpd/2.0"},
+    )
+
+    assert SunsetScan._iter_http_product_versions(port) == []
+
+
 def test_web_checks_use_http_service_hint_on_non_standard_port(monkeypatch):
     calls = []
 

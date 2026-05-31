@@ -1916,6 +1916,12 @@ class SunsetScan:
                 version = match.group(2).strip(" \t\r\n()[]{}.,;:")
                 if not product or not version or product in {"http", "https"}:
                     continue
+                if product in {"httpd", "generic-httpd"}:
+                    # Many routers and embedded devices advertise only
+                    # "httpd/2.0". Treating that as Apache HTTP Server 2.0
+                    # creates false EOL/CVE findings for devices such as ASUS
+                    # routers; explicit Apache headers still match "apache".
+                    continue
                 key = (product, version)
                 if key not in seen:
                     candidates.append(key)
