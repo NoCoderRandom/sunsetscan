@@ -16,8 +16,18 @@ Example:
     timeout = settings.banner_timeout
 """
 
-from dataclasses import dataclass, field
+import json
+import logging
+import os
+from dataclasses import asdict, dataclass
+from pathlib import Path
 from typing import Dict, List, Tuple
+
+
+logger = logging.getLogger(__name__)
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+USER_SETTINGS_PATH = PROJECT_ROOT / "data" / "config" / "settings.json"
+_NON_USER_SETTINGS = {"tool_name", "version"}
 
 
 @dataclass(frozen=True)
@@ -41,6 +51,10 @@ class Settings:
         web_check_timeout: Timeout for HTTP checks (seconds)
         upnp_discovery_timeout: Timeout for SSDP UPnP discovery (seconds)
         nmap_scan_timeout_seconds: Maximum runtime for one nmap invocation
+        auto_export_html_reports: Save an HTML report automatically after normal scans
+        auto_export_html_dir: Directory for automatic HTML reports
+        default_password_audit_enabled: Opt in to default password audit by default
+        nse_scripts_enabled: Run NSE scripts by default
     """
     tool_name: str = "SunsetScan"
     version: str = "2.1.1"
@@ -62,6 +76,10 @@ class Settings:
     scan_worker_threads: int = 8
     history_retention_days: int = 90
     auto_save_history: bool = True
+    auto_export_html_reports: bool = False
+    auto_export_html_dir: str = "reports"
+    default_password_audit_enabled: bool = False
+    nse_scripts_enabled: bool = False
     # Safe mode: applied automatically on low-power hosts (Pi, Pi-hole, Wi-Fi).
     # When True, port_scanner caps masscan rate, scanner.py strips -O/-A,
     # and excluded_hosts is honored on every nmap/masscan invocation.
@@ -85,12 +103,92 @@ class Settings:
     auth_delay_seconds: float = 2.0
 
     def __post_init__(self):
-        # Dataclass is frozen, so we can't modify directly
-        object.__setattr__(
-            self,
-            'common_ports',
-            [21, 22, 23, 25, 53, 80, 110, 143, 443, 445, 993, 995, 3306, 3389, 5432, 8080, 8443]
-        )
+        if self.common_ports is None:
+            # Dataclass is frozen, so we can't modify directly
+            object.__setattr__(
+                self,
+                'common_ports',
+                [21, 22, 23, 25, 53, 80, 110, 143, 443, 445, 993, 995, 3306, 3389, 5432, 8080, 8443]
+            )
+
+
+def _coerce_user_setting(value, current_value):
+    """Coerce JSON-loaded user settings to the Settings field's runtime type."""
+    if isinstance(current_value, bool):
+        if isinstance(value, str):
+            return value.strip().lower() in {"y", "yes", "true", "1", "on", "enabled"}
+        return bool(value)
+    if isinstance(current_value, int) and not isinstance(current_value, bool):
+        return int(value)
+    if isinstance(current_value, float):
+        return float(value)
+    if isinstance(current_value, tuple):
+        if value is None:
+            return ()
+        if isinstance(value, str):
+            return tuple(part.strip() for part in value.split(",") if part.strip())
+        return tuple(value)
+    if isinstance(current_value, list):
+        if value is None:
+            return []
+        if isinstance(value, str):
+            parts = [part.strip() for part in value.split(",") if part.strip()]
+        else:
+            parts = list(value)
+        if all(isinstance(item, int) for item in current_value):
+            return [int(part) for part in parts]
+        return parts
+    return str(value) if isinstance(current_value, str) else value
+
+
+def get_user_settings_path() -> Path:
+    """Return the active user settings path, allowing tests to override it."""
+    configured = os.environ.get("SUNSETSCAN_SETTINGS_PATH")
+    return Path(configured) if configured else USER_SETTINGS_PATH
+
+
+def load_user_settings(path=None) -> Settings:
+    """Load user-editable settings from disk, falling back to defaults."""
+    path = Path(path) if path is not None else get_user_settings_path()
+    settings = Settings()
+    if not path.exists():
+        return settings
+
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            raw = json.load(f)
+    except Exception as e:
+        logger.warning("Could not load user settings from %s: %s", path, e)
+        return settings
+
+    if not isinstance(raw, dict):
+        logger.warning("Ignoring user settings from %s: expected JSON object", path)
+        return settings
+
+    changes = {}
+    for key, value in raw.items():
+        if key in _NON_USER_SETTINGS or not hasattr(settings, key):
+            continue
+        try:
+            changes[key] = _coerce_user_setting(value, getattr(settings, key))
+        except (TypeError, ValueError) as e:
+            logger.warning("Ignoring invalid user setting %s=%r: %s", key, value, e)
+
+    return Settings(**{**asdict(settings), **changes})
+
+
+def save_user_settings(settings: Settings, path=None) -> None:
+    """Persist user-editable settings so TUI changes survive restarts."""
+    path = Path(path) if path is not None else get_user_settings_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    data = {
+        key: value
+        for key, value in asdict(settings).items()
+        if key not in _NON_USER_SETTINGS
+    }
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(data, f, indent=2, sort_keys=True)
+        f.write("\n")
 
 
 # Masscan rate limits (packets per second) per scan profile.
@@ -235,7 +333,7 @@ MENU_OPTIONS = [
     ("9", "Export Report", "Save as JSON or HTML"),
     ("0", "Scan History", "View past scans or compare diffs"),
     ("m", "Modules", "Download/update data modules"),
-    ("s", "Settings", "View/change configuration"),
+    ("s", "Settings", "Change runtime configuration"),
     ("h", "Help", "Usage guide and scan profiles"),
     ("q", "Exit", "Quit SunsetScan"),
 ]

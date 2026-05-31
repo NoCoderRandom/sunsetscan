@@ -85,6 +85,36 @@ def test_safe_mode_skips_all_port_masscan(monkeypatch):
     }
 
 
+def test_stealth_profile_skips_masscan_even_when_available(monkeypatch):
+    monkeypatch.setattr(port_scanner, "_masscan_available", lambda: True)
+    monkeypatch.setattr(
+        port_scanner,
+        "_run_masscan",
+        lambda *args, **kwargs: (_ for _ in ()).throw(
+            AssertionError("STEALTH should not run masscan")
+        ),
+    )
+    orchestrator = PortScanOrchestrator(Settings())
+
+    called = {}
+
+    def fake_scan(target, profile="QUICK", arguments=None):
+        called["target"] = target
+        called["profile"] = profile
+        called["arguments"] = arguments
+        return ScanResult(target=target, profile=profile)
+
+    monkeypatch.setattr(orchestrator._nmap, "scan", fake_scan)
+
+    orchestrator.scan("127.0.0.1", profile="STEALTH")
+
+    assert called == {
+        "target": "127.0.0.1",
+        "profile": "STEALTH",
+        "arguments": None,
+    }
+
+
 def test_masscan_single_host_uses_existing_discovery(monkeypatch):
     monkeypatch.setattr(port_scanner, "_masscan_available", lambda: True)
     calls = {"masscan": 0}

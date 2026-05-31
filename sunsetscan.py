@@ -26,6 +26,7 @@ import sys
 import signal
 import platform
 import threading
+from dataclasses import replace
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
 from pathlib import Path
@@ -40,7 +41,7 @@ sys.path.insert(0, str(Path(__file__).parent))
 from rich.console import Console
 from rich.prompt import Prompt, Confirm
 
-from config.settings import Settings, SCAN_PROFILES
+from config.settings import Settings, SCAN_PROFILES, load_user_settings, save_user_settings
 from core.scanner import HostInfo, ScanResult
 from core.port_scanner import PortScanOrchestrator
 from core.banner_grabber import BannerGrabber
@@ -240,19 +241,21 @@ class SunsetScan:
         # Detection runs before Settings is built so the Settings instance can
         # be constructed with the correct overrides for low-power hosts.
         self.host_profile = detect_host_profile()
+        user_settings = load_user_settings()
         force_safe = bool(getattr(args, "safe_mode", False))
         force_safe = force_safe or bool(
             os.environ.get("SUNSETSCAN_FORCE_SAFE_MODE")
             or os.environ.get("NETWATCH_FORCE_SAFE_MODE")
         )
+        force_safe = force_safe or user_settings.safe_mode
         disable_safe = bool(getattr(args, "no_safe_mode", False))
         use_safe_mode = (force_safe or self.host_profile.recommend_safe_mode) and not disable_safe
 
         if use_safe_mode:
             overrides = safe_mode_overrides(self.host_profile)
-            self.settings = Settings(**overrides)
+            self.settings = replace(user_settings, **overrides)
         else:
-            self.settings = Settings()
+            self.settings = user_settings
 
         self.console = Console(color_system=None if args.no_color else "auto")
 
@@ -264,8 +267,14 @@ class SunsetScan:
         # Initialize components
         self.scanner = PortScanOrchestrator(settings=self.settings)
         self.banner_grabber = BannerGrabber(settings=self.settings)
-        self.nse_scanner = NSEScanner(settings=self.settings) if args.nse else None
-        self.auth_tester = AuthTester(settings=self.settings, enabled=args.check_defaults)
+        self.nse_scanner = (
+            NSEScanner(settings=self.settings)
+            if args.nse or self.settings.nse_scripts_enabled else None
+        )
+        self.auth_tester = AuthTester(
+            settings=self.settings,
+            enabled=args.check_defaults or self.settings.default_password_audit_enabled,
+        )
         self.cache = CacheManager(settings=self.settings)
         self.eol_checker = EOLChecker(cache=self.cache, settings=self.settings)
         self.hardware_eol = HardwareEOLDatabase()
@@ -329,6 +338,255 @@ class SunsetScan:
                 "  [dim]override with --no-safe-mode (not recommended on this host)[/dim]"
             )
 
+    def _rebuild_runtime_components(self) -> None:
+        """Rebuild components that keep a Settings instance internally."""
+        nse_enabled = bool(getattr(self, "nse_scanner", None))
+        auth_enabled = bool(
+            getattr(self, "auth_tester", None)
+            and self.auth_tester.enabled
+        )
+
+        self.display = Display(
+            settings=self.settings,
+            console=self.console,
+            use_color=not getattr(self.args, "no_color", False),
+        )
+        self.menu = Menu(settings=self.settings, console=self.console)
+        self.scanner = PortScanOrchestrator(settings=self.settings)
+        self.banner_grabber = BannerGrabber(settings=self.settings)
+        self.nse_scanner = NSEScanner(settings=self.settings) if nse_enabled else None
+        self.auth_tester = AuthTester(settings=self.settings, enabled=auth_enabled)
+        self.cache = CacheManager(settings=self.settings)
+        self.eol_checker = EOLChecker(cache=self.cache, settings=self.settings)
+        self.exporter = ReportExporter(settings=self.settings)
+
+    def _set_runtime_settings(self, **changes) -> None:
+        """Apply Settings changes for the current app session."""
+        self.settings = replace(self.settings, **changes)
+        save_user_settings(self.settings)
+        self._rebuild_runtime_components()
+
+    def _show_settings_menu(self) -> None:
+        """Interactive runtime settings editor for the normal TUI."""
+        while True:
+            self.console.print("\n[bold cyan]Settings[/bold cyan]")
+            self.console.print("[dim]Changes are saved and apply immediately.[/dim]\n")
+
+            auth_enabled = bool(self.auth_tester and self.auth_tester.enabled)
+            nse_enabled = bool(self.nse_scanner)
+            auto_html = bool(getattr(self.settings, "auto_export_html_reports", False))
+
+            self.console.print(
+                f"[1] Default password audit   {'Enabled' if auth_enabled else 'Disabled'}"
+            )
+            self.console.print(
+                f"[2] Auto HTML reports        {'Enabled' if auto_html else 'Disabled'}"
+            )
+            self.console.print(
+                f"[3] NSE scripts              {'Enabled' if nse_enabled else 'Disabled'}"
+            )
+            self.console.print(
+                f"[4] Auto-save scan history   {'Enabled' if self.settings.auto_save_history else 'Disabled'}"
+            )
+            self.console.print(f"[5] Default target           {self.settings.default_target}")
+            self.console.print("[6] Timeouts and performance")
+            self.console.print("[7] Cache, EOL, and history")
+            self.console.print("[8] Password audit safety")
+            self.console.print("[9] Advanced scan settings")
+            self.console.print("[0] Back to main menu")
+
+            choice = Prompt.ask(
+                "Select setting",
+                choices=["0", "1", "2", "3", "4", "5", "6", "7", "8", "9"],
+                default="0",
+            )
+
+            if choice == "0":
+                return
+            if choice == "1":
+                self._toggle_default_password_audit()
+            elif choice == "2":
+                self._prompt_update_setting("auto_export_html_reports")
+                if self.settings.auto_export_html_reports:
+                    self._prompt_update_setting("auto_export_html_dir")
+            elif choice == "3":
+                self._toggle_nse_scripts()
+            elif choice == "4":
+                self._prompt_update_setting("auto_save_history")
+            elif choice == "5":
+                self._prompt_update_setting("default_target")
+            elif choice == "6":
+                self._edit_settings_group(
+                    "Timeouts and Performance",
+                    [
+                        "banner_timeout",
+                        "socket_connect_timeout",
+                        "ssl_check_timeout",
+                        "web_check_timeout",
+                        "upnp_discovery_timeout",
+                        "nmap_scan_timeout_seconds",
+                        "max_threads",
+                        "nmap_parallel_hosts",
+                        "scan_worker_threads",
+                    ],
+                )
+            elif choice == "7":
+                self._edit_settings_group(
+                    "Cache, EOL, and History",
+                    [
+                        "cache_ttl_hours",
+                        "cve_cache_ttl_days",
+                        "eol_cache_ttl_days",
+                        "warning_days_threshold",
+                        "critical_days_threshold",
+                        "history_retention_days",
+                        "auto_save_history",
+                        "auto_export_html_reports",
+                        "auto_export_html_dir",
+                    ],
+                )
+            elif choice == "8":
+                self._edit_settings_group(
+                    "Password Audit Safety",
+                    [
+                        "auth_require_known_device",
+                        "auth_allow_generic_fallback",
+                        "auth_allow_module_credentials",
+                        "auth_max_attempts_per_host",
+                        "auth_max_attempts_per_service",
+                        "auth_delay_seconds",
+                    ],
+                )
+            elif choice == "9":
+                self._edit_settings_group(
+                    "Advanced Scan Settings",
+                    [
+                        "safe_mode",
+                        "skip_heavy_probes",
+                        "probe_timeout_factor",
+                        "excluded_hosts",
+                        "common_ports",
+                    ],
+                )
+
+    def _toggle_default_password_audit(self) -> None:
+        enabled = not bool(self.auth_tester and self.auth_tester.enabled)
+        self.settings = replace(self.settings, default_password_audit_enabled=enabled)
+        save_user_settings(self.settings)
+        self._rebuild_runtime_components()
+        self.auth_tester = AuthTester(settings=self.settings, enabled=enabled)
+        if enabled:
+            self.console.print(
+                "[green]Default password audit enabled[/green]\n"
+                "[yellow]Only test devices you own. Checks use exact model/vendor "
+                "matches, capped attempts, and delays.[/yellow]"
+            )
+        else:
+            self.console.print("[yellow]Default password audit disabled[/yellow]")
+
+    def _toggle_nse_scripts(self) -> None:
+        if self.nse_scanner:
+            self.settings = replace(self.settings, nse_scripts_enabled=False)
+            save_user_settings(self.settings)
+            self.nse_scanner = None
+            self.console.print("[yellow]NSE scripts disabled[/yellow]")
+        else:
+            self.settings = replace(self.settings, nse_scripts_enabled=True)
+            save_user_settings(self.settings)
+            self.nse_scanner = NSEScanner(settings=self.settings)
+            self.console.print("[green]NSE scripts enabled[/green]")
+
+    def _edit_settings_group(self, title: str, field_names: List[str]) -> None:
+        available = [name for name in field_names if hasattr(self.settings, name)]
+        while True:
+            self.console.print(f"\n[bold cyan]{title}[/bold cyan]")
+            for idx, name in enumerate(available, 1):
+                self.console.print(
+                    f"[{idx}] {self._setting_label(name):<30} "
+                    f"{self._format_setting_value(getattr(self.settings, name))}"
+                )
+            self.console.print("[0] Back")
+
+            choices = ["0"] + [str(i) for i in range(1, len(available) + 1)]
+            choice = Prompt.ask("Select setting", choices=choices, default="0")
+            if choice == "0":
+                return
+
+            self._prompt_update_setting(available[int(choice) - 1])
+
+    def _prompt_update_setting(self, field_name: str) -> None:
+        current = getattr(self.settings, field_name)
+        label = self._setting_label(field_name)
+
+        if isinstance(current, bool):
+            new_value = Confirm.ask(f"Enable {label}?", default=current)
+        else:
+            raw_value = Prompt.ask(
+                label,
+                default=self._format_setting_value(current),
+            )
+            try:
+                new_value = self._parse_setting_value(raw_value, current)
+            except ValueError as e:
+                self.console.print(f"[red]Invalid value: {e}[/red]")
+                return
+
+        self._set_runtime_settings(**{field_name: new_value})
+        self.console.print(
+            f"[green]{label} set to {self._format_setting_value(new_value)}[/green]"
+        )
+
+    @staticmethod
+    def _setting_label(field_name: str) -> str:
+        labels = {
+            "auto_export_html_reports": "Auto HTML reports",
+            "auto_export_html_dir": "HTML report directory",
+            "auto_save_history": "Auto-save scan history",
+            "auth_require_known_device": "Require known device",
+            "auth_allow_generic_fallback": "Allow generic credential fallback",
+            "auth_allow_module_credentials": "Allow downloaded credential modules",
+            "auth_max_attempts_per_host": "Max auth attempts per host",
+            "auth_max_attempts_per_service": "Max auth attempts per service",
+            "auth_delay_seconds": "Auth delay seconds",
+            "nmap_scan_timeout_seconds": "Nmap scan timeout seconds",
+        }
+        return labels.get(field_name, field_name.replace("_", " ").title())
+
+    @staticmethod
+    def _format_setting_value(value) -> str:
+        if isinstance(value, bool):
+            return "Enabled" if value else "Disabled"
+        if isinstance(value, (list, tuple)):
+            return ", ".join(str(item) for item in value) if value else "(none)"
+        return str(value)
+
+    @staticmethod
+    def _parse_setting_value(raw_value: str, current_value):
+        raw_value = raw_value.strip()
+        if isinstance(current_value, bool):
+            lowered = raw_value.lower()
+            if lowered in {"y", "yes", "true", "1", "on", "enabled"}:
+                return True
+            if lowered in {"n", "no", "false", "0", "off", "disabled"}:
+                return False
+            raise ValueError("enter yes/no, true/false, or on/off")
+        if isinstance(current_value, int) and not isinstance(current_value, bool):
+            return int(raw_value)
+        if isinstance(current_value, float):
+            return float(raw_value)
+        if isinstance(current_value, tuple):
+            if not raw_value or raw_value == "(none)":
+                return ()
+            return tuple(part.strip() for part in raw_value.split(",") if part.strip())
+        if isinstance(current_value, list):
+            if not raw_value or raw_value == "(none)":
+                return []
+            parts = [part.strip() for part in raw_value.split(",") if part.strip()]
+            if all(isinstance(item, int) for item in current_value):
+                return [int(part) for part in parts]
+            return parts
+        return raw_value
+
     def run(self) -> int:
         """Run the main application loop.
 
@@ -374,7 +632,7 @@ class SunsetScan:
                 elif choice == "m":
                     self._show_modules_menu()
                 elif choice == "s":
-                    self.menu.show_settings()
+                    self._show_settings_menu()
                 elif choice == "h":
                     self.menu.show_help()
                 elif choice == "q":
@@ -441,6 +699,8 @@ class SunsetScan:
 
             if not scan_result.hosts:
                 self.console.print("[yellow]No hosts found.[/yellow]")
+                if getattr(self.settings, "auto_export_html_reports", False):
+                    self._auto_export_html_report(scan_result)
                 return 0
 
             # Grab banners (needed for identification)
@@ -537,6 +797,21 @@ class SunsetScan:
         target = self.get_target()
         if not target:
             return
+        include_defaults = Confirm.ask(
+            "Include default password audit? Exact model matches only, capped and delayed",
+            default=bool(self.auth_tester and self.auth_tester.enabled),
+        )
+        self.auth_tester = AuthTester(settings=self.settings, enabled=include_defaults)
+        if include_defaults:
+            self.console.print(
+                "[yellow]Default password audit enabled: owned devices only, "
+                "exact model matches, capped attempts.[/yellow]"
+            )
+        else:
+            self.console.print("[dim]Default password audit skipped.[/dim]")
+        if not self.nse_scanner:
+            self.nse_scanner = NSEScanner(settings=self.settings)
+            self.console.print("[dim]NSE scripts enabled for this full assessment.[/dim]")
         self.console.print("[bold]Running Full Assessment...[/bold]")
         self.run_full_assessment(target)
 
@@ -665,6 +940,8 @@ class SunsetScan:
 
             if not scan_result.hosts:
                 self.console.print("[yellow]No hosts found.[/yellow]")
+                if getattr(self.settings, "auto_export_html_reports", False):
+                    self._auto_export_html_report(scan_result)
                 return 0
 
             # Grab banners for services with versions
@@ -733,12 +1010,35 @@ class SunsetScan:
                         "Run with root/sudo for MAC address detection: sudo python3 sunsetscan.py --save-baseline --target ..."
                     )
 
+            if getattr(self.settings, "auto_export_html_reports", False):
+                self._auto_export_html_report(scan_result)
+
             return 0
 
         except Exception as e:
             logging.error(f"Scan failed: {e}", exc_info=True)
             self.display.show_error(f"Scan failed: {e}")
             return 1
+
+    def _auto_export_html_report(self, scan_result: ScanResult) -> None:
+        """Write an HTML report after a normal scan when enabled in settings."""
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        profile = re.sub(r"[^A-Za-z0-9_-]+", "_", scan_result.profile or "scan").lower()
+        report_dir = Path(getattr(self.settings, "auto_export_html_dir", "reports") or ".")
+        report_path = report_dir / f"sunsetscan_{profile}_{timestamp}.html"
+
+        success = self.exporter.export_html(
+            scan_result=scan_result,
+            filepath=str(report_path),
+            eol_data=self.last_eol_data,
+            findings=self.finding_registry,
+            risk_scores=self.last_risk_scores or None,
+            device_identities=self.last_device_identities or None,
+        )
+        if success:
+            self.console.print(f"[bold green]HTML report saved: {report_path}[/bold green]")
+        else:
+            self.console.print(f"[red]Failed to save HTML report: {report_path}[/red]")
 
     def grab_banners(self, scan_result: ScanResult) -> None:
         """Grab banners from discovered services.

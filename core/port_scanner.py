@@ -246,6 +246,13 @@ class PortScanOrchestrator:
         if profile == "PING":
             return self._nmap.scan(target, profile)
 
+        # STEALTH is intentionally a low-noise nmap SYN scan. Running an
+        # all-port masscan pre-pass at the STEALTH rate is both noisy and
+        # predictably exceeds the masscan timeout, so use nmap directly.
+        if profile == "STEALTH":
+            logger.info("STEALTH profile: skipping masscan pre-scan; using nmap directly")
+            return self._nmap.scan(target, profile)
+
         if self._settings.safe_mode and _extract_profile_ports(profile) is None:
             logger.info(
                 "Safe mode: skipping all-port masscan for %s; using bounded nmap",

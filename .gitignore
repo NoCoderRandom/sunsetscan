@@ -11,6 +11,7 @@ env/
 
 # SunsetScan personal data — never commit
 data/cache/
+data/config/
 data/history/
 data/logs/
 data/baseline.json
