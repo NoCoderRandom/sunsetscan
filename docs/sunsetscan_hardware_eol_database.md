@@ -192,10 +192,10 @@ The legacy split index remains available through `hardware-eol` for
 compatibility.
 
 As of the 2026-05-31 promoted local smart-pack candidate, the canonical database
-contains 64,827 records across 122 vendors and 52,032 model summaries. The
+contains 64,381 records across 122 vendors and 51,588 model summaries. The
 smart-pack record split is:
 
-- `home`: 15,258 records
+- `home`: 14,812 records
 - `office`: 4,263 records
 - `enterprise`: 39,466 records
 - `industrial_ot`: 1,308 records

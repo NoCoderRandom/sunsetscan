@@ -1877,9 +1877,11 @@ def qnap_api_model_row(
     os_value = detail.get("os_and_application_updates_and_maintenance")
     status = qnap_product_status(model, detail)
     support_date = qnap_support_date(tech_value)
+    if not support_date:
+        return None
     os_update_date = qnap_os_update_date(os_value)
 
-    row: dict[str, Any] = {
+    return {
         "Model": name,
         "Product Name": normalize_text(model.get("display_name")) or name,
         "Description": qnap_product_line_description(
@@ -1892,21 +1894,7 @@ def qnap_api_model_row(
         "End of OS Updates": os_update_date,
         "_source_table": "product_status_api.json modelList",
         "_source_hint": "QNAP product support status API import",
-        "_allow_status_only": True,
     }
-
-    if model.get("is_eos") and not model.get("is_eol") and not (
-        support_date or qnap_is_active_value(tech_value)
-    ):
-        row["_force_lifecycle_review"] = True
-        row["_review_policy"] = "qnap_legacy_end_of_sale_no_security_end_date"
-        row["_review_reason"] = (
-            "QNAP defines Legacy products as end-of-sale/no longer available "
-            "for sale. This source row does not give an exact technical "
-            "support or security-update end date."
-        )
-
-    return row
 
 
 def extract_qnap_product_status_api_rows(path: Path) -> list[dict[str, Any]]:

@@ -1631,6 +1631,19 @@ def test_qnap_product_status_api_imports_hardware_lifecycle_rows(tmp_path):
                     },
                 },
                 {
+                    "display_name": "EOL-no-date",
+                    "name": "EOL-no-date",
+                    "product_line_id": 1,
+                    "is_eol": True,
+                    "is_eos": True,
+                    "eol_detail": {
+                        "hardware_repair_of_replacement": "Discontinued",
+                        "os_and_application_updates_and_maintenance": "None",
+                        "technical_support_and_security_updates": "None",
+                        "recommended_replacement": "-",
+                    },
+                },
+                {
                     "display_name": "QXP-830S-3808",
                     "name": "QXP-830S-3808",
                     "product_line_id": 9,
@@ -1658,20 +1671,6 @@ def test_qnap_product_status_api_imports_hardware_lifecycle_rows(tmp_path):
             "End of OS Updates": "2017-12-31",
             "_source_table": "product_status_api.json modelList",
             "_source_hint": "QNAP product support status API import",
-            "_allow_status_only": True,
-        },
-        {
-            "Model": "TS-431P",
-            "Product Name": "TS-431P",
-            "Description": "NAS / Expansion",
-            "Product Status": "Active; Legacy (End-of-sale)",
-            "Replacement Products": "TS-433",
-            "End of Support": None,
-            "End of Security Updates": None,
-            "End of OS Updates": None,
-            "_source_table": "product_status_api.json modelList",
-            "_source_hint": "QNAP product support status API import",
-            "_allow_status_only": True,
         },
     ]
 
