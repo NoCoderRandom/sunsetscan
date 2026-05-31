@@ -189,6 +189,60 @@ def test_masscan_does_not_exclude_explicit_single_host_target(monkeypatch):
     assert sorted(result.hosts) == ["192.168.50.80"]
 
 
+def test_masscan_single_host_rate_is_capped(monkeypatch):
+    monkeypatch.setattr(port_scanner, "_masscan_available", lambda: True)
+    captured = {}
+
+    def fake_masscan(target, rate, **kwargs):
+        captured["target"] = target
+        captured["rate"] = rate
+        return {"192.168.50.212": [5000]}
+
+    monkeypatch.setattr(port_scanner, "_run_masscan", fake_masscan)
+    orchestrator = PortScanOrchestrator(Settings())
+
+    def fake_scan(target, profile="QUICK", arguments=None):
+        result = ScanResult(target=target, profile=profile)
+        result.hosts[target] = HostInfo(ip=target, state="up")
+        return result
+
+    monkeypatch.setattr(orchestrator._nmap, "scan", fake_scan)
+
+    orchestrator.scan("192.168.50.212", profile="FULL")
+
+    assert captured == {
+        "target": "192.168.50.212",
+        "rate": port_scanner._MASSCAN_SINGLE_HOST_RATE_CAP,
+    }
+
+
+def test_masscan_network_rate_is_not_single_host_capped(monkeypatch):
+    monkeypatch.setattr(port_scanner, "_masscan_available", lambda: True)
+    captured = {}
+
+    def fake_masscan(target, rate, **kwargs):
+        captured["target"] = target
+        captured["rate"] = rate
+        return {"192.168.50.212": [5000]}
+
+    monkeypatch.setattr(port_scanner, "_run_masscan", fake_masscan)
+    orchestrator = PortScanOrchestrator(Settings())
+
+    def fake_scan(target, profile="QUICK", arguments=None):
+        result = ScanResult(target=target, profile=profile)
+        result.hosts[target] = HostInfo(ip=target, state="up")
+        return result
+
+    monkeypatch.setattr(orchestrator._nmap, "scan", fake_scan)
+
+    orchestrator.scan("192.168.50.0/24", profile="FULL")
+
+    assert captured == {
+        "target": "192.168.50.0/24",
+        "rate": 2000,
+    }
+
+
 def test_masscan_parallel_combines_hosts_without_duration_assignment(monkeypatch):
     monkeypatch.setattr(port_scanner, "_masscan_available", lambda: True)
     monkeypatch.setattr(

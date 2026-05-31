@@ -31,6 +31,7 @@ Exports:
 
 import logging
 import os
+import ipaddress
 import re
 import shutil
 import subprocess
@@ -46,6 +47,7 @@ from core.scanner import NetworkScanner, ScanResult
 logger = logging.getLogger(__name__)
 
 _MASSCAN_MAX_RATE = 5000  # Hard cap — never exceed this
+_MASSCAN_SINGLE_HOST_RATE_CAP = 500
 
 
 def _masscan_available() -> bool:
@@ -72,6 +74,36 @@ def _extract_profile_ports(profile: str) -> Optional[str]:
     args = SCAN_PROFILES.get(profile, "")
     m = re.search(r'-p\s+(\S+)', args)
     return m.group(1) if m else None
+
+
+def _is_single_host_target(target: str) -> bool:
+    """Return True for one explicit host, including /32 or /128 targets."""
+    target = (target or "").strip()
+    if not target:
+        return False
+
+    parts = [part for part in re.split(r"\s+", target) if part]
+    if len(parts) != 1:
+        return False
+
+    token = parts[0]
+    if any(marker in token for marker in ("*", "-", ",")):
+        return False
+
+    try:
+        if "/" in token:
+            return ipaddress.ip_network(token, strict=False).num_addresses == 1
+        ipaddress.ip_address(token)
+        return True
+    except ValueError:
+        return False
+
+
+def _effective_masscan_discovery_rate(target: str, rate: int) -> int:
+    """Clamp single-host all-port discovery to a rate that avoids SYN loss."""
+    if _is_single_host_target(target):
+        return min(rate, _MASSCAN_SINGLE_HOST_RATE_CAP)
+    return rate
 
 
 def _run_masscan(
@@ -304,6 +336,7 @@ class PortScanOrchestrator:
             safe_mode=self._settings.safe_mode,
             is_wireless=getattr(self._settings, "is_wireless", False),
         )
+        rate = _effective_masscan_discovery_rate(target, rate)
         rate = min(rate, _MASSCAN_MAX_RATE)
 
         # Use profile-specific ports for masscan if the profile defines them
@@ -350,6 +383,7 @@ class PortScanOrchestrator:
             safe_mode=self._settings.safe_mode,
             is_wireless=getattr(self._settings, "is_wireless", False),
         )
+        rate = _effective_masscan_discovery_rate(target, rate)
         rate = min(rate, _MASSCAN_MAX_RATE)
 
         # Use profile-specific ports for masscan if the profile defines them
