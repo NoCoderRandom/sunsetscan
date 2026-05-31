@@ -223,6 +223,19 @@ class BannerGrabber:
                 result.raw_banner, port
             )
 
+            if (
+                not result.parsed_name
+                and not result.raw_banner.strip()
+                and not self._is_http_candidate(port, service_hint)
+            ):
+                http_banner = self._grab_http_fallback(host, port)
+                if http_banner:
+                    result.raw_banner = http_banner
+                    result.parsed_name, result.parsed_version = self._parse_banner(
+                        http_banner,
+                        port,
+                    )
+
             logger.debug(f"Banner grabbed from {host}:{port}: "
                         f"{result.parsed_name} {result.parsed_version}")
 
@@ -254,6 +267,29 @@ class BannerGrabber:
                     pass
 
         return result
+
+    def _grab_http_fallback(self, host: str, port: int) -> str:
+        """Try a plain HTTP request on an otherwise silent unknown service."""
+        sock = None
+        try:
+            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            sock.settimeout(min(float(self.timeout), 2.0))
+            sock.connect((host, port))
+            request = (
+                f"GET / HTTP/1.0\r\nHost: {host}\r\n"
+                "User-Agent: SunsetScan\r\n\r\n"
+            ).encode("ascii", errors="ignore")
+            sock.sendall(request)
+            return self._decode_banner(sock.recv(1024))
+        except Exception as e:
+            logger.debug(f"HTTP fallback banner grab failed for {host}:{port}: {e}")
+            return ""
+        finally:
+            if sock:
+                try:
+                    sock.close()
+                except:
+                    pass
 
     def grab_banners(
         self,
