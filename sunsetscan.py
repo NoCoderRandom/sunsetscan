@@ -2634,11 +2634,15 @@ class SunsetScan:
             )
             port_scan_timed_out = False
             port_scan_error = ""
+            scan_arguments = self._full_assessment_port_scan_arguments(
+                discovered_hosts,
+                profile,
+            )
             try:
                 scan_result = self.scanner.scan(
                     scan_target,
                     profile=profile,
-                    arguments=SCAN_PROFILES.get(profile),
+                    arguments=scan_arguments,
                 )
             except Exception as e:
                 if not self._is_nmap_timeout_error(e):
@@ -2955,6 +2959,16 @@ class SunsetScan:
             if re.fullmatch(r"[A-Za-z0-9_.-]+", target):
                 return [target]
             return []
+
+    @staticmethod
+    def _full_assessment_port_scan_arguments(
+        discovered_hosts: List[str],
+        profile: str,
+    ) -> Optional[str]:
+        """Return explicit nmap args unless one host can use orchestrated discovery."""
+        if len(discovered_hosts) == 1:
+            return None
+        return SCAN_PROFILES.get(profile)
 
     @staticmethod
     def _scan_target_for_discovered_hosts(discovered_hosts: List[str], fallback: str) -> str:

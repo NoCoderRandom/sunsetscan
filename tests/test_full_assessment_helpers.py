@@ -159,6 +159,17 @@ def test_single_host_discovery_fallback_keeps_explicit_targets():
     assert SunsetScan._single_host_target_as_discovered_hosts("192.168.50.10-20") == []
 
 
+def test_full_assessment_single_host_allows_orchestrated_port_discovery():
+    assert SunsetScan._full_assessment_port_scan_arguments(
+        ["192.168.50.212"],
+        "FULL",
+    ) is None
+    assert SunsetScan._full_assessment_port_scan_arguments(
+        ["192.168.50.212", "192.168.50.176"],
+        "FULL",
+    ) == "-T4 -A -sV -O --osscan-guess"
+
+
 def test_scan_risk_scores_are_limited_to_scanned_hosts():
     app = SunsetScan.__new__(SunsetScan)
     app.finding_registry = FindingRegistry()
