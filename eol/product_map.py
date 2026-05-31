@@ -136,7 +136,7 @@ PRODUCT_MAP = {
     "apache": "apache-http-server",
     "apache http server": "apache-http-server",
     "apache httpd": "apache-http-server",
-    "httpd": "apache-http-server",
+    "httpd": "generic-httpd",
     "nginx": "nginx",
     "iis": "iis",
     "microsoft-iis": "iis",

@@ -27,6 +27,12 @@ class FakeCVECache:
 def test_product_slug_keeps_apache_when_version_is_in_name():
     assert get_product_slug("apache 2.4.49") == "apache-http-server"
     assert get_product_slug("Apache/2.4.49") == "apache-http-server"
+    assert get_product_slug("Apache httpd 2.4.49") == "apache-http-server"
+
+
+def test_bare_httpd_is_not_treated_as_apache():
+    assert get_product_slug("httpd") == "generic-httpd"
+    assert get_product_slug("httpd/2.0") == "generic-httpd"
 
 
 def test_cve_lookup_normalizes_product_and_cleans_version():
