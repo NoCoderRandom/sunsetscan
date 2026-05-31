@@ -3,6 +3,9 @@ from types import SimpleNamespace
 
 from config.settings import Settings, load_user_settings, save_user_settings
 from core.auth_tester import AuthTester
+from core.findings import Finding, FindingRegistry, Severity
+from core.risk_scorer import RiskScorer
+from core.scanner import HostInfo, ScanResult
 from ui.export import ReportExporter
 from sunsetscan import SunsetScan
 
@@ -100,6 +103,77 @@ def test_settings_preserves_custom_common_ports():
     settings = Settings(common_ports=[80, 443, 9443])
 
     assert settings.common_ports == [80, 443, 9443]
+
+
+def test_get_target_prefers_saved_default_target(monkeypatch):
+    app = SunsetScan.__new__(SunsetScan)
+    app.settings = Settings(default_target="127.0.0.1")
+    captured = {}
+
+    def prompt_target(default):
+        captured["default"] = default
+        return default
+
+    app.menu = SimpleNamespace(prompt_target=prompt_target)
+    monkeypatch.setattr("sunsetscan.get_local_subnet", lambda: "192.168.50.0/24")
+
+    assert SunsetScan.get_target(app) == "127.0.0.1"
+    assert captured["default"] == "127.0.0.1"
+
+
+def test_get_target_uses_local_subnet_for_factory_default(monkeypatch):
+    app = SunsetScan.__new__(SunsetScan)
+    app.settings = Settings()
+    captured = {}
+
+    def prompt_target(default):
+        captured["default"] = default
+        return default
+
+    app.menu = SimpleNamespace(prompt_target=prompt_target)
+    monkeypatch.setattr("sunsetscan.get_local_subnet", lambda: "192.168.50.0/24")
+
+    assert SunsetScan.get_target(app) == "192.168.50.0/24"
+    assert captured["default"] == "192.168.50.0/24"
+
+
+def test_network_discovery_scope_detects_single_host_vs_network():
+    assert SunsetScan._target_allows_network_discovery("127.0.0.1") is False
+    assert SunsetScan._target_allows_network_discovery("192.168.50.80") is False
+    assert SunsetScan._target_allows_network_discovery("192.168.50.0/24") is True
+    assert SunsetScan._target_allows_network_discovery("192.168.50.*") is True
+
+
+def test_scan_risk_scores_are_limited_to_scanned_hosts():
+    app = SunsetScan.__new__(SunsetScan)
+    app.finding_registry = FindingRegistry()
+    app.risk_scorer = RiskScorer()
+
+    app.finding_registry.add(Finding(
+        severity=Severity.HIGH,
+        title="Scanned host issue",
+        host="127.0.0.1",
+        category="Test",
+        description="",
+        explanation="",
+        recommendation="",
+    ))
+    app.finding_registry.add(Finding(
+        severity=Severity.HIGH,
+        title="Out of scope issue",
+        host="192.168.50.61",
+        category="Test",
+        description="",
+        explanation="",
+        recommendation="",
+    ))
+
+    scan = ScanResult(target="127.0.0.1", profile="QUICK")
+    scan.hosts["127.0.0.1"] = HostInfo(ip="127.0.0.1", state="up")
+
+    scores = SunsetScan._score_scan_risks(app, scan)
+
+    assert list(scores) == ["127.0.0.1"]
 
 
 def test_user_settings_round_trip(tmp_path):

@@ -239,7 +239,7 @@ class AuthTester:
         self.credentials_db = self._load_credentials_db()
 
         if enabled:
-            logger.warning("AuthTester initialized with testing ENABLED")
+            logger.info("AuthTester initialized with testing ENABLED")
         else:
             logger.debug("AuthTester initialized (disabled by default)")
 

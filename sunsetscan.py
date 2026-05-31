@@ -17,6 +17,7 @@ Python: 3.9+
 """
 
 import argparse
+import ipaddress
 import json
 import logging
 import os
@@ -902,8 +903,42 @@ class SunsetScan:
         Returns:
             Target string or empty string if cancelled
         """
-        default_target = get_local_subnet() or self.settings.default_target
-        return self.menu.prompt_target(default_target)
+        return self.menu.prompt_target(self._default_prompt_target())
+
+    def _default_prompt_target(self) -> str:
+        """Return the target shown in TUI prompts.
+
+        A user-edited default target must win over auto-detected subnet values;
+        otherwise the Settings menu appears to save a value that scans ignore.
+        """
+        configured = (self.settings.default_target or "").strip()
+        factory_default = Settings().default_target
+        if configured and configured != factory_default:
+            return configured
+        return get_local_subnet() or configured or factory_default
+
+    @staticmethod
+    def _target_allows_network_discovery(target: str) -> bool:
+        """Return True when a target represents a network or host set."""
+        target = (target or "").strip()
+        if not target:
+            return False
+
+        if any(marker in target for marker in ("*", "-", ",")):
+            return True
+
+        parts = [part for part in re.split(r"\s+", target) if part]
+        if len(parts) > 1:
+            return True
+
+        if "/" not in target:
+            return False
+
+        try:
+            network = ipaddress.ip_network(target, strict=False)
+        except ValueError:
+            return True
+        return network.num_addresses > 1
 
     def perform_scan(self, target: str, profile: str) -> int:
         """Execute network scan and EOL checks.
@@ -980,7 +1015,7 @@ class SunsetScan:
             )
 
             # Compute risk scores
-            self.last_risk_scores = self.risk_scorer.score_all(self.finding_registry)
+            self.last_risk_scores = self._score_scan_risks(scan_result)
             if self.last_risk_scores:
                 self.console.print("\n[bold]Device risk scores:[/bold]")
                 for ip, risk in self.last_risk_scores.items():
@@ -1019,6 +1054,18 @@ class SunsetScan:
             logging.error(f"Scan failed: {e}", exc_info=True)
             self.display.show_error(f"Scan failed: {e}")
             return 1
+
+    def _score_scan_risks(self, scan_result: ScanResult) -> Dict:
+        """Score only hosts that are part of the active scan result."""
+        risks = self.risk_scorer.score_all(self.finding_registry)
+        allowed_hosts = set(scan_result.hosts.keys()) if scan_result else set()
+        if not allowed_hosts:
+            return {}
+        return {
+            host: risk
+            for host, risk in risks.items()
+            if host in allowed_hosts
+        }
 
     def _auto_export_html_report(self, scan_result: ScanResult) -> None:
         """Write an HTML report after a normal scan when enabled in settings."""
@@ -1960,6 +2007,9 @@ class SunsetScan:
             The populated FindingRegistry.
         """
         self.finding_registry.clear()
+        network_discovery_target = self._target_allows_network_discovery(
+            self.last_target or scan_result.target
+        )
 
         # --- Safe mode announcement (once per scan) ---
         if self.settings.safe_mode:
@@ -2036,48 +2086,54 @@ class SunsetScan:
                 self._auth_to_findings(self.auth_results)
             )
 
-            # ---- DNS hijack check ----
-            progress.update(task, description="[cyan]DNS security check...")
-            try:
-                dns_findings = run_dns_checks(local_network=self.last_target)
-                self.finding_registry.add_all(dns_findings)
-            except Exception as e:
-                logger.debug(f"DNS check error: {e}")
-
-            # ---- UPnP discovery ----
-            progress.update(task, description="[cyan]UPnP discovery...")
-            try:
-                upnp_findings = run_upnp_checks(
-                    timeout=self.settings.upnp_discovery_timeout
-                )
-                self.finding_registry.add_all(upnp_findings)
-            except Exception as e:
-                logger.debug(f"UPnP check error: {e}")
-
-            # ---- mDNS/Zeroconf discovery ----
-            progress.update(task, description="[cyan]mDNS discovery...")
-            try:
-                known_ips = set(scan_result.hosts.keys())
-                mdns_findings = run_mdns_discovery(
-                    timeout=self.settings.upnp_discovery_timeout * 2,
-                    known_hosts=known_ips,
-                )
-                self.finding_registry.add_all(mdns_findings)
-            except Exception as e:
-                logger.debug(f"mDNS discovery error: {e}")
-
-            # ---- ARP spoofing detection ----
-            if self.last_target:
-                progress.update(task, description="[cyan]ARP spoofing detection...")
+            if network_discovery_target:
+                # ---- DNS hijack check ----
+                progress.update(task, description="[cyan]DNS security check...")
                 try:
-                    arp_findings = run_arp_checks(
-                        network=self.last_target,
-                        save_baseline=True,
-                        timeout=2.0,
-                    )
-                    self.finding_registry.add_all(arp_findings)
+                    dns_findings = run_dns_checks(local_network=self.last_target)
+                    self.finding_registry.add_all(dns_findings)
                 except Exception as e:
-                    logger.debug(f"ARP check error: {e}")
+                    logger.debug(f"DNS check error: {e}")
+
+                # ---- UPnP discovery ----
+                progress.update(task, description="[cyan]UPnP discovery...")
+                try:
+                    upnp_findings = run_upnp_checks(
+                        timeout=self.settings.upnp_discovery_timeout
+                    )
+                    self.finding_registry.add_all(upnp_findings)
+                except Exception as e:
+                    logger.debug(f"UPnP check error: {e}")
+
+                # ---- mDNS/Zeroconf discovery ----
+                progress.update(task, description="[cyan]mDNS discovery...")
+                try:
+                    known_ips = set(scan_result.hosts.keys())
+                    mdns_findings = run_mdns_discovery(
+                        timeout=self.settings.upnp_discovery_timeout * 2,
+                        known_hosts=known_ips,
+                    )
+                    self.finding_registry.add_all(mdns_findings)
+                except Exception as e:
+                    logger.debug(f"mDNS discovery error: {e}")
+
+                # ---- ARP spoofing detection ----
+                if self.last_target:
+                    progress.update(task, description="[cyan]ARP spoofing detection...")
+                    try:
+                        arp_findings = run_arp_checks(
+                            network=self.last_target,
+                            save_baseline=True,
+                            timeout=2.0,
+                        )
+                        self.finding_registry.add_all(arp_findings)
+                    except Exception as e:
+                        logger.debug(f"ARP check error: {e}")
+            else:
+                logger.debug(
+                    "Skipping broadcast/network discovery checks for single-host target %s",
+                    self.last_target or scan_result.target,
+                )
 
             # ---- Baseline comparison (rogue devices) ----
             if self.baseline_manager.exists():
@@ -2475,17 +2531,21 @@ class SunsetScan:
             self.console.print("[yellow]Proceeding with full assessment...[/yellow]\n")
 
         start_time = datetime.now()
+        self.last_hybrid_result = None
+        network_discovery_target = self._target_allows_network_discovery(target)
 
         try:
             # Phase 0: Start passive capture (runs in background during all phases)
             passive_started = False
-            if os.geteuid() == 0:
+            if os.geteuid() == 0 and network_discovery_target:
                 self.console.print("[bold blue]Phase 0: Starting Passive Capture[/bold blue]")
                 passive_started = self.hybrid_scanner.start_passive()
                 if passive_started:
                     self.console.print("[green]Passive sniffer running (mDNS, SSDP, DHCP)[/green]\n")
                 else:
                     self.console.print("[dim]Passive capture unavailable — continuing with active-only[/dim]\n")
+            elif not network_discovery_target:
+                self.console.print("[dim]Phase 0: Passive Capture (skipped for single-host target)[/dim]\n")
             else:
                 self.console.print("[dim]Passive capture requires root — skipping[/dim]\n")
 
@@ -2622,63 +2682,71 @@ class SunsetScan:
             self.console.print("[green]Security analysis complete[/green]\n")
 
             # Phase 8: Hybrid Identity Fusion (passive + active + OUI + history)
-            self.console.print("[bold blue]Phase 8/8: Hybrid Identity Fusion[/bold blue]")
-            try:
-                hybrid_result = self.hybrid_scanner.stop_and_fuse(
-                    scan_result=scan_result,
-                    active_identities=self.last_device_identities,
-                )
-                self.last_hybrid_result = hybrid_result
+            if network_discovery_target:
+                self.console.print("[bold blue]Phase 8/8: Hybrid Identity Fusion[/bold blue]")
+                try:
+                    hybrid_result = self.hybrid_scanner.stop_and_fuse(
+                        scan_result=scan_result,
+                        active_identities=self.last_device_identities,
+                    )
+                    self.last_hybrid_result = hybrid_result
 
-                # Upgrade self.last_device_identities with the fused result so
-                # downstream consumers (HTML exporter, EOL checks, risk scorer,
-                # topology card rendering) all see the richer identity. Without
-                # this, the report keeps rendering the pre-fusion vendor from
-                # the active scan alone — e.g. an Apple TV labelled "Cisco"
-                # because OUI fired but the mDNS/RAOP evidence only landed in
-                # the fused identity.
-                from core.device_identifier import DeviceIdentity
-                for mac, fused_id in hybrid_result.fused_identities.items():
-                    if not fused_id.ip:
-                        continue
-                    existing = self.last_device_identities.get(fused_id.ip)
-                    merged = DeviceIdentity(
-                        vendor=fused_id.vendor or (existing.vendor if existing else ""),
-                        model=fused_id.model or (existing.model if existing else ""),
-                        version=fused_id.version or (existing.version if existing else ""),
-                        device_type=fused_id.device_type or (existing.device_type if existing else ""),
-                        confidence=max(
-                            fused_id.confidence,
-                            existing.confidence if existing else 0.0,
-                        ),
-                        sources=list(fused_id.sources),
-                    )
-                    self.last_device_identities[fused_id.ip] = merged
+                    # Upgrade self.last_device_identities with the fused result so
+                    # downstream consumers (HTML exporter, EOL checks, risk scorer,
+                    # topology card rendering) all see the richer identity. Without
+                    # this, the report keeps rendering the pre-fusion vendor from
+                    # the active scan alone — e.g. an Apple TV labelled "Cisco"
+                    # because OUI fired but the mDNS/RAOP evidence only landed in
+                    # the fused identity.
+                    from core.device_identifier import DeviceIdentity
+                    for mac, fused_id in hybrid_result.fused_identities.items():
+                        if not fused_id.ip:
+                            continue
+                        if fused_id.ip not in scan_result.hosts:
+                            continue
+                        existing = self.last_device_identities.get(fused_id.ip)
+                        merged = DeviceIdentity(
+                            vendor=fused_id.vendor or (existing.vendor if existing else ""),
+                            model=fused_id.model or (existing.model if existing else ""),
+                            version=fused_id.version or (existing.version if existing else ""),
+                            device_type=fused_id.device_type or (existing.device_type if existing else ""),
+                            confidence=max(
+                                fused_id.confidence,
+                                existing.confidence if existing else 0.0,
+                            ),
+                            sources=list(fused_id.sources),
+                        )
+                        self.last_device_identities[fused_id.ip] = merged
 
-                passive_info = (
-                    f"{hybrid_result.passive_packet_count} packets captured, "
-                    f"{hybrid_result.passive_parsed_count} parsed"
-                ) if passive_started else "passive capture was not active"
-                self.console.print(
-                    f"  [cyan]Passive: {passive_info}[/cyan]"
-                )
-                self.console.print(
-                    f"  [cyan]Fused: {len(hybrid_result.fused_identities)} device identities[/cyan]"
-                )
-                if hybrid_result.new_devices:
+                    passive_info = (
+                        f"{hybrid_result.passive_packet_count} packets captured, "
+                        f"{hybrid_result.passive_parsed_count} parsed"
+                    ) if passive_started else "passive capture was not active"
                     self.console.print(
-                        f"  [yellow]New devices: {len(hybrid_result.new_devices)} "
-                        f"first-time observations[/yellow]"
+                        f"  [cyan]Passive: {passive_info}[/cyan]"
                     )
-                if hybrid_result.missing_devices:
+                    fused_count = sum(
+                        1
+                        for identity in hybrid_result.fused_identities.values()
+                        if identity.ip in scan_result.hosts
+                    )
                     self.console.print(
-                        f"  [yellow]Missing devices: {len(hybrid_result.missing_devices)} "
-                        f"previously known, not seen this scan[/yellow]"
+                        f"  [cyan]Fused: {fused_count} scanned device identities[/cyan]"
                     )
-                self.console.print("[green]Identity fusion complete[/green]\n")
-            except Exception as e:
-                logger.debug(f"Hybrid fusion error: {e}")
-                self.console.print(f"[dim]Hybrid fusion skipped: {e}[/dim]\n")
+                    if hybrid_result.new_devices:
+                        self.console.print(
+                            f"  [yellow]New devices observed: {len(hybrid_result.new_devices)}[/yellow]"
+                        )
+                    if hybrid_result.missing_devices:
+                        self.console.print(
+                            f"  [yellow]Missing devices observed: {len(hybrid_result.missing_devices)}[/yellow]"
+                        )
+                    self.console.print("[green]Identity fusion complete[/green]\n")
+                except Exception as e:
+                    logger.debug(f"Hybrid fusion error: {e}")
+                    self.console.print(f"[dim]Hybrid fusion skipped: {e}[/dim]\n")
+            else:
+                self.console.print("[dim]Phase 8/8: Hybrid Identity Fusion (skipped for single-host target)[/dim]\n")
 
             # Hardware lifecycle checks use the best device identities now
             # available. In full assessments this means post-hybrid identities;
@@ -2714,27 +2782,34 @@ class SunsetScan:
             )
 
             # Device identification summary (fused if available, else active-only)
+            printed_identity_summary = False
             if self.last_hybrid_result and self.last_hybrid_result.fused_identities:
                 from collections import Counter
-                fused = self.last_hybrid_result.fused_identities
-                type_counts = Counter(
-                    (i.device_type or "Unknown")
-                    for i in fused.values()
-                )
-                parts = [f"{c} {t}" for t, c in type_counts.most_common()]
-                self.console.print(
-                    f"[bold]Devices identified (fused):[/bold] "
-                    f"{len(fused)} devices "
-                    f"({', '.join(parts)})"
-                )
-                source_counts = Counter()
-                for i in fused.values():
-                    source_counts.update(i.sources)
-                src_parts = [f"{s}: {c}" for s, c in source_counts.most_common(6)]
-                self.console.print(
-                    f"[dim]  Sources: {', '.join(src_parts)}[/dim]"
-                )
-            elif self.last_device_identities:
+                fused = {
+                    mac: identity
+                    for mac, identity in self.last_hybrid_result.fused_identities.items()
+                    if identity.ip in scan_result.hosts
+                }
+                if fused:
+                    type_counts = Counter(
+                        (i.device_type or "Unknown")
+                        for i in fused.values()
+                    )
+                    parts = [f"{c} {t}" for t, c in type_counts.most_common()]
+                    self.console.print(
+                        f"[bold]Devices identified (fused):[/bold] "
+                        f"{len(fused)} devices "
+                        f"({', '.join(parts)})"
+                    )
+                    source_counts = Counter()
+                    for i in fused.values():
+                        source_counts.update(i.sources)
+                    src_parts = [f"{s}: {c}" for s, c in source_counts.most_common(6)]
+                    self.console.print(
+                        f"[dim]  Sources: {', '.join(src_parts)}[/dim]"
+                    )
+                    printed_identity_summary = True
+            if not printed_identity_summary and self.last_device_identities:
                 from collections import Counter
                 type_counts = Counter(
                     (i.device_type or "Unknown")
@@ -2748,7 +2823,7 @@ class SunsetScan:
                 )
 
             # Compute and display risk scores
-            self.last_risk_scores = self.risk_scorer.score_all(self.finding_registry)
+            self.last_risk_scores = self._score_scan_risks(scan_result)
             if self.last_risk_scores:
                 self.console.print("\n[bold]Device risk scores:[/bold]")
                 for ip, risk in self.last_risk_scores.items():
