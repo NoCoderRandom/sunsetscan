@@ -140,8 +140,23 @@ def test_get_target_uses_local_subnet_for_factory_default(monkeypatch):
 def test_network_discovery_scope_detects_single_host_vs_network():
     assert SunsetScan._target_allows_network_discovery("127.0.0.1") is False
     assert SunsetScan._target_allows_network_discovery("192.168.50.80") is False
+    assert SunsetScan._target_allows_network_discovery("192.168.50.80/32") is False
     assert SunsetScan._target_allows_network_discovery("192.168.50.0/24") is True
     assert SunsetScan._target_allows_network_discovery("192.168.50.*") is True
+
+
+def test_single_host_discovery_fallback_keeps_explicit_targets():
+    assert SunsetScan._single_host_target_as_discovered_hosts("192.168.50.212") == [
+        "192.168.50.212"
+    ]
+    assert SunsetScan._single_host_target_as_discovered_hosts("192.168.50.212/32") == [
+        "192.168.50.212"
+    ]
+    assert SunsetScan._single_host_target_as_discovered_hosts("labrouter.local") == [
+        "labrouter.local"
+    ]
+    assert SunsetScan._single_host_target_as_discovered_hosts("192.168.50.0/24") == []
+    assert SunsetScan._single_host_target_as_discovered_hosts("192.168.50.10-20") == []
 
 
 def test_scan_risk_scores_are_limited_to_scanned_hosts():

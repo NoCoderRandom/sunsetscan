@@ -2610,6 +2610,14 @@ class SunsetScan:
                     excluded_hosts=getattr(self.settings, "excluded_hosts", ()),
                 )
 
+            if not discovered_hosts and not network_discovery_target:
+                discovered_hosts = self._single_host_target_as_discovered_hosts(target)
+                if discovered_hosts:
+                    self.console.print(
+                        "[cyan]Discovery probes did not return the explicit "
+                        "single-host target; scanning it anyway.[/cyan]"
+                    )
+
             if not discovered_hosts:
                 self.console.print("[yellow]No active hosts found.[/yellow]")
                 return 0
@@ -2930,6 +2938,23 @@ class SunsetScan:
                 return (999, str(ip))
 
         return sorted({str(ip) for ip in hosts if str(ip) not in excluded}, key=key)
+
+    @staticmethod
+    def _single_host_target_as_discovered_hosts(target: str) -> List[str]:
+        """Return an explicit single target as a discovery fallback."""
+        target = (target or "").strip()
+        if not target or SunsetScan._target_allows_network_discovery(target):
+            return []
+
+        try:
+            if "/" in target:
+                network = ipaddress.ip_network(target, strict=False)
+                return [str(network.network_address)] if network.num_addresses == 1 else []
+            return [str(ipaddress.ip_address(target))]
+        except ValueError:
+            if re.fullmatch(r"[A-Za-z0-9_.-]+", target):
+                return [target]
+            return []
 
     @staticmethod
     def _scan_target_for_discovered_hosts(discovered_hosts: List[str], fallback: str) -> str:
