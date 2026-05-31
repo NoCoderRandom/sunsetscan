@@ -24,10 +24,10 @@
       "rule": "Ambiguous status-only/discontinued/vendor EOL-list records become lifecycle_review with unknown receives_security_updates."
     },
     "raw_table_import": {
-      "generated_at": "2026-05-15T05:34:15",
+      "generated_at": "2026-05-31T23:20:46",
       "source_project": "nhedb-scraper",
       "raw_root": "output/RawData",
-      "imported_records": 121,
+      "imported_records": 582,
       "imported_vendors": 1,
       "policy": "Conservative table import from raw source manifests; prose-only and blocked sources are not normalized."
     },
@@ -45,15 +45,15 @@
       "version": 1,
       "index_file": "sunsetscan_hardware_eol_index.json.gz",
       "category_count": 5,
-      "generated_at": "2026-05-15T05:34:38"
+      "generated_at": "2026-05-31T23:21:53"
     }
   },
   "summary": {
-    "total_records": 64245,
-    "total_model_summaries": 51452,
-    "records_not_receiving_security_updates": 37560,
-    "records_receiving_security_updates": 8338,
-    "records_unknown_security_update_status": 18347,
+    "total_records": 64827,
+    "total_model_summaries": 52032,
+    "records_not_receiving_security_updates": 37739,
+    "records_receiving_security_updates": 8737,
+    "records_unknown_security_update_status": 18351,
     "vendors": {
       "a10": 15,
       "acti": 95,
@@ -146,7 +146,7 @@
       "phoenix_contact": 1,
       "pilz": 10,
       "progress_kemp": 74,
-      "qnap": 1,
+      "qnap": 583,
       "red_lion_ntron": 237,
       "reolink": 39,
       "riverbed": 4099,
@@ -180,69 +180,69 @@
     },
     "lifecycle_statuses": {
       "end_of_sale": 12031,
-      "lifecycle_review": 3935,
+      "lifecycle_review": 3939,
       "support_ending_soon": 2568,
-      "supported": 744,
-      "supported_status_only": 55,
+      "supported": 746,
+      "supported_status_only": 452,
       "unknown": 6539,
-      "unsupported": 36466,
-      "unsupported_status_only": 1094,
+      "unsupported": 36600,
+      "unsupported_status_only": 1139,
       "vendor_eol_but_supported": 813
     },
     "risks": {
-      "critical": 36466,
-      "high": 1094,
-      "info": 799,
-      "low": 16779,
+      "critical": 36600,
+      "high": 1139,
+      "info": 1198,
+      "low": 16783,
       "medium": 2568,
       "unknown": 6539
     },
     "device_classes": {
-      "accessory": 459,
+      "accessory": 485,
       "controller": 195,
       "ip_camera": 1381,
       "modem": 108,
-      "module": 2249,
-      "nas": 1842,
-      "network_adapter": 1060,
-      "network_device": 24879,
-      "network_switch": 5410,
+      "module": 2253,
+      "nas": 2309,
+      "network_adapter": 1071,
+      "network_device": 24903,
+      "network_switch": 5445,
       "powerline": 335,
       "printer": 1429,
-      "router": 6619,
+      "router": 6622,
       "security_appliance": 4999,
       "service": 1369,
       "smart_home": 811,
-      "software": 8362,
-      "wireless_access_point": 2738
+      "software": 8373,
+      "wireless_access_point": 2739
     },
     "model_summary_statuses": {
-      "lifecycle_review": 3877,
+      "lifecycle_review": 3881,
       "mixed": 3744,
-      "supported": 7655,
+      "supported": 8053,
       "unknown": 7972,
-      "unsupported": 28204
+      "unsupported": 28382
     }
   },
   "record_shards": {
     "network_infrastructure": {
       "label": "Network Infrastructure",
       "path": "records/network_infrastructure.json.gz",
-      "record_count": 15070,
+      "record_count": 15109,
       "device_classes": {
         "controller": 195,
         "modem": 108,
-        "network_switch": 5410,
-        "router": 6619,
-        "wireless_access_point": 2738
+        "network_switch": 5445,
+        "router": 6622,
+        "wireless_access_point": 2739
       }
     },
     "general_network_devices": {
       "label": "General Network Devices",
       "path": "records/general_network_devices.json.gz",
-      "record_count": 24879,
+      "record_count": 24903,
       "device_classes": {
-        "network_device": 24879
+        "network_device": 24903
       }
     },
     "security_surveillance": {
@@ -257,10 +257,10 @@
     "endpoints_peripherals": {
       "label": "Endpoints and Peripherals",
       "path": "records/endpoints_peripherals.json.gz",
-      "record_count": 5477,
+      "record_count": 5955,
       "device_classes": {
-        "nas": 1842,
-        "network_adapter": 1060,
+        "nas": 2309,
+        "network_adapter": 1071,
         "powerline": 335,
         "printer": 1429,
         "smart_home": 811
@@ -269,12 +269,12 @@
     "software_services_modules": {
       "label": "Software, Services, and Modules",
       "path": "records/software_services_modules.json.gz",
-      "record_count": 12439,
+      "record_count": 12480,
       "device_classes": {
-        "accessory": 459,
-        "module": 2249,
+        "accessory": 485,
+        "module": 2253,
         "service": 1369,
-        "software": 8362
+        "software": 8373
       }
     }
   }

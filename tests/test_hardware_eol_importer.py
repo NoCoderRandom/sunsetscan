@@ -12,6 +12,8 @@ from tools.ingest_raw_hardware_eol_sources import (
     extract_hp_designjet_eosl_json_rows,
     extract_kyocera_taskalfa_sales_end_rows,
     extract_lexmark_product_eosl_rows,
+    extract_qnap_os_lifecycle_rows,
+    extract_qnap_product_status_api_rows,
     extract_rows,
     extract_synology_product_status_rows,
     extract_zebra_discontinued_product_rows,
@@ -1587,11 +1589,160 @@ def test_qnap_support_status_table_imports_security_update_date(tmp_path):
             "Description": "NAS Storage",
             "Product Status": "EOL",
             "End of Support": "2022-10-31",
-            "End of Vulnerability Support": "2017-12-31",
+            "End of Security Updates": "2022-10-31",
+            "End of OS Updates": "2017-12-31",
             "Replacement Products": "TS-264",
             "_source_table": "product-support-status-filtered-nas.html support status table 1",
             "_source_hint": "QNAP product support status table import",
         }
+    ]
+
+
+def test_qnap_product_status_api_imports_hardware_lifecycle_rows(tmp_path):
+    payload = {
+        "success": True,
+        "results": {
+            "productLineList": {"1": "NAS / Expansion"},
+            "modelList": [
+                {
+                    "display_name": "TS-259 Pro+",
+                    "name": "TS-259 Pro+",
+                    "product_line_id": 1,
+                    "is_eol": True,
+                    "is_eos": True,
+                    "eol_detail": {
+                        "hardware_repair_of_replacement": "Discontinued",
+                        "os_and_application_updates_and_maintenance": "2017-12 (QTS 4.2)",
+                        "technical_support_and_security_updates": "2022-10",
+                        "recommended_replacement": "TS-264",
+                    },
+                },
+                {
+                    "display_name": "TS-431P",
+                    "name": "TS-431P",
+                    "product_line_id": 1,
+                    "is_eol": False,
+                    "is_eos": True,
+                    "eol_detail": {
+                        "hardware_repair_of_replacement": "Limited",
+                        "os_and_application_updates_and_maintenance": "Full",
+                        "technical_support_and_security_updates": "Active",
+                        "recommended_replacement": "TS-433",
+                    },
+                },
+                {
+                    "display_name": "QXP-830S-3808",
+                    "name": "QXP-830S-3808",
+                    "product_line_id": 9,
+                    "is_eol": False,
+                    "is_eos": False,
+                    "eol_detail": [],
+                },
+            ],
+        },
+    }
+    path = tmp_path / "product_status_api.json"
+    path.write_text(json.dumps(payload), encoding="utf-8")
+
+    rows = extract_qnap_product_status_api_rows(path)
+
+    assert rows == [
+        {
+            "Model": "TS-259 Pro+",
+            "Product Name": "TS-259 Pro+",
+            "Description": "NAS / Expansion",
+            "Product Status": "End-of-life (EOL)",
+            "Replacement Products": "TS-264",
+            "End of Support": "2022-10-31",
+            "End of Security Updates": "2022-10-31",
+            "End of OS Updates": "2017-12-31",
+            "_source_table": "product_status_api.json modelList",
+            "_source_hint": "QNAP product support status API import",
+            "_allow_status_only": True,
+        },
+        {
+            "Model": "TS-431P",
+            "Product Name": "TS-431P",
+            "Description": "NAS / Expansion",
+            "Product Status": "Active; Legacy (End-of-sale)",
+            "Replacement Products": "TS-433",
+            "End of Support": None,
+            "End of Security Updates": None,
+            "End of OS Updates": None,
+            "_source_table": "product_status_api.json modelList",
+            "_source_hint": "QNAP product support status API import",
+            "_allow_status_only": True,
+        },
+    ]
+
+
+def test_qnap_os_lifecycle_imports_eol_dates_from_status_page(tmp_path):
+    html = """
+    <script>
+    var osLocaleData = {
+      "chapters": [
+        {
+          "title": "End-of-Life (EOL) Dates",
+          "contents": [
+            {
+              "title": "QTS",
+              "table": {
+                "tbody": [
+                  {
+                    "version": "4.3 (LTS)",
+                    "availability": "2017-05",
+                    "production": "2018-05",
+                    "maintenance": "2019-05",
+                    "lts": "2024-02"
+                  },
+                  {
+                    "version": "5.0",
+                    "availability": "2021-10",
+                    "production": "2022-09",
+                    "maintenance": "2023-09",
+                    "lts": "--"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    };
+    </script>
+    """
+    path = tmp_path / "product_status.html"
+    path.write_text(html, encoding="utf-8")
+
+    rows = extract_qnap_os_lifecycle_rows(path)
+
+    assert rows == [
+        {
+            "Model": "QTS 4.3",
+            "Part Number": "QTS 4.3",
+            "Product Name": "QTS 4.3 (LTS)",
+            "Description": "Software",
+            "Product Status": "Operating system EOL date",
+            "Announcement": "2017-05-31",
+            "End of Support": "2024-02-29",
+            "End of Security Updates": "2024-02-29",
+            "Aliases": "QTS 4.3; QTS 4.3.x",
+            "_source_table": "product_status.html QTS operating system lifecycle table",
+            "_source_hint": "QNAP operating system lifecycle import",
+        },
+        {
+            "Model": "QTS 5.0",
+            "Part Number": "QTS 5.0",
+            "Product Name": "QTS 5.0",
+            "Description": "Software",
+            "Product Status": "Operating system EOL date",
+            "Announcement": "2021-10-31",
+            "End of Support": "2023-09-30",
+            "End of Security Updates": "2023-09-30",
+            "Aliases": "QTS 5.0; QTS 5.0.x",
+            "_source_table": "product_status.html QTS operating system lifecycle table",
+            "_source_hint": "QNAP operating system lifecycle import",
+        },
     ]
 
 

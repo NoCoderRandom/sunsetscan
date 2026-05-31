@@ -191,11 +191,11 @@ smart-pack manifest, selected compact indexes, and selected shard files above.
 The legacy split index remains available through `hardware-eol` for
 compatibility.
 
-As of the 2026-05-15 promoted local smart-pack candidate, the canonical database
-contains 64,245 records across 122 vendors and 51,452 model summaries. The
+As of the 2026-05-31 promoted local smart-pack candidate, the canonical database
+contains 64,827 records across 122 vendors and 52,032 model summaries. The
 smart-pack record split is:
 
-- `home`: 14,676 records
+- `home`: 15,258 records
 - `office`: 4,263 records
 - `enterprise`: 39,466 records
 - `industrial_ot`: 1,308 records

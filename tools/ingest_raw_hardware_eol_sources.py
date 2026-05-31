@@ -1801,6 +1801,250 @@ def qnap_support_date(value: Any) -> str | None:
     return parse_date_any(match.group(0))
 
 
+def qnap_clean_support_value(value: Any) -> str:
+    return normalize_text(value).replace("\u00a0", " ")
+
+
+def qnap_is_active_value(value: Any) -> bool:
+    return qnap_clean_support_value(value).casefold() == "active"
+
+
+def qnap_product_status(model: dict[str, Any], detail: dict[str, Any]) -> str:
+    tech = qnap_clean_support_value(
+        detail.get("technical_support_and_security_updates")
+    )
+    if model.get("is_eol"):
+        return "End-of-life (EOL)"
+    if model.get("is_eos"):
+        if qnap_is_active_value(tech):
+            return "Active; Legacy (End-of-sale)"
+        return "Legacy (End-of-sale)"
+    return "Active"
+
+
+QNAP_PRODUCT_LINE_DESCRIPTIONS = {
+    "1": "NAS / Expansion",
+    "2": "QBoat IoT Device",
+    "3": "QGenie Mobile NAS",
+    "4": "Computing Accelerator Module",
+    "5": "Network Switch",
+    "6": "Video Conferencing System",
+    "7": "QDA Drive Adapter",
+    "8": "QNA Network Adapter",
+    "9": "QXP Expansion Card",
+    "10": "QWU Wake on WAN Device",
+    "12": "QXG Network Expansion Card",
+    "14": "QVR Surveillance Appliance",
+    "16": "Router",
+    "17": "QuCPE Network Appliance",
+    "19": "Accessory",
+}
+
+
+def qnap_product_line_description(
+    product_line_id: Any,
+    product_line_list: dict[str, Any],
+) -> str:
+    key = str(product_line_id)
+    return (
+        QNAP_PRODUCT_LINE_DESCRIPTIONS.get(key)
+        or normalize_text(product_line_list.get(key))
+        or "QNAP Product"
+    )
+
+
+def qnap_replacement(value: Any) -> str:
+    text = normalize_text(value)
+    return "" if text in {"", "-"} else text
+
+
+def qnap_os_update_date(value: Any) -> str | None:
+    return qnap_support_date(value)
+
+
+def qnap_api_model_row(
+    model: dict[str, Any],
+    product_line_list: dict[str, Any],
+) -> dict[str, Any] | None:
+    name = normalize_text(model.get("name") or model.get("display_name"))
+    if not name:
+        return None
+    detail = model.get("eol_detail")
+    if not isinstance(detail, dict):
+        return None
+
+    tech_value = detail.get("technical_support_and_security_updates")
+    os_value = detail.get("os_and_application_updates_and_maintenance")
+    status = qnap_product_status(model, detail)
+    support_date = qnap_support_date(tech_value)
+    os_update_date = qnap_os_update_date(os_value)
+
+    row: dict[str, Any] = {
+        "Model": name,
+        "Product Name": normalize_text(model.get("display_name")) or name,
+        "Description": qnap_product_line_description(
+            model.get("product_line_id"), product_line_list
+        ),
+        "Product Status": status,
+        "Replacement Products": qnap_replacement(detail.get("recommended_replacement")),
+        "End of Support": support_date,
+        "End of Security Updates": support_date,
+        "End of OS Updates": os_update_date,
+        "_source_table": "product_status_api.json modelList",
+        "_source_hint": "QNAP product support status API import",
+        "_allow_status_only": True,
+    }
+
+    if model.get("is_eos") and not model.get("is_eol") and not (
+        support_date or qnap_is_active_value(tech_value)
+    ):
+        row["_force_lifecycle_review"] = True
+        row["_review_policy"] = "qnap_legacy_end_of_sale_no_security_end_date"
+        row["_review_reason"] = (
+            "QNAP defines Legacy products as end-of-sale/no longer available "
+            "for sale. This source row does not give an exact technical "
+            "support or security-update end date."
+        )
+
+    return row
+
+
+def extract_qnap_product_status_api_rows(path: Path) -> list[dict[str, Any]]:
+    if path.name != "product_status_api.json":
+        return []
+    try:
+        payload = load_json(path)
+    except Exception:
+        return []
+    results = payload.get("results") if isinstance(payload, dict) else None
+    if not isinstance(results, dict):
+        return []
+    product_line_list = results.get("productLineList") or {}
+    if not isinstance(product_line_list, dict):
+        product_line_list = {}
+    model_list = results.get("modelList") or []
+    if not isinstance(model_list, list):
+        return []
+
+    rows = []
+    for model in model_list:
+        if not isinstance(model, dict):
+            continue
+        row = qnap_api_model_row(model, product_line_list)
+        if row:
+            rows.append(row)
+    return rows
+
+
+def extract_javascript_object_assignment(
+    text: str,
+    variable_name: str,
+) -> dict[str, Any] | None:
+    marker = f"var {variable_name}"
+    start = text.find(marker)
+    if start < 0:
+        return None
+    eq = text.find("=", start)
+    if eq < 0:
+        return None
+    obj_start = text.find("{", eq)
+    if obj_start < 0:
+        return None
+
+    depth = 0
+    quote = ""
+    escaped = False
+    for idx, char in enumerate(text[obj_start:], start=obj_start):
+        if quote:
+            if escaped:
+                escaped = False
+            elif char == "\\":
+                escaped = True
+            elif char == quote:
+                quote = ""
+            continue
+        if char in {"'", '"'}:
+            quote = char
+        elif char == "{":
+            depth += 1
+        elif char == "}":
+            depth -= 1
+            if depth == 0:
+                try:
+                    return json.loads(text[obj_start : idx + 1])
+                except Exception:
+                    return None
+    return None
+
+
+def qnap_os_cycle_date(value: Any) -> str | None:
+    text = normalize_text(value)
+    if text in {"", "-", "--"}:
+        return None
+    return parse_date_any(text)
+
+
+def qnap_os_aliases(product: str, version_text: str) -> list[str]:
+    clean_version = re.sub(r"\s*\(.*?\)", "", normalize_text(version_text)).strip()
+    aliases = [f"{product} {clean_version}"]
+    if re.fullmatch(r"h?\d+(?:\.\d+){1,2}", clean_version, flags=re.I):
+        aliases.append(f"{product} {clean_version}.x")
+    return aliases
+
+
+def extract_qnap_os_lifecycle_rows(path: Path) -> list[dict[str, Any]]:
+    if path.name != "product_status.html":
+        return []
+    text = path.read_text(encoding="utf-8", errors="ignore")
+    payload = extract_javascript_object_assignment(text, "osLocaleData")
+    if not payload:
+        return []
+
+    rows: list[dict[str, Any]] = []
+    for chapter in payload.get("chapters") or []:
+        if not isinstance(chapter, dict) or chapter.get("title") != "End-of-Life (EOL) Dates":
+            continue
+        for content in chapter.get("contents") or []:
+            if not isinstance(content, dict) or "table" not in content:
+                continue
+            product = normalize_text(content.get("title"))
+            if product not in {"QTS", "QuTS hero"}:
+                continue
+            table = content.get("table") or {}
+            tbody = table.get("tbody") or []
+            if not isinstance(tbody, list):
+                continue
+            for item in tbody:
+                if not isinstance(item, dict):
+                    continue
+                version_text = normalize_text(item.get("version"))
+                clean_version = re.sub(r"\s*\(.*?\)", "", version_text).strip()
+                if not clean_version:
+                    continue
+                maintenance_end = qnap_os_cycle_date(item.get("maintenance"))
+                lts_end = qnap_os_cycle_date(item.get("lts"))
+                eol_date = lts_end or maintenance_end
+                if not eol_date:
+                    continue
+                model = f"{product} {clean_version}"
+                rows.append(
+                    {
+                        "Model": model,
+                        "Part Number": model,
+                        "Product Name": f"{product} {version_text}",
+                        "Description": "Software",
+                        "Product Status": "Operating system EOL date",
+                        "Announcement": qnap_os_cycle_date(item.get("availability")),
+                        "End of Support": eol_date,
+                        "End of Security Updates": eol_date,
+                        "Aliases": "; ".join(qnap_os_aliases(product, version_text)),
+                        "_source_table": f"{path.name} {product} operating system lifecycle table",
+                        "_source_hint": "QNAP operating system lifecycle import",
+                    }
+                )
+    return rows
+
+
 def extract_qnap_support_status_rows(path: Path) -> list[dict[str, Any]]:
     if not path.name.startswith("product-support-status"):
         return []
@@ -1856,7 +2100,7 @@ def extract_qnap_support_status_rows(path: Path) -> list[dict[str, Any]]:
                 if security_idx is not None and security_idx < len(row)
                 else None
             )
-            end_vulnerability = (
+            end_os_updates = (
                 qnap_support_date(row[os_updates_idx])
                 if os_updates_idx is not None and os_updates_idx < len(row)
                 else None
@@ -1873,7 +2117,8 @@ def extract_qnap_support_status_rows(path: Path) -> list[dict[str, Any]]:
                     "Description": "NAS Storage",
                     "Product Status": status or "product support status",
                     "End of Support": end_support,
-                    "End of Vulnerability Support": end_vulnerability,
+                    "End of Security Updates": end_support,
+                    "End of OS Updates": end_os_updates,
                     "Replacement Products": replacement,
                     "_source_table": f"{path.name} support status table {table_index}",
                     "_source_hint": "QNAP product support status table import",
@@ -4356,6 +4601,8 @@ def extract_vendor_html_rows(path: Path, vendor_slug: str) -> list[dict[str, Any
     elif vendor_slug == "red_lion_ntron":
         extracted.extend(extract_red_lion_ntron_eol_rows(path))
     elif vendor_slug == "qnap":
+        extracted.extend(extract_qnap_product_status_api_rows(path))
+        extracted.extend(extract_qnap_os_lifecycle_rows(path))
         extracted.extend(extract_qnap_support_status_rows(path))
     elif vendor_slug == "seagate_lacie_nas":
         extracted.extend(extract_seagate_lacie_nas_os4_rows(path))
@@ -4387,6 +4634,8 @@ def extract_vendor_html_rows(path: Path, vendor_slug: str) -> list[dict[str, Any
 def extract_vendor_json_rows(path: Path, vendor_slug: str) -> list[dict[str, Any]]:
     if vendor_slug == "hp_printers_official":
         return extract_hp_designjet_eosl_json_rows(path)
+    if vendor_slug == "qnap":
+        return extract_qnap_product_status_api_rows(path)
     return []
 
 
