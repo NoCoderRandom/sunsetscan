@@ -213,6 +213,42 @@ def signal_handler(signum, frame):
     sys.exit(0)
 
 
+def _effective_settings_for_safe_mode(
+    user_settings: Settings,
+    host_profile: Any,
+    args: argparse.Namespace,
+) -> Tuple[Settings, bool]:
+    """Return runtime settings after applying safe-mode CLI policy."""
+    force_safe = bool(getattr(args, "safe_mode", False))
+    force_safe = force_safe or bool(
+        os.environ.get("SUNSETSCAN_FORCE_SAFE_MODE")
+        or os.environ.get("NETWATCH_FORCE_SAFE_MODE")
+    )
+    force_safe = force_safe or user_settings.safe_mode
+    disable_safe = bool(getattr(args, "no_safe_mode", False))
+    use_safe_mode = (force_safe or host_profile.recommend_safe_mode) and not disable_safe
+
+    if use_safe_mode:
+        return replace(user_settings, **safe_mode_overrides(host_profile)), True
+
+    if disable_safe:
+        defaults = Settings()
+        return (
+            replace(
+                user_settings,
+                safe_mode=False,
+                skip_heavy_probes=False,
+                probe_timeout_factor=defaults.probe_timeout_factor,
+                excluded_hosts=defaults.excluded_hosts,
+                nmap_parallel_hosts=defaults.nmap_parallel_hosts,
+                scan_worker_threads=defaults.scan_worker_threads,
+            ),
+            False,
+        )
+
+    return user_settings, False
+
+
 class SunsetScan:
     """Main SunsetScan application controller.
 
@@ -243,20 +279,11 @@ class SunsetScan:
         # be constructed with the correct overrides for low-power hosts.
         self.host_profile = detect_host_profile()
         user_settings = load_user_settings()
-        force_safe = bool(getattr(args, "safe_mode", False))
-        force_safe = force_safe or bool(
-            os.environ.get("SUNSETSCAN_FORCE_SAFE_MODE")
-            or os.environ.get("NETWATCH_FORCE_SAFE_MODE")
+        self.settings, use_safe_mode = _effective_settings_for_safe_mode(
+            user_settings,
+            self.host_profile,
+            args,
         )
-        force_safe = force_safe or user_settings.safe_mode
-        disable_safe = bool(getattr(args, "no_safe_mode", False))
-        use_safe_mode = (force_safe or self.host_profile.recommend_safe_mode) and not disable_safe
-
-        if use_safe_mode:
-            overrides = safe_mode_overrides(self.host_profile)
-            self.settings = replace(user_settings, **overrides)
-        else:
-            self.settings = user_settings
 
         self.console = Console(color_system=None if args.no_color else "auto")
 

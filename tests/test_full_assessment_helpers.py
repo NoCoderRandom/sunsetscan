@@ -7,7 +7,7 @@ from core.findings import Finding, FindingRegistry, Severity
 from core.risk_scorer import RiskScorer
 from core.scanner import HostInfo, ScanResult
 from ui.export import ReportExporter
-from sunsetscan import SunsetScan
+from sunsetscan import SunsetScan, _effective_settings_for_safe_mode
 
 
 class _SilentConsole:
@@ -196,6 +196,34 @@ def test_user_settings_round_trip(tmp_path):
     assert loaded.nse_scripts_enabled is True
     assert loaded.common_ports == [80, 443, 9443]
     assert loaded.excluded_hosts == ("127.0.0.2",)
+
+
+def test_no_safe_mode_clears_persisted_safe_mode_overrides(monkeypatch):
+    monkeypatch.setenv("SUNSETSCAN_FORCE_SAFE_MODE", "1")
+    user_settings = Settings(
+        safe_mode=True,
+        skip_heavy_probes=True,
+        probe_timeout_factor=0.5,
+        excluded_hosts=("192.168.50.1", "192.168.50.80"),
+        nmap_parallel_hosts=1,
+        scan_worker_threads=2,
+    )
+    profile = SimpleNamespace(
+        recommend_safe_mode=True,
+        excluded_hosts=lambda: ("192.168.50.1", "192.168.50.80"),
+    )
+    args = SimpleNamespace(safe_mode=False, no_safe_mode=True)
+
+    settings, active = _effective_settings_for_safe_mode(user_settings, profile, args)
+
+    defaults = Settings()
+    assert active is False
+    assert settings.safe_mode is False
+    assert settings.skip_heavy_probes is False
+    assert settings.probe_timeout_factor == defaults.probe_timeout_factor
+    assert settings.excluded_hosts == defaults.excluded_hosts
+    assert settings.nmap_parallel_hosts == defaults.nmap_parallel_hosts
+    assert settings.scan_worker_threads == defaults.scan_worker_threads
 
 
 def test_settings_menu_can_toggle_password_audit(monkeypatch):
