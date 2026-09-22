@@ -248,7 +248,7 @@ SunsetScan runs 12 security checker modules during a full assessment:
 - **CVE correlation** — maps detected service versions to known CVEs using OSV.dev
 - **Software EOL checking** — local cached lifecycle data for 150+ software products
 - **Hardware lifecycle checking** — expanded SunsetScan hardware EOL database
-  with 64,245 lifecycle records, 51,452 model summaries, and 122 represented
+  with 86,276 lifecycle records, 81,738 model summaries, and 224 represented
   vendors. It flags routers, switches, NAS, cameras, printers, access points,
   industrial/OT gear, and service-provider equipment with confirmed unsupported
   status or vendor lifecycle signals that need review.
@@ -276,8 +276,8 @@ SunsetScan includes downloadable data modules and hardware EOL profiles that ext
 
 The hardware lifecycle database is now split into smart downloadable profiles:
 `hardware-eol-home` is the default install, while `hardware-eol-full` provides
-complete coverage. The full canonical build currently contains 64,245 records
-across 122 vendors, but home users only need the smaller home profile.
+complete coverage. The full canonical build currently contains 86,276 records
+across 224 vendors, but home users only need the smaller home profile.
 
 | Module | Source | What it adds |
 |---|---|---|

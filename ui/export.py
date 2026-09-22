@@ -499,21 +499,11 @@ class ReportExporter:
             top_issues.append(f"{new_count} new finding(s) since last scan")
 
         if c > 0:
-            recommendation = (
-                "Immediately address critical findings: change default credentials, "
-                "disable SMBv1, and apply available security patches. "
-                "Isolate any device with a CRITICAL finding until remediated."
-            )
+            recommendation = "Review the critical findings and follow their specific remediation steps immediately."
         elif h > 0:
-            recommendation = (
-                "Review high-severity findings and apply firmware updates or configuration "
-                "changes within the week. Focus on SMB signing, EOL software, and open admin interfaces."
-            )
+            recommendation = "Review the high-severity findings and follow their specific remediation steps within the week."
         elif m > 0:
-            recommendation = (
-                "Schedule medium-severity remediations for the next maintenance window. "
-                "Review SSL/TLS configurations, disable unused services, and update firmware."
-            )
+            recommendation = "Review the medium-severity findings and schedule their specific remediation steps for the next maintenance window."
         else:
             recommendation = (
                 "Network security posture is good. Continue monitoring for new devices, "

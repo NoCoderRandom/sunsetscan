@@ -145,6 +145,10 @@ def _run_wappalyzer_checks(
     for tech_name, tech in tech_db.items():
         if not isinstance(tech, dict):
             continue
+        # ASUS routers use this banner for their own web server; a generic
+        # Wappalyzer httpd signature must not label it as Apache.
+        if tech_name == "Apache HTTP Server" and headers.get("server", "").strip().lower() == "httpd/2.0":
+            continue
         version = None
         matched = False
         conf = Confidence.SUSPECTED
@@ -504,9 +508,14 @@ def _check_admin_paths(
     session: requests.Session,
     timeout: float,
 ) -> List[Finding]:
-    """Probe well-known admin panel paths and report those that return 200."""
+    """Probe admin paths, excluding generic success pages for unknown paths."""
     findings: List[Finding] = []
     found_paths: List[str] = []
+    control = _get_page(
+        session,
+        base_url + "/sunsetscan-nonexistent-admin-path-check/",
+        timeout=timeout,
+    )
 
     for path in ADMIN_PATHS:
         url = base_url + path
@@ -515,6 +524,14 @@ def _check_admin_paths(
             continue
         # 200 = accessible, 401/403 = exists but protected (still report), others = absent
         if resp.status_code in (200, 401, 403):
+            if resp.status_code == 200:
+                if control is None:
+                    continue
+                page = _get_page(session, url, timeout=timeout)
+                if page is None or page.status_code != 200:
+                    continue
+                if control.status_code == 200 and control.content and page.content == control.content:
+                    continue
             status_note = "accessible" if resp.status_code == 200 else f"protected (HTTP {resp.status_code})"
             found_paths.append(f"{path} [{status_note}]")
 

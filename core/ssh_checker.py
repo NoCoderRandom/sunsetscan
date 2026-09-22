@@ -90,14 +90,14 @@ def _grab_ssh_banner(host: str, port: int, timeout: float) -> Optional[str]:
         return None
 
 
-def _get_ssh_algorithms(
+def _get_ssh_host_key(
     host: str, port: int, timeout: float
-) -> Optional[Tuple[List[str], List[str], List[str], str, int]]:
+) -> Optional[Tuple[str, int]]:
     """
-    Connect via paramiko Transport and extract negotiated/advertised algorithms.
+    Connect via paramiko Transport to inspect the negotiated host key.
 
     Returns:
-        (kex_algos, ciphers, macs, host_key_type, host_key_bits) or None on failure.
+        (host_key_type, host_key_bits) or None on failure.
     """
     try:
         import paramiko
@@ -107,17 +107,12 @@ def _get_ssh_algorithms(
         transport = paramiko.Transport((host, port))
         transport.connect()  # Don't authenticate — just complete key exchange
 
-        security_options = transport.get_security_options()
-        kex = list(security_options.kex) if security_options.kex else []
-        ciphers = list(security_options.ciphers) if security_options.ciphers else []
-        macs = list(security_options.digests) if security_options.digests else []
-
         host_key = transport.get_remote_server_key()
         host_key_type = host_key.get_name() if host_key else "unknown"
         host_key_bits = host_key.get_bits() if hasattr(host_key, "get_bits") else 0
 
         transport.close()
-        return kex, ciphers, macs, host_key_type, host_key_bits
+        return host_key_type, host_key_bits
 
     except Exception as e:
         logger.debug(f"SSH algorithm enumeration (paramiko) failed {host}:{port}: {e}")
@@ -373,49 +368,43 @@ def check_ssh(host: str, port: int, timeout: float = 8.0) -> List[Finding]:
             tags=["ssh", "protocol-v1", "critical"],
         ))
 
-    # ---- Algorithm enumeration — paramiko first, raw KEXINIT fallback ----
-    algo_result = _get_ssh_algorithms(host, port, timeout)
+    # The server's KEXINIT is the evidence for supported algorithms. Paramiko's
+    # SecurityOptions list describes this client's capabilities instead.
+    raw_result = _get_ssh_algorithms_raw(host, port, timeout)
     host_key_type = "unknown"
     host_key_bits = 0
 
-    if algo_result is not None:
-        kex_algos, ciphers, macs, host_key_type, host_key_bits = algo_result
+    if raw_result is not None:
+        kex_algos, ciphers, macs = raw_result
+        host_key_result = _get_ssh_host_key(host, port, timeout)
+        if host_key_result is not None:
+            host_key_type, host_key_bits = host_key_result
     else:
-        logger.debug(f"Paramiko enumeration failed for {host}:{port}, trying raw KEXINIT")
-        raw_result = _get_ssh_algorithms_raw(host, port, timeout)
-        if raw_result is not None:
-            kex_algos, ciphers, macs = raw_result
-        else:
-            # Both methods failed — still report banner, add LOW advisory
-            findings.append(Finding(
-                severity=Severity.LOW,
-                title=f"SSH algorithm enumeration failed on port {port} — manual verification recommended",
-                host=host, port=port, protocol="ssh",
-                category="SSH",
-                description=(
-                    f"SSH service detected on port {port} but algorithm enumeration failed. "
-                    f"The server may use non-standard client restrictions or a custom SSH stack."
-                ),
-                explanation=(
-                    "SSH algorithm enumeration identifies weak or outdated cryptographic settings. "
-                    "Both paramiko and raw socket KEXINIT methods were attempted. "
-                    "When enumeration fails, the cryptographic posture cannot be fully assessed."
-                ),
-                recommendation=(
-                    "Manually verify SSH configuration:\n"
-                    "  ssh -Q kex <host>\n"
-                    "  ssh-audit <host>  (install via pip install ssh-audit)\n"
-                    "Ensure the server uses modern algorithms and has SSHv1 disabled."
-                ),
-                evidence=(
-                    f"Banner: {ssh_version}; "
-                    f"Paramiko: connection rejected; "
-                    f"Raw KEXINIT: no valid response"
-                ),
-                confidence=Confidence.CONFIRMED,
-                tags=["ssh", "enumeration-failed"],
-            ))
-            return findings
+        # No server algorithm list — still report banner, add LOW advisory.
+        findings.append(Finding(
+            severity=Severity.LOW,
+            title=f"SSH algorithm enumeration failed on port {port} — manual verification recommended",
+            host=host, port=port, protocol="ssh",
+            category="SSH",
+            description=(
+                f"SSH service detected on port {port} but algorithm enumeration failed. "
+                f"The server may use non-standard client restrictions or a custom SSH stack."
+            ),
+            explanation=(
+                "SSH algorithm enumeration identifies weak or outdated cryptographic settings. "
+                "The server's KEXINIT could not be read. "
+                "The cryptographic posture cannot be fully assessed."
+            ),
+            recommendation=(
+                "Manually verify SSH configuration:\n"
+                f"  nmap --script ssh2-enum-algos -p {port} {host}\n"
+                "Ensure the SSH server uses modern algorithms and has SSHv1 disabled."
+            ),
+            evidence=f"Banner: {ssh_version}; Raw KEXINIT: no valid response",
+            confidence=Confidence.CONFIRMED,
+            tags=["ssh", "enumeration-failed"],
+        ))
+        return findings
 
     # ---- Weak KEX ----
     weak_kex_found = [k for k in kex_algos if k in _WEAK_KEX]

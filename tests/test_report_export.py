@@ -30,6 +30,28 @@ def test_html_report_includes_no_action_recommendations_section(tmp_path):
     assert "No critical, high, or medium remediation actions were found" in html
 
 
+def test_high_severity_summary_recommends_only_observed_findings(tmp_path):
+    scan = ScanResult(target="192.0.2.10", profile="QUICK")
+    scan.hosts["192.0.2.10"] = HostInfo(ip="192.0.2.10", state="up")
+    findings = FindingRegistry()
+    findings.add(Finding(
+        severity=Severity.HIGH,
+        title="SSH weak cipher supported",
+        host="192.0.2.10",
+        category="SSH",
+        description="Server advertises a weak cipher.",
+        explanation="The cipher is weak.",
+        recommendation="Disable the weak cipher.",
+    ))
+
+    path = tmp_path / "report.html"
+    assert ReportExporter().export_html(scan, str(path), findings=findings)
+
+    html = path.read_text(encoding="utf-8")
+    assert "follow their specific remediation steps" in html
+    assert "Focus on SMB signing, EOL software" not in html
+
+
 def test_html_report_uses_sunsetscan_branding_and_local_lifecycle_footer(tmp_path):
     scan = ScanResult(target="192.168.1.0/24", profile="QUICK")
     scan.hosts["192.168.1.1"] = HostInfo(ip="192.168.1.1", state="up")

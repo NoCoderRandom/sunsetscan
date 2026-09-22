@@ -152,6 +152,89 @@ def test_record_schema_rejects_security_date_precedence_change():
     assert any("must follow existing precedence" in str(issue) for issue in issues)
 
 
+def test_record_schema_allows_review_record_without_security_date():
+    record = _sample_record()
+    record["dates"]["end_of_support"] = None
+    record["dates"]["end_of_life"] = "2025-07-07"
+    record["dates"]["end_of_security_updates"] = None
+    record["lifecycle"]["status"] = "lifecycle_review"
+    record["lifecycle"]["risk"] = "low"
+    record["lifecycle"]["receives_security_updates"] = None
+    record["lifecycle"]["replacement_recommended"] = False
+    record["lifecycle"]["confidence"] = "low"
+    record["lifecycle"]["reason"] = "Vendor-declared EOL; review required."
+    record["lifecycle"]["days_to_security_eol"] = None
+    record["quality"] = {
+        "interpretation_policy": "example_eol_not_security_eol",
+        "previous_lifecycle": {
+            "status": "unsupported",
+            "risk": "critical",
+            "receives_security_updates": False,
+            "reason": "Builder-derived EOL status.",
+        },
+        "review_required": True,
+    }
+
+    issues = validate_record_schema(record, path="record")
+
+    assert issues == []
+
+
+def test_record_schema_rejects_missing_security_date_without_review_policy():
+    record = _sample_record()
+    record["dates"]["end_of_support"] = None
+    record["dates"]["end_of_life"] = "2025-07-07"
+    record["dates"]["end_of_security_updates"] = None
+
+    issues = validate_record_schema(record, path="record")
+
+    assert any("must follow existing precedence" in str(issue) for issue in issues)
+
+
+def test_record_schema_allows_documented_security_date_override():
+    record = _sample_record()
+    record["vendor_slug"] = "netapp"
+    record["dates"]["end_of_support"] = "2031-01-31"
+    record["dates"]["end_of_vulnerability"] = "2026-01-31"
+    record["dates"]["end_of_security_updates"] = "2026-01-31"
+    record["quality"] = {
+        "interpretation_policy": "netapp_full_support_end_is_service_update_end",
+        "previous_lifecycle": {
+            "status": "supported",
+            "risk": "info",
+            "receives_security_updates": True,
+            "reason": "Support date is in the future.",
+        },
+        "review_required": True,
+    }
+
+    issues = validate_record_schema(record, path="record")
+
+    assert issues == []
+
+
+def test_record_schema_rejects_security_date_override_without_vulnerability_match():
+    record = _sample_record()
+    record["vendor_slug"] = "netapp"
+    record["dates"]["end_of_support"] = "2031-01-31"
+    record["dates"]["end_of_vulnerability"] = "2026-06-30"
+    record["dates"]["end_of_security_updates"] = "2026-01-31"
+    record["quality"] = {
+        "interpretation_policy": "netapp_full_support_end_is_service_update_end",
+        "previous_lifecycle": {
+            "status": "supported",
+            "risk": "info",
+            "receives_security_updates": True,
+            "reason": "Support date is in the future.",
+        },
+        "review_required": True,
+    }
+
+    issues = validate_record_schema(record, path="record")
+
+    assert any("must follow existing precedence" in str(issue) for issue in issues)
+
+
 def test_monolithic_database_rejects_unknown_model_summary_record_id():
     record = _sample_record()
     database = _sample_index(record)

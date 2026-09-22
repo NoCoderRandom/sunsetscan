@@ -77,6 +77,9 @@ SECURITY_DATE_PRECEDENCE = (
     "end_of_service",
     "end_of_life",
 )
+SECURITY_DATE_OVERRIDE_POLICIES = {
+    "netapp_full_support_end_is_service_update_end",
+}
 
 
 @dataclass(frozen=True)
@@ -141,6 +144,31 @@ def _first_date(dates: dict[str, Any]) -> Any:
     return None
 
 
+def _allows_security_date_override(record: dict[str, Any], dates: dict[str, Any]) -> bool:
+    quality = record.get("quality") or {}
+    if not isinstance(quality, dict):
+        return False
+    if quality.get("interpretation_policy") not in SECURITY_DATE_OVERRIDE_POLICIES:
+        return False
+    security_date = dates.get("end_of_security_updates")
+    return bool(security_date and security_date == dates.get("end_of_vulnerability"))
+
+
+def _allows_unknown_security_date(record: dict[str, Any], dates: dict[str, Any]) -> bool:
+    if dates.get("end_of_security_updates") is not None or not _first_date(dates):
+        return False
+    lifecycle = record.get("lifecycle") or {}
+    quality = record.get("quality") or {}
+    if not isinstance(lifecycle, dict) or not isinstance(quality, dict):
+        return False
+    return (
+        lifecycle.get("status") == "lifecycle_review"
+        and lifecycle.get("receives_security_updates") is None
+        and quality.get("review_required") is True
+        and bool(quality.get("interpretation_policy"))
+    )
+
+
 def validate_record_schema(record: Any, *, path: str) -> list[ValidationIssue]:
     issues = _validate_exact_keys(
         record,
@@ -160,7 +188,11 @@ def validate_record_schema(record: Any, *, path: str) -> list[ValidationIssue]:
         for key in DATE_KEYS:
             issues.extend(_validate_iso_date(dates.get(key), f"{path}.dates.{key}"))
         expected_security = _first_date(dates)
-        if dates.get("end_of_security_updates") != expected_security:
+        if (
+            dates.get("end_of_security_updates") != expected_security
+            and not _allows_security_date_override(record, dates)
+            and not _allows_unknown_security_date(record, dates)
+        ):
             issues.append(
                 _issue(
                     f"{path}.dates.end_of_security_updates",

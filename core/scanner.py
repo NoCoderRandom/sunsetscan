@@ -441,7 +441,9 @@ class NetworkScanner:
 
             # OS detection
             osmatch = host_data.get('osmatch', [])
-            if osmatch:
+            # Nmap's aggressive guesses can name the wrong kernel release even
+            # at high percentages. Only present an exact match as an OS fact.
+            if osmatch and str(osmatch[0].get('accuracy', '')) == '100':
                 info.os_guess = osmatch[0].get('name', '')
                 info.os_accuracy = osmatch[0].get('accuracy', '')
 
