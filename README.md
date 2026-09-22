@@ -108,12 +108,12 @@ python3 -m venv venv && ./venv/bin/pip install -r requirements.txt
 ### After installing — first run
 
 ```bash
-sunsetscan --setup                   # download EOL/CVE/credential databases (once)
+sudo sunsetscan --setup              # download EOL/CVE/credential databases (once)
 sudo sunsetscan --instant            # ARP-only inventory of your local subnet
 sudo sunsetscan --full-assessment --target 192.168.1.0/24
 ```
 
-The `sunsetscan` command is available after installing the `.deb`. If you cloned the repository, use `./sunsetscan` instead. The launcher activates its virtual environment automatically. Use `sudo` for scans that need raw sockets. In a clone, run `--setup`, `--download`, and `--update-cache` as your normal user so cache files stay writable. The `.deb` installs under `/opt/sunsetscan`; run those data-update commands with `sudo` if the cache is owned by root.
+The `sunsetscan` command is available after installing the `.deb`. If you cloned the repository, use `./sunsetscan` instead. The launcher activates its virtual environment automatically. The `.deb` installs under root-owned `/opt/sunsetscan`, so use `sudo sunsetscan` for scans and data updates. In a clone, run `--setup`, `--download`, and `--update-cache` as your normal user so cache files stay writable; use `sudo` only for scans that need raw sockets.
 
 ### Installer flags
 

@@ -21,6 +21,20 @@ while [ -L "$SOURCE" ]; do
 done
 SCRIPT_DIR="$( cd -P "$( dirname "$SOURCE" )" >/dev/null 2>&1 && pwd )"
 
+# System packages place runtime caches under a root-owned /opt directory.
+# Give package users an actionable message instead of a Python permission
+# traceback when they start a scan without the required privileges.
+if [ -d "$SCRIPT_DIR/data" ] && [ ! -w "$SCRIPT_DIR/data" ] && [ "$(id -u)" -ne 0 ]; then
+    case "${1:-}" in
+        --version|--help|-h|--check-version) ;;
+        *)
+            echo "SunsetScan: this installation stores its runtime data in $SCRIPT_DIR/data, which is not writable by your account." >&2
+            echo "          Run the packaged command with sudo: sudo sunsetscan $*" >&2
+            exit 1
+            ;;
+    esac
+fi
+
 VENV_DIR="$SCRIPT_DIR/.venv"
 if [ ! -x "$VENV_DIR/bin/python3" ]; then
     VENV_DIR="$SCRIPT_DIR/venv"
