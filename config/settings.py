@@ -57,7 +57,7 @@ class Settings:
         nse_scripts_enabled: Run NSE scripts by default
     """
     tool_name: str = "SunsetScan"
-    version: str = "2.2.0"
+    version: str = "2.2.1"
     banner_timeout: int = 3
     cache_ttl_hours: int = 24       # legacy — used by eol/cache.py
     cve_cache_ttl_days: int = 7     # CVE data refreshed weekly

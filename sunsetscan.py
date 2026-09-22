@@ -2450,6 +2450,7 @@ class SunsetScan:
             findings=findings_arg,
             risk_scores=self.last_risk_scores or None,
             scan_diff=scan_diff,
+            device_identities=self.last_device_identities or None,
         )
 
         if success:

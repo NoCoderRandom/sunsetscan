@@ -1,11 +1,13 @@
 from datetime import datetime
 from types import SimpleNamespace
+import json
 
 from config.settings import Settings, load_user_settings, save_user_settings
 from core.auth_tester import AuthTester
 from core.findings import Finding, FindingRegistry, Severity
 from core.risk_scorer import RiskScorer
 from core.scanner import HostInfo, ScanResult
+from eol.checker import EOLStatus, EOLStatusLevel
 from ui.export import ReportExporter
 from sunsetscan import SunsetScan, _effective_settings_for_safe_mode
 
@@ -97,6 +99,44 @@ def test_menu_full_assessment_can_disable_existing_default_password_audit(monkey
         "auth_enabled": False,
         "nse_enabled": True,
     }
+
+
+def test_default_menu_export_includes_device_identities():
+    app = SunsetScan.__new__(SunsetScan)
+    result = ScanResult(target="192.168.50.80", profile="QUICK")
+    result.hosts["192.168.50.80"] = HostInfo(ip="192.168.50.80", state="up")
+    captured = {}
+    app.last_scan_result = result
+    app.last_eol_data = {}
+    app.last_risk_scores = {}
+    app.last_device_identities = {"192.168.50.80": object()}
+    app.finding_registry = FindingRegistry()
+    app.scan_history = SimpleNamespace(diff_last_two=lambda: None)
+    app.menu = SimpleNamespace(
+        prompt_export_format=lambda: "html",
+        prompt_filename=lambda default: default,
+    )
+    app.exporter = SimpleNamespace(
+        export=lambda *args, **kwargs: captured.update(kwargs) or True
+    )
+    app.display = SimpleNamespace(show_success=lambda message: None)
+
+    SunsetScan.export_report(app)
+
+    assert captured["device_identities"] is app.last_device_identities
+
+
+def test_json_export_accepts_not_applicable_eol_status(tmp_path):
+    result = ScanResult(target="192.168.50.80", profile="QUICK")
+    result.hosts["192.168.50.80"] = HostInfo(ip="192.168.50.80", state="up")
+    status = EOLStatus(product="unknown", version="", level=EOLStatusLevel.NOT_APPLICABLE)
+    path = tmp_path / "report.json"
+
+    assert ReportExporter(settings=Settings()).export_json(
+        result, str(path), eol_data={"192.168.50.80": {80: status}}
+    )
+    report = json.loads(path.read_text())
+    assert report["summary"]["eol_status"]["N/A"] == 1
 
 
 def test_settings_preserves_custom_common_ports():

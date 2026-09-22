@@ -2,7 +2,7 @@
 
 **Network security auditing for humans — powered by nmap, built for everyone.**
 
-[![Version](https://img.shields.io/badge/version-v2.2.0-blue)]
+[![Version](https://img.shields.io/badge/version-v2.2.1-blue)]
 [![Python 3.9+](https://img.shields.io/badge/python-3.9%2B-blue?logo=python&logoColor=white)](https://www.python.org/downloads/)
 [![Platform](https://img.shields.io/badge/platform-Linux%20%7C%20WSL2-brightgreen?logo=linux)](https://github.com)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
@@ -18,14 +18,22 @@ SunsetScan is a local-network security auditing tool for **home network owners a
 
 ---
 
-## What's new in v2.2.0
+## What's new in v2.2.1
+
+- **Menu report parity:** the default menu now includes identified devices in manual exports. The guided `-i` menu retains scan results and includes findings, risk scores, hardware lifecycle evidence, and device identities when exporting a full assessment.
+- **Reliable summaries:** the guided menu counts software EOL statuses correctly and reports export or assessment failures accurately.
+- **Same expanded database:** all 86,276 hardware lifecycle records and 224 vendors from v2.2.0 remain included.
+
+See the [v2.2.1 release notes](https://github.com/NoCoderRandom/sunsetscan/releases/tag/v2.2.1) for validation results and downloads. The hardware database is licensed separately under [CC BY-NC 4.0](data/hardware_eol/LICENSE.md).
+
+### v2.2.0 hardware lifecycle expansion
 
 - **More hardware coverage:** 86,276 lifecycle records, 81,738 model summaries, and 224 vendors in the validated split database and smart profiles.
 - **Careful lifecycle findings:** a vendor's EOL, discontinuation, or end-of-sale label does not by itself mean security updates have stopped. Ambiguous evidence produces a review finding; confirmed unsupported findings require stronger vendor evidence.
 - **Clearer reports:** recommendations follow the actual findings, and duplicate-looking admin paths from generic router pages are filtered out.
 - **More reliable scan evidence:** SSH algorithm findings use the server's advertised algorithms, and uncertain OS guesses are kept out of reports.
 
-See the [v2.2.0 release notes](https://github.com/NoCoderRandom/sunsetscan/releases/tag/v2.2.0) for validation results and downloads. The hardware database is licensed separately under [CC BY-NC 4.0](data/hardware_eol/LICENSE.md).
+See the [v2.2.0 release notes](https://github.com/NoCoderRandom/sunsetscan/releases/tag/v2.2.0) for the database build and validation details.
 
 ---
 
@@ -61,14 +69,14 @@ Fedora, RHEL, CentOS, Rocky, Alma, Arch, Manjaro, openSUSE, macOS.
 Recommended for Debian, Ubuntu, Raspberry Pi OS, Linux Mint, and Pop!_OS:
 
 ```bash
-curl -fLO https://github.com/NoCoderRandom/sunsetscan/releases/download/v2.2.0/sunsetscan_2.2.0-1_all.deb
-curl -fLO https://github.com/NoCoderRandom/sunsetscan/releases/download/v2.2.0/sunsetscan_2.2.0-1_all.deb.sha256
-sha256sum -c sunsetscan_2.2.0-1_all.deb.sha256
-sudo apt install ./sunsetscan_2.2.0-1_all.deb
+curl -fLO https://github.com/NoCoderRandom/sunsetscan/releases/download/v2.2.1/sunsetscan_2.2.1-1_all.deb
+curl -fLO https://github.com/NoCoderRandom/sunsetscan/releases/download/v2.2.1/sunsetscan_2.2.1-1_all.deb.sha256
+sha256sum -c sunsetscan_2.2.1-1_all.deb.sha256
+sudo apt install ./sunsetscan_2.2.1-1_all.deb
 sunsetscan --version
 ```
 
-The package contains the application and hardware lifecycle data. Its installer sets up a Python virtual environment and downloads Python dependencies on first install, so installation needs internet access. For Fedora, Arch, other Linux distributions, and WSL2, use the [source archive](https://github.com/NoCoderRandom/sunsetscan/releases/tag/v2.2.0) or clone the repository and run `./install.sh`.
+The package contains the application and hardware lifecycle data. Its installer sets up a Python virtual environment and downloads Python dependencies on first install, so installation needs internet access. For Fedora, Arch, other Linux distributions, and WSL2, use the [source archive](https://github.com/NoCoderRandom/sunsetscan/releases/tag/v2.2.1) or clone the repository and run `./install.sh`.
 
 #### 2. One-line bootstrap
 

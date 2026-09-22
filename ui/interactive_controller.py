@@ -143,6 +143,7 @@ class InteractiveController:
         self.current_target: str = ""
         self.scan_history: List[Dict] = []
         self._last_scan_result: Optional[ScanResult] = None
+        self._last_assessment_app = None
         self._user_requested_exit = False
 
         # Components
@@ -659,9 +660,11 @@ Current Settings:
         self.console.print(f"\n[blue]Quick scanning {len(ips)} host(s)...[/blue]")
 
         total_ports = 0
+        scan_results = []
         for ip in ips:
             try:
                 result = self.scanner.quick_scan(ip)
+                scan_results.append(result)
 
                 if ip in result.hosts:
                     host_data = result.hosts[ip]
@@ -674,11 +677,14 @@ Current Settings:
                         }
                     total_ports += len(host_data.ports)
 
-                self.console.print(f"[green]{ip}: Found {len(host_data.ports)} open ports[/green]")
+                self.console.print(
+                    f"[green]{ip}: Found {len(result.hosts[ip].ports) if ip in result.hosts else 0} open ports[/green]"
+                )
 
             except Exception as e:
                 self.console.print(f"[red]{ip}: Scan failed - {e}[/red]")
 
+        self._remember_scan_results(scan_results, ips, "QUICK")
         # Show summary
         self.console.print(f"\n[bold]Scan Summary:[/bold] {total_ports} total open ports found on {len(ips)} hosts")
         self.console.print()
@@ -693,9 +699,11 @@ Current Settings:
         self.console.print(f"\n[blue]Deep scanning {len(ips)} host(s)...[/blue]")
         self.console.print("[dim]This may take a few minutes per host...[/dim]\n")
 
+        scan_results = []
         for ip in ips:
             try:
                 result = self.scanner.full_scan(ip)
+                scan_results.append(result)
 
                 if ip in result.hosts:
                     host_data = result.hosts[ip]
@@ -725,11 +733,14 @@ Current Settings:
                                     if not disc_host.device_type:
                                         disc_host.device_type = name
 
-                self.console.print(f"[green]{ip}: Deep scan complete - Found {len(host_data.ports)} ports[/green]")
+                self.console.print(
+                    f"[green]{ip}: Deep scan complete - Found {len(result.hosts[ip].ports) if ip in result.hosts else 0} ports[/green]"
+                )
 
             except Exception as e:
                 self.console.print(f"[red]{ip}: Scan failed - {e}[/red]")
 
+        self._remember_scan_results(scan_results, ips, "FULL")
         # Show summary
         self.console.print(f"\n[bold]Deep Scan Complete[/bold]")
         self.show_discovered_hosts()
@@ -1031,11 +1042,11 @@ Open Ports:     {len(host.open_ports)}
         eol_counts = {"Supported": 0, "Approaching EOL": 0, "End of Life": 0, "Unknown": 0}
         for host in self.discovered_hosts.values():
             for port, eol in host.eol_results.items():
-                if eol.level.value == "Supported":
+                if eol.level.value == "OK":
                     eol_counts["Supported"] += 1
-                elif eol.level.value == "Approaching EOL":
+                elif eol.level.value == "WARNING":
                     eol_counts["Approaching EOL"] += 1
-                elif eol.level.value == "End of Life":
+                elif eol.level.value == "CRITICAL":
                     eol_counts["End of Life"] += 1
                 else:
                     eol_counts["Unknown"] += 1
@@ -1099,21 +1110,23 @@ Device Types Found:
             return
 
         try:
-            exporter = ReportExporter(settings=self.settings)
+            assessment = self._last_assessment_app
+            exporter = assessment.exporter if assessment else ReportExporter(settings=self.settings)
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             filename = f"sunsetscan_export_{timestamp}.{format_type}"
-
-            if format_type == "html":
-                exporter.export_html(
-                    scan_result=self._last_scan_result,
-                    filename=filename,
-                )
+            success = exporter.export(
+                format_type,
+                self._last_scan_result,
+                filename,
+                eol_data=assessment.last_eol_data if assessment else None,
+                findings=assessment.finding_registry if assessment else None,
+                risk_scores=assessment.last_risk_scores if assessment else None,
+                device_identities=assessment.last_device_identities if assessment else None,
+            )
+            if success:
+                self.console.print(f"[green]Exported to: {filename}[/green]")
             else:
-                exporter.export_json(
-                    scan_result=self._last_scan_result,
-                    filename=filename,
-                )
-            self.console.print(f"[green]Exported to: {filename}[/green]")
+                self.console.print("[red]Export failed[/red]")
         except Exception as e:
             self.console.print(f"[red]Export failed: {e}[/red]")
 
@@ -1132,9 +1145,11 @@ Device Types Found:
     def _profile_scan(self, ips: List[str], profile: str) -> None:
         """Run a scan with a specific profile on hosts."""
         self.console.print(f"\n[blue]{profile} scanning {len(ips)} host(s)...[/blue]")
+        scan_results = []
         for ip in ips:
             try:
                 result = self.scanner.scan(ip, profile=profile)
+                scan_results.append(result)
                 if ip in result.hosts:
                     host_data = result.hosts[ip]
                     disc_host = self.discovered_hosts.get(ip)
@@ -1147,7 +1162,22 @@ Device Types Found:
                 self.console.print(f"[green]{ip}: {profile} scan complete[/green]")
             except Exception as e:
                 self.console.print(f"[red]{ip}: Scan failed - {e}[/red]")
+        self._remember_scan_results(scan_results, ips, profile)
         self.show_discovered_hosts()
+
+    def _remember_scan_results(self, results: List[ScanResult], ips: List[str], profile: str) -> None:
+        """Keep all successfully scanned hosts available to the export menu."""
+        if not results:
+            return
+        combined = ScanResult(target=", ".join(ips), profile=profile)
+        combined.start_time = min(result.start_time for result in results)
+        combined.end_time = max(
+            (result.end_time or result.start_time) for result in results
+        )
+        for result in results:
+            combined.hosts.update(result.hosts)
+        self._last_scan_result = combined
+        self._last_assessment_app = None
 
     def run_full_assessment(self) -> None:
         """Run full assessment on current target."""
@@ -1185,7 +1215,12 @@ Device Types Found:
             )
             from sunsetscan import SunsetScan
             app = SunsetScan(args)
-            app.run_full_assessment(self.current_target)
+            exit_code = app.run_full_assessment(self.current_target)
+            if exit_code != 0:
+                self.console.print(f"[red]Assessment failed (exit code {exit_code}).[/red]")
+                return
+            self._last_scan_result = getattr(app, "last_scan_result", None)
+            self._last_assessment_app = app if self._last_scan_result else None
             self.console.print("[green]Full assessment complete.[/green]")
         except Exception as e:
             self.console.print(f"[red]Assessment failed: {e}[/red]")

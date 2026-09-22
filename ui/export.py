@@ -147,10 +147,11 @@ class ReportExporter:
 
             # EOL summary
             if eol_data:
-                status_counts = {"CRITICAL": 0, "WARNING": 0, "OK": 0, "UNKNOWN": 0}
+                status_counts = {"CRITICAL": 0, "WARNING": 0, "OK": 0, "UNKNOWN": 0, "N/A": 0}
                 for host_eol in eol_data.values():
                     for eol_status in host_eol.values():
-                        status_counts[eol_status.level.value] += 1
+                        level = eol_status.level.value
+                        status_counts[level] = status_counts.get(level, 0) + 1
                 export_data["summary"]["eol_status"] = status_counts
 
             # Findings summary
