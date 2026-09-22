@@ -63,7 +63,7 @@ set -e
 case "$1" in
     configure)
         if [ -x /opt/sunsetscan/install.sh ]; then
-            /opt/sunsetscan/install.sh --no-system
+            SUNSETSCAN_PACKAGE_INSTALL=1 /opt/sunsetscan/install.sh --no-system
         fi
         ;;
 esac

@@ -314,7 +314,11 @@ LAUNCHER="$SCRIPT_DIR/sunsetscan"
 
 chmod +x "$LAUNCHER"
 chmod +x "$SCRIPT_DIR/sunsetscan.py"
-ok "Launcher: $LAUNCHER (run as: ./sunsetscan  or  sudo ./sunsetscan)"
+if [ "${SUNSETSCAN_PACKAGE_INSTALL:-0}" = "1" ]; then
+    ok "Launcher: /usr/bin/sunsetscan (use sudo sunsetscan for scans and data updates)"
+else
+    ok "Launcher: $LAUNCHER (run as: ./sunsetscan  or  sudo ./sunsetscan)"
+fi
 
 if [ "$SYMLINK" -eq 1 ]; then
     if $SUDO ln -sf "$LAUNCHER" /usr/local/bin/sunsetscan; then
@@ -344,12 +348,18 @@ echo
 echo "${BOLD}${GREEN}SunsetScan installed successfully.${NC}"
 echo
 echo "Next steps:"
-echo "  1. Download EOL/CVE/credential databases (one-time, ~1 minute):"
-echo "       ./sunsetscan --setup"
-echo "  2. Try an instant scan of your local network:"
-echo "       sudo ./sunsetscan --instant"
-echo "  3. Or run a full security assessment:"
-echo "       sudo ./sunsetscan --full-assessment --target 192.168.1.0/24"
+if [ "${SUNSETSCAN_PACKAGE_INSTALL:-0}" = "1" ]; then
+    echo "  1. Download EOL/CVE/credential databases: sudo sunsetscan --setup"
+    echo "  2. Try an instant scan: sudo sunsetscan --instant"
+    echo "  3. Run a full assessment: sudo sunsetscan --full-assessment --target 192.168.1.0/24"
+else
+    echo "  1. Download EOL/CVE/credential databases (one-time, ~1 minute):"
+    echo "       ./sunsetscan --setup"
+    echo "  2. Try an instant scan of your local network:"
+    echo "       sudo ./sunsetscan --instant"
+    echo "  3. Or run a full security assessment:"
+    echo "       sudo ./sunsetscan --full-assessment --target 192.168.1.0/24"
+fi
 echo
 echo "${DIM}On Raspberry Pi or hosts running Pi-hole, SunsetScan automatically enables${NC}"
 echo "${DIM}safe-mode scanning to avoid saturating the local DNS resolver.${NC}"
