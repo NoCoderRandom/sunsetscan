@@ -2,7 +2,7 @@
 
 **Network security auditing for humans — powered by nmap, built for everyone.**
 
-[![Version](https://img.shields.io/badge/version-v2.1.1-blue)]
+[![Version](https://img.shields.io/badge/version-v2.2.0-blue)]
 [![Python 3.9+](https://img.shields.io/badge/python-3.9%2B-blue?logo=python&logoColor=white)](https://www.python.org/downloads/)
 [![Platform](https://img.shields.io/badge/platform-Linux%20%7C%20WSL2-brightgreen?logo=linux)](https://github.com)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
@@ -15,6 +15,17 @@ Website: [sunsetscan.com](http://www.sunsetscan.com/)
 ---
 
 SunsetScan is a local-network security auditing tool for **home network owners and IT staff** who want the depth of nmap without learning nmap syntax. Point it at your network and it finds every active device, fingerprints running software, checks against known vulnerability databases and end-of-life records, probes web interfaces for common weaknesses, optionally performs a lockout-safe factory-default credential audit, and produces a clean HTML report with **plain-English explanations** and numbered steps to fix each finding. It is **entirely read-only and non-destructive** — nothing on your network is ever modified.
+
+---
+
+## What's new in v2.2.0
+
+- **More hardware coverage:** 86,276 lifecycle records, 81,738 model summaries, and 224 vendors in the validated split database and smart profiles.
+- **Careful lifecycle findings:** a vendor's EOL, discontinuation, or end-of-sale label does not by itself mean security updates have stopped. Ambiguous evidence produces a review finding; confirmed unsupported findings require stronger vendor evidence.
+- **Clearer reports:** recommendations follow the actual findings, and duplicate-looking admin paths from generic router pages are filtered out.
+- **More reliable scan evidence:** SSH algorithm findings use the server's advertised algorithms, and uncertain OS guesses are kept out of reports.
+
+See the [v2.2.0 release notes](https://github.com/NoCoderRandom/sunsetscan/releases/tag/v2.2.0) for validation results and downloads. The hardware database is licensed separately under [CC BY-NC 4.0](data/hardware_eol/LICENSE.md).
 
 ---
 
@@ -50,12 +61,14 @@ Fedora, RHEL, CentOS, Rocky, Alma, Arch, Manjaro, openSUSE, macOS.
 Recommended for Debian, Ubuntu, Raspberry Pi OS, Linux Mint, and Pop!_OS:
 
 ```bash
-curl -LO https://github.com/NoCoderRandom/sunsetscan/releases/download/v2.1.0/sunsetscan_2.1.0-1_all.deb
-curl -LO https://github.com/NoCoderRandom/sunsetscan/releases/download/v2.1.0/sunsetscan_2.1.0-1_all.deb.sha256
-sha256sum -c sunsetscan_2.1.0-1_all.deb.sha256
-sudo apt install ./sunsetscan_2.1.0-1_all.deb
+curl -fLO https://github.com/NoCoderRandom/sunsetscan/releases/download/v2.2.0/sunsetscan_2.2.0-1_all.deb
+curl -fLO https://github.com/NoCoderRandom/sunsetscan/releases/download/v2.2.0/sunsetscan_2.2.0-1_all.deb.sha256
+sha256sum -c sunsetscan_2.2.0-1_all.deb.sha256
+sudo apt install ./sunsetscan_2.2.0-1_all.deb
 sunsetscan --version
 ```
+
+The package contains the application and hardware lifecycle data. Its installer sets up a Python virtual environment and downloads Python dependencies on first install, so installation needs internet access. For Fedora, Arch, other Linux distributions, and WSL2, use the [source archive](https://github.com/NoCoderRandom/sunsetscan/releases/tag/v2.2.0) or clone the repository and run `./install.sh`.
 
 #### 2. One-line bootstrap
 
@@ -95,12 +108,12 @@ python3 -m venv venv && ./venv/bin/pip install -r requirements.txt
 ### After installing — first run
 
 ```bash
-./sunsetscan --setup                 # download EOL/CVE/credential databases (once)
-sudo ./sunsetscan --instant          # ARP-only inventory of your local subnet
-sudo ./sunsetscan --full-assessment --target 192.168.1.0/24
+sunsetscan --setup                   # download EOL/CVE/credential databases (once)
+sudo sunsetscan --instant            # ARP-only inventory of your local subnet
+sudo sunsetscan --full-assessment --target 192.168.1.0/24
 ```
 
-The `./sunsetscan` launcher auto-activates the venv — you don't need to `source venv/bin/activate` ever. Use `sudo` for scans that need raw sockets, but run `--setup`, `--download`, and `--update-cache` as your normal user so cache files stay writable from the TUI.
+The `sunsetscan` command is available after installing the `.deb`. If you cloned the repository, use `./sunsetscan` instead. The launcher activates its virtual environment automatically. Use `sudo` for scans that need raw sockets. In a clone, run `--setup`, `--download`, and `--update-cache` as your normal user so cache files stay writable. The `.deb` installs under `/opt/sunsetscan`; run those data-update commands with `sudo` if the cache is owned by root.
 
 ### Installer flags
 
